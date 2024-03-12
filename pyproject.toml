@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "clickmass"
+version = "0.0.1"
+authors = [
+  { name="Huaxu Yu", email="yhxchem@outlook.com" },
+]
+maintainers = [
+  { name="Huaxu Yu", email="yhxchem@outlook.com" },
+]
+description = "Processing of large-scale MS data with one click"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "pyteomics>=4.6",
+    "scipy>=1.10.1",
+    "tensorflow>=2.12.0",
+    "tqdm>=4.65.0",
+    "lxml>=4.9.2",
+    "matplotlib",
+    "ms_entropy>=1.1.1",
+    "networkx",
+    "multiprocessing",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/Waddlessss/metabengine"
+
+[tool.setuptools.packages.find]
+namespaces = true
+where = ["src"]
+
+[tool.setuptools.package-data]
+"metabengine.data" = ["*.json"]
