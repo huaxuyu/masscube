@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "masscube"
-version = "0.0.1"
+version = "0.0.2"
 authors = [
   { name="Huaxu Yu", email="yhxchem@outlook.com" },
 ]
@@ -30,15 +30,7 @@ dependencies = [
     "matplotlib",
     "ms_entropy>=1.1.1",
     "networkx",
-    "multiprocessing",
 ]
 
 [project.urls]
 "Homepage" = "https://github.com/Waddlessss/masscube"
-
-[tool.setuptools.packages.find]
-namespaces = true
-where = ["src"]
-
-[tool.setuptools.package-data]
-"masscube.data" = ["*.json"]
