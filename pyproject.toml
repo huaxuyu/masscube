@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "clickmass"
+name = "masscube"
 version = "0.0.1"
 authors = [
   { name="Huaxu Yu", email="yhxchem@outlook.com" },
@@ -11,7 +11,7 @@ authors = [
 maintainers = [
   { name="Huaxu Yu", email="yhxchem@outlook.com" },
 ]
-description = "Processing of large-scale MS data with one click"
+description = "Accurate and fast data processing for metabolomics"
 readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [
@@ -34,11 +34,11 @@ dependencies = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/Waddlessss/metabengine"
+"Homepage" = "https://github.com/Waddlessss/masscube"
 
 [tool.setuptools.packages.find]
 namespaces = true
 where = ["src"]
 
 [tool.setuptools.package-data]
-"metabengine.data" = ["*.json"]
+"masscube.data" = ["*.json"]
