@@ -505,6 +505,8 @@ class MSData:
         plt.ylabel("Intensity", fontsize=18, fontname='Arial')
         plt.xticks(fontsize=14, fontname='Arial')
         plt.yticks(fontsize=14, fontname='Arial')
+        if target_rt is not None:
+            plt.axvline(x = target_rt, color = 'b', linestyle = '--', linewidth=1)
 
         if output:
             plt.savefig(output, dpi=300, bbox_inches="tight")
@@ -562,7 +564,7 @@ class MSData:
         else:
             return matched_ms2
         
-    def find_roi_by_mzrt(self, mz_target, rt_target, mz_tol=0.01, rt_tol=0.3):
+    def find_roi_by_mzrt(self, mz_target, rt_target=None, mz_tol=0.01, rt_tol=0.3):
         """
         Function to find roi by precursor m/z and retention time.
 
@@ -578,7 +580,11 @@ class MSData:
             Retention time tolerance.
         """
 
-        found_roi = [r for r in self.rois if abs(r.mz - mz_target) < mz_tol and abs(r.rt - rt_target) < rt_tol]
+        if rt_target is None:
+            found_roi = [r for r in self.rois if abs(r.mz - mz_target) < mz_tol]
+        else:
+            found_roi = [r for r in self.rois if abs(r.mz - mz_target) < mz_tol and abs(r.rt - rt_target) < rt_tol]
+            
         return found_roi   
 
 
@@ -847,12 +853,21 @@ def _connect_rois(rois):
         output.ms2_seq.extend(rois[i].ms2_seq)
         output.scan_idx_seq.extend(rois[i].scan_idx_seq)
     
-    # find the index of the elements in scan index that show up twice or more
-    _, idx = np.unique(output.scan_idx_seq, return_index=True)
-    output.scan_idx_seq = [output.scan_idx_seq[i] for i in idx]
-    output.rt_seq = [output.rt_seq[i] for i in idx]
-    output.int_seq = [output.int_seq[i] for i in idx]
-    output.mz_seq = [output.mz_seq[i] for i in idx]
+    order = np.argsort(output.scan_idx_seq)
+    output.rt_seq = [output.rt_seq[i] for i in order]
+    output.int_seq = [output.int_seq[i] for i in order]
+    output.mz_seq = [output.mz_seq[i] for i in order]
+    output.scan_idx_seq = [output.scan_idx_seq[i] for i in order]
+        
+    i = len(output.scan_idx_seq) - 1
+
+    while i > 0:
+        if output.scan_idx_seq[i] == output.scan_idx_seq[i-1]:
+            output.scan_idx_seq.pop(i)
+            output.rt_seq.pop(i)
+            output.int_seq[i-1] += output.int_seq.pop(i)
+            output.mz_seq.pop(i)
+        i -= 1
     output.merged = True
     return output
 

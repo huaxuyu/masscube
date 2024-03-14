@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "masscube"
-version = "0.0.2"
+version = "0.0.4"
 authors = [
   { name="Huaxu Yu", email="yhxchem@outlook.com" },
 ]
@@ -30,7 +30,11 @@ dependencies = [
     "matplotlib",
     "ms_entropy>=1.1.1",
     "networkx",
+    "scikit-learn"
 ]
+
+[project.scripts]
+untargeted-metabolomics = "masscube:untargeted_metabolomics_workflow"
 
 [project.urls]
 "Homepage" = "https://github.com/Waddlessss/masscube"

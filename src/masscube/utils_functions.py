@@ -82,37 +82,5 @@ def generate_sample_table(path):
     sample_table.to_csv(os.path.join(path, 'sample_table.csv'), index=False)
 
 
-def find_ms_info(file_name):
-    """
-    Find the type of MS and ion mode from the raw file.
 
-    Parameters
-    ----------
-    file_name : str
-        The file name of the raw file.
-
-    Returns
-    -------
-    ms_type : str
-        The type of MS.
-    ion_mode : str
-        The ion mode.
-    """
-
-    ms_type = None
-    ion_mode = None
-
-    with open(file_name, 'r') as f:
-        for line in f:
-            if 'orbitrap' in line.lower():
-                ms_type = 'orbitrap'
-            if 'tof' in line.lower():
-                ms_type = 'tof'
-            if 'positive' in line.lower():
-                ion_mode = 'positive'
-            if 'negative' in line.lower():
-                ion_mode = 'negative'
-            if ms_type is not None and ion_mode is not None:
-                break
-    return ms_type, ion_mode
     

@@ -10,7 +10,7 @@ import multiprocessing
 import pickle
 
 from .raw_data_utils import MSData
-from .params import Params
+from .params import Params, find_ms_info
 from .feature_evaluation import predict_quality, load_ann_model
 from .feature_grouping import annotate_isotope, annotate_adduct, annotate_in_source_fragment
 from .alignment import feature_alignment, gap_filling
@@ -20,10 +20,9 @@ from .visualization import plot_ms2_matching_from_feature_table
 from .network import network_analysis
 from .stats import statistical_analysis
 from .feature_table_utils import calculate_fill_percentage
-from .utils_functions import find_ms_info
 
 
-# Untargeted feature detection
+# Untargeted feature detection for a single file
 def feature_detection(file_name, params=None, ann_model=None, annotation=False):
     """
     Untargeted feature detection from a single file (.mzML or .mzXML).
@@ -46,6 +45,8 @@ def feature_detection(file_name, params=None, ann_model=None, annotation=False):
     # create a MSData object
     d = MSData()
 
+    # set parameters
+    # if params is None, use the default parameters
     if params is None:
         params = Params()
         ms_type, ion_mode = find_ms_info(file_name)
@@ -96,6 +97,7 @@ def feature_detection(file_name, params=None, ann_model=None, annotation=False):
     return d
 
 
+# Untargeted metabolomics workflow
 def untargeted_metabolomics_workflow(path=None):
     """
     A function for the untargeted metabolomics workflow.
@@ -108,7 +110,7 @@ def untargeted_metabolomics_workflow(path=None):
         params.project_dir = os.getcwd()
     params._untargeted_metabolomics_workflow_preparation()
 
-    with open(os.path.join(params.project_dir, "params.pkl"), "wb") as f:
+    with open(os.path.join(params.project_dir, "project.mc"), "wb") as f:
         pickle.dump(params, f)
     
     raw_file_names = os.listdir(params.sample_dir)
@@ -126,16 +128,13 @@ def untargeted_metabolomics_workflow(path=None):
     # feature alignment
     print("Aligning features...")
     feature_table = feature_alignment(params.single_file_dir, params)
-    print(feature_table.shape)
 
     # gap filling
     print("Filling gaps...")
     feature_table = gap_filling(feature_table, params)
-    print(feature_table.shape)
     
     # calculate fill percentage
     feature_table = calculate_fill_percentage(feature_table, params.individual_sample_groups)
-    print(feature_table.shape)
 
     # annotation
     print("Annotating features...")
@@ -144,12 +143,11 @@ def untargeted_metabolomics_workflow(path=None):
     else:
         print("No MS2 library is found. Skipping annotation...")
 
-    print(feature_table.shape)
     # normalization
     if params.run_normalization:
+        feature_table.to_csv(os.path.join(params.project_dir, "aligned_feature_table_before_normalization.csv"), index=False)
         print("Running normalization...")
         feature_table = sample_normalization(feature_table, params.individual_sample_groups, params.normalization_method)
-    print(feature_table.shape)
 
     # statistical analysis
     if params.run_statistics:
