@@ -78,12 +78,17 @@ def generate_sample_table(path=None):
     # if path is not specified, use the current working directory
     if path is None:
         path = os.getcwd()
+    
+    path = os.path.join(path, 'data')
 
-    filenames = [f[:-5] for f in os.listdir(path) if f.lower().endswith('.mzml') or f.lower().endswith('.mzxml')]
-    filenames = sorted(filenames)
-    sample_table = pd.DataFrame({'Sample': filenames, "Groups": [None]*len(filenames)})
+    if os.path.exists(path):
+        filenames = [f[:-5] for f in os.listdir(path) if f.lower().endswith('.mzml') or f.lower().endswith('.mzxml')]
+        filenames = sorted(filenames)
+        sample_table = pd.DataFrame({'Sample': filenames, "Groups": [None]*len(filenames)})
 
-    sample_table.to_csv(os.path.join(path, 'sample_table.csv'), index=False)
+        sample_table.to_csv(os.path.join(path, 'sample_table.csv'), index=False)
+    else:
+        raise FileNotFoundError(f"The path {path} does not exist.")
 
 
 

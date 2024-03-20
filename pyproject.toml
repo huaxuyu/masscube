@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "masscube"
-version = "0.0.4"
+version = "0.0.5"
 authors = [
   { name="Huaxu Yu", email="yhxchem@outlook.com" },
 ]
@@ -35,7 +35,7 @@ dependencies = [
 
 [project.scripts]
 untargeted-metabolomics = "masscube:untargeted_metabolomics_workflow"
-build-sample-table = "masscube:generate_sample_table
+build-sample-table = "masscube:generate_sample_table"
 
 [project.urls]
 "Homepage" = "https://github.com/Waddlessss/masscube"
