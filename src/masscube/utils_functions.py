@@ -79,13 +79,12 @@ def generate_sample_table(path=None):
     if path is None:
         path = os.getcwd()
     
-    path = os.path.join(path, 'data')
+    path_data = os.path.join(path, 'data')
 
     if os.path.exists(path):
-        filenames = [f[:-5] for f in os.listdir(path) if f.lower().endswith('.mzml') or f.lower().endswith('.mzxml')]
+        filenames = [os.path.splitext(f)[0] for f in os.listdir(path_data) if f.lower().endswith('.mzml') or f.lower().endswith('.mzxml')]
         filenames = sorted(filenames)
         sample_table = pd.DataFrame({'Sample': filenames, "Groups": [None]*len(filenames)})
-
         sample_table.to_csv(os.path.join(path, 'sample_table.csv'), index=False)
     else:
         raise FileNotFoundError(f"The path {path} does not exist.")
