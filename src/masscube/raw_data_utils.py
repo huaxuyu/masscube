@@ -492,6 +492,22 @@ class MSData:
     def plot_eic(self, target_mz, target_rt=None, mz_tol=0.005, rt_tol=0.3, output=False, return_eic_data=False):
         """
         Function to plot EIC of a target m/z.
+
+        Parameters
+        ----------
+        target_mz: float
+            Target m/z.
+        target_rt: float
+            Target retention time.
+        mz_tol: float
+            m/z tolerance.
+        rt_tol: float
+            Retention time tolerance.
+        output: str
+            Output file name. If not specified, the plot will be shown.
+        return_eic_data: bool   
+            True: return the EIC data.
+            False: do not return the EIC data.
         """
 
         # get the eic data
@@ -872,34 +888,38 @@ def _connect_rois(rois):
     return output
 
 
-def _centroid(mz_seq, int_seq):
-    mz_seq = np.round(mz_seq/2, 3)*2
-    if np.diff(mz_seq).min() > 0:
+def _centroid(mz_seq, int_seq, centroiding_mz_tol=0.005):
+    """
+    Function to centroid the m/z and intensity sequences.
+
+    Parameters
+    ----------
+    mz_seq: numpy array or list
+        m/z sequence.
+    int_seq: numpy array or list
+        Intensity sequence.
+    centroiding_mz_tol: float
+        m/z tolerance for centroiding. Default is 0.005.
+    """
+
+    diff = np.diff(mz_seq)
+    tmp = np.where(diff < centroiding_mz_tol)[0]
+
+    if len(tmp) == 0:
         return mz_seq, int_seq
-    mz_seq_cen = []
-    int_seq_cen = []
-    tmp_group = [0]
-    for i in range(1, len(mz_seq)):
-        if mz_seq[i] == mz_seq[i-1]:
-            tmp_group.append(i)
-        else:
-            if len(tmp_group) > 1:
-                mz_seq_cen.append(np.mean(mz_seq[tmp_group]))
-                int_seq_cen.append(np.sum(int_seq[tmp_group]))
-            else:
-                mz_seq_cen.append(mz_seq[i-1])
-                int_seq_cen.append(int_seq[i-1])
-            tmp_group = [i]
-    if len(tmp_group) > 1:
-        mz_seq_cen.append(np.mean(mz_seq[tmp_group]))
-        int_seq_cen.append(np.sum(int_seq[tmp_group]))
-    else:
-        mz_seq_cen.append(mz_seq[-1])
-        int_seq_cen.append(int_seq[-1])
-    return np.array(mz_seq_cen), int_seq_cen
+    
+    mz_seq = list(mz_seq)
+    int_seq = list(int_seq)
+    for i in tmp[::-1]:
+        int_seq[i] += int_seq[i+1]
+        mz_seq[i] = (mz_seq[i]*int_seq[i] + mz_seq[i+1]*int_seq[i+1]) / (int_seq[i] + int_seq[i+1])
+        mz_seq.pop(i+1)
+        int_seq.pop(i+1)
+
+    return mz_seq, int_seq
 
 
-def read_raw_file_to_obj(file_name, params=None, int_tol=0.0):
+def read_raw_file_to_obj(file_name, params=None, int_tol=0.0, print_summary=False):
     """
     Read a raw file to a MSData object.
     It's a useful function for data visualization or brief data analysis.
@@ -921,5 +941,8 @@ def read_raw_file_to_obj(file_name, params=None, int_tol=0.0):
     if int_tol > 0:
         d.params.int_tol = int_tol
         d.drop_ion_by_int()
+    
+    if print_summary:
+        print("Number of MS1 scans: " + str(len(d.ms1_idx)), "Number of MS2 scans: " + str(len(d.ms2_idx)))
     
     return d

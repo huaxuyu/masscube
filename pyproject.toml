@@ -35,6 +35,7 @@ dependencies = [
 
 [project.scripts]
 untargeted-metabolomics = "masscube:untargeted_metabolomics_workflow"
+build-sample-table = "masscube:generate_sample_table
 
 [project.urls]
 "Homepage" = "https://github.com/Waddlessss/masscube"

@@ -73,11 +73,15 @@ def calculate_isotope_distribution(formula, mass_resolution=10000, intensity_thr
     return mass, abundance
 
 
-def generate_sample_table(path):
+def generate_sample_table(path=None):
+
+    # if path is not specified, use the current working directory
+    if path is None:
+        path = os.getcwd()
 
     filenames = [f[:-5] for f in os.listdir(path) if f.lower().endswith('.mzml') or f.lower().endswith('.mzxml')]
     filenames = sorted(filenames)
-    sample_table = pd.DataFrame({'Sample': filenames})
+    sample_table = pd.DataFrame({'Sample': filenames, "Groups": [None]*len(filenames)})
 
     sample_table.to_csv(os.path.join(path, 'sample_table.csv'), index=False)
 

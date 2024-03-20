@@ -56,7 +56,7 @@ def roi_finder(d):
         # Loop over all current rois
         for i, roi in enumerate(rois):
             
-            mz_diff = np.abs(roi.mz - s.mz_seq)
+            mz_diff = np.abs(roi.mz_seq[-1] - s.mz_seq)
 
             min_idx = np.argmin(mz_diff)
 

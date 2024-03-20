@@ -23,7 +23,7 @@ from .feature_table_utils import calculate_fill_percentage
 
 
 # Untargeted feature detection for a single file
-def feature_detection(file_name, params=None, ann_model=None, annotation=False):
+def feature_detection(file_name, params=None, ann_model=None, annotation=False, cut_roi=True):
     """
     Untargeted feature detection from a single file (.mzML or .mzXML).
 
@@ -63,7 +63,8 @@ def feature_detection(file_name, params=None, ann_model=None, annotation=False):
     d.find_rois()
 
     # cut ROIs
-    d.cut_rois()
+    if cut_roi:
+        d.cut_rois()
 
     # merge ROIs to group noise peaks
     d.merge_rois()
