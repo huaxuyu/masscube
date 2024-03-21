@@ -1,3 +1,28 @@
+Metadata-Version: 2.1
+Name: masscube
+Version: 0.0.5
+Summary: Accurate and fast data processing for metabolomics
+Author-email: Huaxu Yu <yhxchem@outlook.com>
+Maintainer-email: Huaxu Yu <yhxchem@outlook.com>
+Project-URL: Homepage, https://github.com/huaxuyu/masscube
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: numpy>=1.24
+Requires-Dist: pandas>=2.0
+Requires-Dist: pyteomics>=4.6
+Requires-Dist: scipy>=1.10.1
+Requires-Dist: tensorflow>=2.12.0
+Requires-Dist: tqdm>=4.65.0
+Requires-Dist: lxml>=4.9.2
+Requires-Dist: matplotlib
+Requires-Dist: ms_entropy>=1.1.1
+Requires-Dist: networkx
+Requires-Dist: scikit-learn
+
 # MassCube
 
 [![Generic badge](https://img.shields.io/badge/masscube-ver_0.0.16-%3CCOLOR%3E.svg)](https://github.com/huaxuyu/masscube/)

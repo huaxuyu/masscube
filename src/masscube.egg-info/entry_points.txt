@@ -1,0 +1,3 @@
+[console_scripts]
+build-sample-table = masscube:generate_sample_table
+untargeted-metabolomics = masscube:untargeted_metabolomics_workflow
