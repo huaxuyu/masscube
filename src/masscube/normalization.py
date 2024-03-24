@@ -113,6 +113,9 @@ def sample_normalization(feature_table, individual_sample_groups, method='pqn'):
 
     array = sample_normalization_by_factors(array, v)
 
-    feature_table.iloc[:, -total_number:-total_number+array.shape[1]] = array
+    if blank_number == 0:
+        feature_table.iloc[:, -total_number:] = array
+    else:
+        feature_table.iloc[:, -total_number:-total_number+array.shape[1]] = array
 
     return feature_table

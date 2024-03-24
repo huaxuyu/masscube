@@ -137,7 +137,10 @@ class Params:
         # STEP 4: read the sample table and allocate the sample groups
         #         reorder the samples by qc, sample, and blank
         sample_table = pd.read_csv(os.path.join(self.project_dir, "sample_table.csv"))
-        sample_table.iloc[:, 1] = sample_table.iloc[:, 1].str.lower()
+        try:
+            sample_table.iloc[:, 1] = sample_table.iloc[:, 1].str.lower()
+        except:
+            raise ValueError("The second column of the sample table is not correct.")
         sample_groups_pre = list(set(sample_table.iloc[:, 1]))
         sample_groups = [i for i in sample_groups_pre if i not in ["qc", "blank"]]
         self.sample_group_num = len(sample_groups)
@@ -146,8 +149,8 @@ class Params:
         if "blank" in sample_groups_pre:
             sample_groups = sample_groups + ["blank"]
 
-        sample_table_new = sample_table[sample_table.iloc[:, 1].str.contains("qc")]
-        for i in range(1,len(sample_groups)):
+        sample_table_new = pd.DataFrame(columns=sample_table.columns)
+        for i in range(len(sample_groups)):
             sample_table_new = pd.concat([sample_table_new, sample_table[sample_table.iloc[:, 1].str.contains(sample_groups[i])]])
         self.sample_names = list(sample_table_new.iloc[:, 0])
         self.sample_groups = sample_groups

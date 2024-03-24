@@ -5,7 +5,7 @@ from scipy.stats import ttest_ind, false_discovery_control, f_oneway
 import numpy as np
 import os
 
-def statistical_analysis(feature_table, params):
+def statistical_analysis(feature_table, params, before_norm=False):
     """
     1. Univariate analysis (t-test and p-value adjustment for two groups; ANOVA and p-value adjustment for multiple groups)
     2. Multivariate analysis (PCA)
@@ -30,12 +30,10 @@ def statistical_analysis(feature_table, params):
 
     if s == 2:
         p_values = t_test(data_array, v)
-        # feature_table['t_test_p_adjusted'] = adjusted_p_values
     elif s > 2:
         p_values = anova(data_array, v)
-        # feature_table['ANOVA_p_adjusted'] = adjusted_p_values
 
-    else:
+    elif s == 1 and before_norm==False:
         print("No statistical analysis is performed since only one group is found.")
 
     # for PCA analysis, the QC samples should also be included
@@ -43,7 +41,7 @@ def statistical_analysis(feature_table, params):
     data_array = feature_table[v].values
     v = np.array([i for i in params.individual_sample_groups if i not in ['blank']])
 
-    pca_analysis(data_array, v, output_dir=params.statistics_dir)
+    pca_analysis(data_array, v, output_dir=params.statistics_dir, before_norm=before_norm)
 
     if s == 2:
         feature_table['t_test_p'] = p_values
@@ -80,7 +78,11 @@ def t_test(data_array, individual_sample_groups):
     v2 = individual_sample_groups == sample_groups[1]
 
     for i in range(len(data_array)):
-        p_values.append(ttest_ind(data_array[i, v1], data_array[i, v2]).pvalue)
+        # if all values are equal, the p-value will be 1
+        if np.all(data_array[i] == data_array[i, 0]):
+            p_values.append(1)
+        else:
+            p_values.append(ttest_ind(data_array[i, v1], data_array[i, v2]).pvalue)
     
     # adjusted_p_values = false_discovery_control(p_values)
 
@@ -111,7 +113,10 @@ def anova(data_array, individual_sample_groups):
         return None
     
     for i in range(len(data_array)):
-        p_values.append(f_oneway(*[data_array[i, individual_sample_groups == g] for g in sample_groups]).pvalue)
+        if np.all(data_array[i] == data_array[i, 0]):
+            p_values.append(1)
+        else:
+            p_values.append(f_oneway(*[data_array[i, individual_sample_groups == g] for g in sample_groups]).pvalue)
     
     # adjusted_p_values = false_discovery_control(p_values)
 
@@ -125,7 +130,7 @@ import matplotlib.transforms as transforms
 from .visualization import plot_pca
 
 
-def pca_analysis(data_array, individual_sample_groups, scaling=True, transformation=True, gapFillingRatio=0.2, output_dir=None):
+def pca_analysis(data_array, individual_sample_groups, scaling=True, transformation=True, gapFillingRatio=0.2, output_dir=None, before_norm=False):
     """
     Principal component analysis (PCA) analysis.
 
@@ -161,7 +166,7 @@ def pca_analysis(data_array, individual_sample_groups, scaling=True, transformat
 
     # scaling
     if scaling:
-        X = (X - np.mean(X, axis=0)) / np.std(X, axis=0)
+        X = (X - np.mean(X, axis=1).reshape(-1, 1)) / np.std(X, axis=1).reshape(-1, 1)
     
     # PCA analysis
     X = X.transpose()
@@ -172,6 +177,11 @@ def pca_analysis(data_array, individual_sample_groups, scaling=True, transformat
     vecPC2 = pca.transform(X)[:,1]
 
     if output_dir is not None:
-        output_dir = os.path.join(output_dir, "PCA.png")
+        if before_norm:
+            output_dir = os.path.join(output_dir, "PCA_before_normalization.png")
+        else:
+            output_dir = os.path.join(output_dir, "PCA.png")
 
     plot_pca(vecPC1, vecPC2, var_PC1, var_PC2, individual_sample_groups, output_dir)
+
+    return vecPC1, vecPC2, var_PC1, var_PC2

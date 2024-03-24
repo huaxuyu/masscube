@@ -89,6 +89,7 @@ def feature_annotation(feature_table: pd.DataFrame, parameters):
             feature_table.loc[i, 'InChIKey'] = matched['inchikey'] if 'inchikey' in matched else None
             feature_table.loc[i, 'matched_MS2'] = _convert_peaks_to_string(matched['peaks'])
             feature_table.loc[i, 'formula'] = matched['formula'] if 'formula' in matched else None
+            feature_table.loc[i, 'adduct'] = matched['precursor_type']
         else:
             entropy_similarity = entropy_search.hybrid_search(precursor_mz=precursor_mz, peaks=peaks, ms1_tolerance_in_da=parameters.mz_tol_ms1, 
                                                               ms2_tolerance_in_da=parameters.mz_tol_ms2)

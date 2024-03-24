@@ -11,8 +11,6 @@ from tqdm import tqdm
 from .visualization import mirror_ms2_db
 from .raw_data_utils import read_raw_file_to_obj
 
-from time import time
-
 
 def feature_alignment(path, parameters):
     """
@@ -53,8 +51,7 @@ def feature_alignment(path, parameters):
             continue
         
         # read feature table
-        current_table = pd.read_csv(csv_file_names[i])
-        # current_table = current_table[current_table["MS2"].notna()|(current_table["length"] > parameters.min_ion_num)|(current_table["peak_height"] > parameters.int_tol*3)]
+        current_table = pd.read_csv(csv_file_names[i], low_memory=False)
         current_table = current_table[current_table["MS2"].notna()|(current_table["peak_height"] > parameters.int_tol*3)]
         # sort current table by peak height from high to low
         current_table = current_table.sort_values(by="peak_height", ascending=False)
@@ -185,7 +182,7 @@ def gap_filling(feature_table, parameters, mode='forced_peak_picking', fill_perc
                 d = read_raw_file_to_obj(matched_raw_file_name, int_tol=parameters.int_tol)
                 for i in range(len(feature_table)):
                     if pd.isna(feature_table.loc[i, file_name]):
-                        _, eic_int, _, _ = d.get_eic_data(feature_table.loc[i, "m/z"], feature_table.loc[i, "RT"], parameters.align_mz_tol, parameters.align_rt_tol)
+                        _, eic_int, _, _ = d.get_eic_data(feature_table.loc[i, "m/z"], feature_table.loc[i, "RT"], parameters.align_mz_tol, 0.05)
                         feature_table.loc[i, file_name] = np.max(eic_int)
     return feature_table
 

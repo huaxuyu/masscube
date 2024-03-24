@@ -214,6 +214,7 @@ def plot_ms2_matching_from_feature_table(feature_table, params=None, output_dir=
     score = list(sub_feature_table["similarity"])
     mz = list(sub_feature_table["m/z"])
     annotations = list(sub_feature_table["annotation"])
+    id = list(sub_feature_table["ID"])
 
     if output_dir is None and params is not None:
         output_dir = params.ms2_matching_dir
@@ -225,7 +226,11 @@ def plot_ms2_matching_from_feature_table(feature_table, params=None, output_dir=
         peaks1 = _extract_peaks_from_string(ms2[i])
         peaks2 = _extract_peaks_from_string(matched_ms2[i])
 
-        output = os.path.join(output_dir, "{}.png".format(annotations[i]))
+        a = annotations[i].replace("/", "_")
+        a = a.replace(":", "_")
+        a = a.replace(";", "_")
+        a = "ID" + "_" + str(id[i]) + "_" + a
+        output = os.path.join(output_dir, "{}.png".format(a))
         mirror_ms2(mz[i], mz[i], peaks1, peaks2, annotations[i], score[i], output)
 
 
@@ -240,17 +245,17 @@ def plot_pca(vecPC1, vecPC2, var_PC1, var_PC2, group_names, output_dir=None):
         confidence_ellipse(vecPC1[idxs], vecPC2[idxs], ax, edgecolor='black', facecolor=color, alpha=0.1, zorder=1, linewidth=1)
         ax.scatter(
             vecPC1[idxs], vecPC2[idxs], label=group,
-            s=300, color=color, alpha=0.8
+            s=300, color=color, alpha=0.3
         )
     for axis in ['top','bottom','left','right']:
         ax.spines[axis].set_linewidth(2)
     ax.tick_params(width=2, length=8) 
 
-    plt.xticks(np.arange(-40, 60, 20), fontname='Arial', fontsize=20)
-    plt.yticks(np.arange(-40, 60, 20), fontname='Arial', fontsize=20)
-    plt.grid(linestyle=':')
     plt.xlabel("PC 1 ({:.1f} %)".format(var_PC1*100), fontname='Arial', fontsize=30, labelpad=25)
     plt.ylabel("PC 2 ({:.1f} %)".format(var_PC2*100), fontname='Arial', fontsize=30, labelpad=25)
+    plt.xticks(fontname='Arial', fontsize=24)
+    plt.yticks(fontname='Arial', fontsize=24)
+    plt.grid(linestyle=':')
     plt.legend(fontsize=20, loc='upper right', frameon=False)
     plt.rcParams.update({'font.size': 24})
 

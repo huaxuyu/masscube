@@ -4,7 +4,6 @@
 
 # Import modules
 import numpy as np
-from tqdm import tqdm
 from scipy.signal import argrelextrema
 from ms_entropy import calculate_entropy_similarity
 import copy
@@ -43,7 +42,7 @@ def roi_finder(d):
     last_rt = fs.rt
 
     # Loop over all MS1 scans
-    for ms1_idx in tqdm(d.ms1_idx[1:]):
+    for ms1_idx in d.ms1_idx[1:]:
 
         s = d.scans[ms1_idx]    # The current MS1 scan
 
@@ -57,7 +56,6 @@ def roi_finder(d):
         for i, roi in enumerate(rois):
             
             mz_diff = np.abs(roi.mz_seq[-1] - s.mz_seq)
-
             min_idx = np.argmin(mz_diff)
 
             if mz_diff[min_idx] < d.params.mz_tol_ms1:
@@ -151,7 +149,7 @@ def find_roi_cut(roi, params):
                     ms2_ref = best_ms2s[i]
                 else:
                     score = calculate_entropy_similarity(ms2_ref.peaks, best_ms2s[i].peaks)
-                    if score < params.ms2_sim_tol:
+                    if score < 0.7:
                         final_cut_positions.append(cut_positions[i-1])
                         ms2_ref = best_ms2s[i]
                     else:

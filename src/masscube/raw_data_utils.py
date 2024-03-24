@@ -47,7 +47,7 @@ class MSData:
         self.roi_rt_seq = None      # Retention time of all ROIs
 
 
-    def read_raw_data(self, file_name, params):
+    def read_raw_data(self, file_name, params, centroid=True):
         """
         Function to read raw data to MS1 and MS2 (if available)
         (supported by pyteomics package).
@@ -70,17 +70,17 @@ class MSData:
 
             if ext.lower() == ".mzml":
                 with mzml.MzML(file_name) as reader:
-                    self.extract_scan_mzml(reader)
+                    self.extract_scan_mzml(reader, centroid)
             elif ext.lower() == ".mzxml":
                 with mzxml.MzXML(file_name) as reader:
-                    self.extract_scan_mzxml(reader)
+                    self.extract_scan_mzxml(reader, centroid)
             else:
                 print("Unsupported raw data format. Raw data must be in mzML or mzXML.")
         else:
             print("File does not exist.")
 
 
-    def extract_scan_mzml(self, spectra):
+    def extract_scan_mzml(self, spectra, centroid=True):
         """
         Function to extract all scans and convert them to Scan objects.
 
@@ -113,7 +113,8 @@ class MSData:
                     temp_scan = Scan(level=1, scan=idx, rt=rt)
                     mz_array = spec['m/z array']
                     int_array = spec['intensity array']
-                    mz_array, int_array = _centroid(mz_array, int_array)
+                    if centroid:
+                        mz_array, int_array = _centroid(mz_array, int_array)
 
                     temp_scan.add_info_by_level(mz_seq=mz_array, int_seq=int_array)
                     self.ms1_idx.append(idx)
@@ -134,7 +135,7 @@ class MSData:
                 idx += 1
 
 
-    def extract_scan_mzxml(self, spectra):
+    def extract_scan_mzxml(self, spectra, centroid=True):
         """
         Function to extract all scans and convert them to Scan objects.
 
@@ -164,7 +165,8 @@ class MSData:
                     temp_scan = Scan(level=1, scan=idx, rt=rt)
                     mz_array = spec['m/z array']
                     int_array = spec['intensity array']
-                    mz_array, int_array = _centroid(mz_array, int_array)
+                    if centroid:
+                        mz_array, int_array = _centroid(mz_array, int_array)
 
                     temp_scan.add_info_by_level(mz_seq=mz_array, int_seq=int_array)
                     self.ms1_idx.append(idx)
@@ -809,7 +811,7 @@ class Scan:
         plt.show()
 
 
-def _clean_ms2(ms2, offset=0):
+def _clean_ms2(ms2, offset=2):
     """
     A function to clean MS/MS by
     1. Drop ions with m/z > (precursor_mz - offset)   
@@ -911,15 +913,15 @@ def _centroid(mz_seq, int_seq, centroiding_mz_tol=0.005):
     mz_seq = list(mz_seq)
     int_seq = list(int_seq)
     for i in tmp[::-1]:
-        int_seq[i] += int_seq[i+1]
         mz_seq[i] = (mz_seq[i]*int_seq[i] + mz_seq[i+1]*int_seq[i+1]) / (int_seq[i] + int_seq[i+1])
+        int_seq[i] += int_seq[i+1]
         mz_seq.pop(i+1)
         int_seq.pop(i+1)
 
-    return mz_seq, int_seq
+    return np.array(mz_seq), int_seq
 
 
-def read_raw_file_to_obj(file_name, params=None, int_tol=0.0, print_summary=False):
+def read_raw_file_to_obj(file_name, params=None, int_tol=0.0, centroid=True, print_summary=False):
     """
     Read a raw file to a MSData object.
     It's a useful function for data visualization or brief data analysis.
@@ -928,6 +930,21 @@ def read_raw_file_to_obj(file_name, params=None, int_tol=0.0, print_summary=Fals
     ----------
     file_name : str
         The file name of the raw file.
+    params : Params object
+        A Params object that contains the parameters.
+    int_tol : float
+        Intensity tolerance for dropping ions.
+    centroid : bool
+        True: centroid the raw data.
+        False: do not centroid the raw data.
+    print_summary : bool
+        True: print the summary of the raw data.
+        False: do not print the summary of the raw data.
+
+    Returns
+    -------
+    d : MSData object
+        A MSData object.
     """
 
     # create a MSData object
@@ -936,7 +953,7 @@ def read_raw_file_to_obj(file_name, params=None, int_tol=0.0, print_summary=Fals
     # read raw data
     if params is None:
         params = Params()
-    d.read_raw_data(file_name, params)
+    d.read_raw_data(file_name, params, centroid)
 
     if int_tol > 0:
         d.params.int_tol = int_tol

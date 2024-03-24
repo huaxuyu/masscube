@@ -4,10 +4,9 @@
 
 # Import modules
 import os
-from keras.models import load_model
-import pandas as pd
 import multiprocessing
 import pickle
+from copy import deepcopy
 
 from .raw_data_utils import MSData
 from .params import Params, find_ms_info
@@ -118,13 +117,15 @@ def untargeted_metabolomics_workflow(path=None):
     raw_file_names = [f for f in raw_file_names if f.lower().endswith(".mzml") or f.lower().endswith(".mzxml")]
     raw_file_names = [os.path.join(params.sample_dir, f) for f in raw_file_names]
 
-    # process files by multiprocessing
+    # process files by multiprocessing, each batch contains 300 files
     print("Processing files by multiprocessing...")
     workers = int(multiprocessing.cpu_count() * 0.8)
-    p = multiprocessing.Pool(workers)
-    p.starmap(feature_detection, [(f, params) for f in raw_file_names]) 
-    p.close()
-    p.join()
+    for i in range(0, len(raw_file_names), 300):
+        print("Processing files from " + str(i) + " to " + str(i+300))
+        p = multiprocessing.Pool(workers)
+        p.starmap(feature_detection, [(f, params) for f in raw_file_names[i:i+300]])
+        p.close()
+        p.join()
 
     # feature alignment
     print("Aligning features...")
@@ -147,12 +148,14 @@ def untargeted_metabolomics_workflow(path=None):
     # normalization
     if params.run_normalization:
         feature_table.to_csv(os.path.join(params.project_dir, "aligned_feature_table_before_normalization.csv"), index=False)
+        feature_table_before_normalization = deepcopy(feature_table)
         print("Running normalization...")
         feature_table = sample_normalization(feature_table, params.individual_sample_groups, params.normalization_method)
 
     # statistical analysis
     if params.run_statistics:
         print("Running statistical analysis...")
+        feature_table_before_normalization = statistical_analysis(feature_table_before_normalization, params, before_norm=True)
         feature_table = statistical_analysis(feature_table, params)
 
     # network analysis
