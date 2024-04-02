@@ -54,14 +54,13 @@ def random_color_generator():
 _color_list = ["red", "blue", "green", "orange", "purple", "brown", "pink", "gray", "olive", "cyan"]
 
 
-def plot_roi(d, roi, mz_tol=0.005, rt_tol=1.0, output=False, break_scan=None, label_quality=True):
+def plot_roi(d, roi, mz_tol=0.005, rt_tol=1.0, output=False, break_scan=None):
     """
     Function to plot EIC of a target m/z.
     """
-    if rt_tol < roi.rt_seq[-1] - roi.rt or rt_tol < roi.rt - roi.rt_seq[0]:
-        rt_tol = max(roi.rt_seq[-1] - roi.rt, roi.rt - roi.rt_seq[0]) + 1.0
+    rt_range = [roi.rt_seq[0]-rt_tol, roi.rt_seq[-1]+rt_tol]
     # get the eic data
-    eic_rt, eic_int, _, eic_scan_idx = d.get_eic_data(target_mz=roi.mz, target_rt=roi.rt, mz_tol=mz_tol, rt_tol=rt_tol)
+    eic_rt, eic_int, _, eic_scan_idx = d.get_eic_data(target_mz=roi.mz, rt_range=rt_range, mz_tol=mz_tol)
     idx_start = np.where(eic_scan_idx == roi.scan_idx_seq[0])[0][0]
     idx_end = np.where(eic_scan_idx == roi.scan_idx_seq[-1])[0][0] + 1
 
@@ -87,8 +86,7 @@ def plot_roi(d, roi, mz_tol=0.005, rt_tol=1.0, output=False, break_scan=None, la
     plt.xticks(fontsize=14, fontname='Arial')
     plt.yticks(fontsize=14, fontname='Arial')
     plt.text(eic_rt[0], np.max(eic_int)*0.95, "m/z = {:.4f}".format(roi.mz), fontsize=12, fontname='Arial')
-    if label_quality:
-        plt.text(eic_rt[0] + (eic_rt[-1]-eic_rt[0])*0.2, np.max(eic_int)*0.95, "Quality = {}".format(roi.quality), fontsize=12, fontname='Arial', color="blue")
+    plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.2, np.max(eic_int)*0.95, "G-score = {:.2f}".format(roi.gaussian_similarity), fontsize=12, fontname='Arial', color="blue")
     plt.text(eic_rt[0] + (eic_rt[-1]-eic_rt[0])*0.6, np.max(eic_int)*0.95, d.file_name, fontsize=10, fontname='Arial', color="gray")
 
     if output:

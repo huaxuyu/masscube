@@ -343,7 +343,6 @@ class AlignedFeature:
         self.best_ms2 = None                # the best MS2
         self.reference_file = None          # the reference file
         self.highest_roi_intensity = 0.0    # the highest peak height
-        self.quality = "good"               # quality of the feature
 
         # annotation by MS2 matching
         self.annotation = None              # annotated compound name
@@ -484,7 +483,6 @@ class AlignedFeature:
         self.rt_seq = np.array(self.rt_seq)
         self.mz = np.mean(self.mz_seq[self.mz_seq > 0])
         self.rt = np.mean(self.rt_seq[self.rt_seq > 0])
-        self.quality = self.highest_roi.quality
 
         self.choose_best_ms2()
 
@@ -546,7 +544,7 @@ def output_aligned_features(feature_list, file_names, path, int_values="peak_hei
 
         temp = [idx+1, f.mz, f.rt, ms2, f.charge_state, f.is_isotope, iso_dist,
                 f.is_in_source_fragment, f.adduct_type, f.annotation, f.annotation_mode,
-                f.similarity, f.matched_peak_number, f.smiles, f.inchikey, f.quality]
+                f.similarity, f.matched_peak_number, f.smiles, f.inchikey]
                 
         temp.extend(int_seq)
 
@@ -555,7 +553,7 @@ def output_aligned_features(feature_list, file_names, path, int_values="peak_hei
     # convert result to a pandas dataframe
     columns = ["id", "mz", "rt", "ms2", "charge_state", "is_isotope", "isotope_dist",
                 "in_source_fragment", "adduct_type", "annotation", "annotation mode", 
-                "similarity_score", "matched_peak_number", "smiles", "inchikey", "quality"]
+                "similarity_score", "matched_peak_number", "smiles", "inchikey"]
 
     file_names_output = [name.split("/")[-1].split(".")[0] for name in file_names]
 

@@ -15,7 +15,6 @@ Requires-Dist: numpy>=1.24
 Requires-Dist: pandas>=2.0
 Requires-Dist: pyteomics>=4.6
 Requires-Dist: scipy>=1.10.1
-Requires-Dist: tensorflow>=2.12.0
 Requires-Dist: tqdm>=4.65.0
 Requires-Dist: lxml>=4.9.2
 Requires-Dist: matplotlib

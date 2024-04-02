@@ -10,7 +10,6 @@ from copy import deepcopy
 
 from .raw_data_utils import MSData
 from .params import Params, find_ms_info
-from .feature_evaluation import predict_quality, load_ann_model
 from .feature_grouping import annotate_isotope, annotate_adduct, annotate_in_source_fragment
 from .alignment import feature_alignment, gap_filling
 from .annotation import feature_annotation, annotate_rois
@@ -22,7 +21,7 @@ from .feature_table_utils import calculate_fill_percentage
 
 
 # Untargeted feature detection for a single file
-def feature_detection(file_name, params=None, ann_model=None, annotation=False, cut_roi=True):
+def feature_detection(file_name, params=None, cal_gss=True, annotation=False):
     """
     Untargeted feature detection from a single file (.mzML or .mzXML).
 
@@ -57,28 +56,18 @@ def feature_detection(file_name, params=None, ann_model=None, annotation=False, 
 
     # drop ions by intensity (defined in params.int_tol)
     d.drop_ion_by_int()
-
     # detect region of interests (ROIs)
     d.find_rois()
 
     # cut ROIs
-    if cut_roi:
-        d.cut_rois()
-
-    # merge ROIs to group noise peaks
-    d.merge_rois()
+    d.cut_rois()
 
     # label short ROIs, find the best MS2, and sort ROIs by m/z
-    d.summarize_roi()
-
-    # predict feature quality
-    if ann_model is None:
-        ann_model = load_ann_model()
-    predict_quality(d, ann_model)
+    d.summarize_roi(cal_gss=cal_gss)
 
     print("Number of extracted ROIs: " + str(len(d.rois)))
 
-    # annotate isotopes, adducts, and in-source fragments
+    # # annotate isotopes, adducts, and in-source fragments
     annotate_isotope(d)
     annotate_in_source_fragment(d)
     annotate_adduct(d)

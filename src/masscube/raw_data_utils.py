@@ -7,12 +7,11 @@
 from pyteomics import mzml, mzxml
 import numpy as np
 import os
-from . import peak_detect
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from .feature_evaluation import calculate_gaussian_similarity
 from .params import Params
+from .peak_detect import find_rois, cut_roi
 
 
 class MSData:
@@ -212,66 +211,23 @@ class MSData:
             A Params object that contains the parameters.
         """
 
-        self.rois = peak_detect.roi_finder(self)
+        self.rois = find_rois(self)
     
 
-    def cut_rois(self, return_cut_rois=False):
+    def cut_rois(self):
         """
         Function to cut ROI into smaller pieces.
         """
 
-        small_rois = []
-        to_be_removed = []
-
-        pairs = []
-        for i, roi in enumerate(self.rois):
-            
-            positions = peak_detect.find_roi_cut(roi, self.params)
-            
-            if positions is not None:
-
-                # append each item in a list to small_rois
-                small_rois_tmp = peak_detect.roi_cutter(roi, positions)
-                small_rois.extend(small_rois_tmp)
-                to_be_removed.append(i)
-
-                pairs.append([roi, small_rois_tmp])
-        
-        # remove the original rois
-        for i in sorted(to_be_removed, reverse=True):
-            del self.rois[i]
-
-        # append the small rois to the original rois
-        self.rois.extend(small_rois)
-
-        if return_cut_rois:
-            return pairs
-    
-
-    def merge_rois(self):
-        """
-        Function to merge ROIs.
-        """
-
+        self.rois = [cut_roi(r, int_tol=self.params.int_tol) for r in self.rois]
+        tmp = []
         for roi in self.rois:
-            roi.sum_roi()
-        # sort rois by m/z
-        self.rois = sorted(self.rois, key=lambda x: x.mz)
+            tmp.extend(roi)
 
-        mz_arr = np.array([roi.mz for roi in self.rois])
-        grouped_arr = _group_by_threshold(mz_arr, 0.003)
-
-        merged_rois = []
-        for g in grouped_arr:
-            if len(g) == 1:
-                merged_rois.append(self.rois[g[0]])
-            else:
-                _merge_roi(self, g, merged_rois)
-
-        self.rois = merged_rois
+        self.rois = tmp
 
 
-    def summarize_roi(self):
+    def summarize_roi(self, cal_gss=True):
         """
         Function to process ROIs.
 
@@ -282,20 +238,7 @@ class MSData:
         """      
 
         for roi in self.rois:
-            roi.sum_roi()
-            roi.int_seq = np.array(roi.int_seq)
-            
-            # For long ROIs: further detect the local maxima
-            if roi.length < self.params.min_ion_num:
-                roi.quality = 'short'
-            else:
-                roi.quality = 'good'
-                roi.apexes = peak_detect.apex_detection(roi.rt_seq, roi.int_seq)
-            
-            roi.gaussian_similarity = calculate_gaussian_similarity(roi.rt_seq, roi.int_seq)
-
-            # find the best MS2
-            roi.find_best_ms2()
+            roi.sum_roi(cal_gss=cal_gss)
 
         # sort rois by m/z
         self.rois.sort(key=lambda x: x.mz)
@@ -303,10 +246,24 @@ class MSData:
         # index the rois
         for idx in range(len(self.rois)):
             self.rois[idx].id = idx
-        
+
         # extract mz and rt of all rois for further use (feature grouping)
         self.roi_mz_seq = np.array([roi.mz for roi in self.rois])
         self.roi_rt_seq = np.array([roi.rt for roi in self.rois])
+
+        # allocate ms2 to rois
+        for i in self.ms2_idx:
+            idx = np.where(np.abs(self.roi_mz_seq - self.scans[i].precursor_mz) < self.params.mz_tol_ms2)[0]
+            for j in idx:
+                if self.rois[j].rt_seq[0] < self.scans[i].rt < self.rois[j].rt_seq[-1]:
+                    self.rois[j].ms2_seq.append(self.scans[i])
+                    break
+
+        # find best ms2 for each roi
+        for roi in self.rois:
+            if len(roi.ms2_seq) > 0:
+                roi.best_ms2 = find_best_ms2(roi.ms2_seq)
+        
     
     def drop_rois_without_ms2(self):
         """
@@ -394,8 +351,7 @@ class MSData:
                 apexes = apexes[:-1]
 
             temp = [roi.id, roi.mz.__round__(4), roi.rt.__round__(3), roi.length, roi.rt_seq[0],
-                    roi.rt_seq[-1], roi.peak_area, roi.peak_height,
-                    roi.top_average, apexes, roi.gaussian_similarity, roi.quality,
+                    roi.rt_seq[-1], roi.peak_area, roi.peak_height, roi.gaussian_similarity,
                     roi.charge_state, roi.is_isotope, str(roi.isotope_id_seq)[1:-1], iso_dist,
                     roi.is_in_source_fragment, roi.isf_parent_roi_id, str(roi.isf_child_roi_id)[1:-1],
                     roi.adduct_type, roi.adduct_parent_roi_id, str(roi.adduct_child_roi_id)[1:-1],
@@ -406,13 +362,10 @@ class MSData:
             result.append(temp)
 
         # convert result to a pandas dataframe
-        columns = [ "ID", "m/z", "RT", "length", "RT_start",
-                    "RT_end", "peak_area", "peak_height",
-                    "top_average", "apexes", "Gaussian_similarity",
-                    "peak_shape", "charge", "is_isotope", "isotope_IDs",
-                    "isotopes", "is_in_source_fragment",
-                    "ISF_parent_ID", "ISF_child_ID", "adduct",
-                    "adduct_base_ID", "adduct_other_ID"]
+        columns = [ "ID", "m/z", "RT", "length", "RT_start", "RT_end", "peak_area", "peak_height",
+                    "Gaussian_similarity", "charge", "is_isotope", "isotope_IDs", "isotopes", "is_in_source_fragment",
+                    "ISF_parent_ID", "ISF_child_ID", "adduct", "adduct_base_ID", "adduct_other_ID"]
+                    
         
         columns.extend(["MS2", "annotation", "formula", "similarity", "matched_peak_number", "SMILES", "InChIKey"])
 
@@ -429,7 +382,7 @@ class MSData:
         df.to_csv(path, index=False)
     
 
-    def get_eic_data(self, target_mz, target_rt=None, mz_tol=0.005, rt_tol=0.3):
+    def get_eic_data(self, target_mz, target_rt=None, mz_tol=0.005, rt_tol=0.3, rt_range=None):
         """
         To get the EIC data of a target m/z.
 
@@ -461,10 +414,10 @@ class MSData:
         eic_mz = []
         eic_scan_idx = []
 
-        if target_rt is None:
-            rt_range = [0, np.inf]
-        else:
+        if target_rt is not None:
             rt_range = [target_rt - rt_tol, target_rt + rt_tol]
+        elif rt_range is None:
+            rt_range = [0, np.inf]
 
         for i in self.ms1_idx:
             if self.scans[i].rt > rt_range[0] and self.scans[i].rt < rt_range[1]:
@@ -638,7 +591,7 @@ class MSData:
             return eic_rt[np.argmax(eic_int)], np.max(eic_int), eic_scan_idx[np.argmax(eic_int)]
 
 
-    def plot_all_rois(self, output_path, mz_tol=0.01, rt_range=[0, np.inf], rt_window=None, quality=None):
+    def plot_all_rois(self, output_path, mz_tol=0.01, rt_range=[0, np.inf], rt_window=None):
         """
         Function to plot EIC of all ROIs.
         """
@@ -647,9 +600,6 @@ class MSData:
             output_path += "/"
 
         for idx, roi in enumerate(self.rois):
-
-            if quality and roi.quality != quality:
-                continue
 
             if rt_window is not None:
                 rt_range = [roi.rt_seq[0] - rt_window, roi.rt_seq[-1] + rt_window]
@@ -670,35 +620,12 @@ class MSData:
             plt.xticks(fontsize=14, fontname='Arial')
             plt.yticks(fontsize=14, fontname='Arial')
             plt.text(eic_rt[0], np.max(eic_int)*0.95, "m/z = {:.4f}".format(roi.mz), fontsize=12, fontname='Arial')
-            plt.text(eic_rt[0] + (eic_rt[-1]-eic_rt[0])*0.2, np.max(eic_int)*0.95, "Quality = {}".format(roi.quality), fontsize=12, fontname='Arial', color="blue")
             plt.text(eic_rt[0] + (eic_rt[-1]-eic_rt[0])*0.6, np.max(eic_int)*0.95, self.file_name, fontsize=10, fontname='Arial', color="gray")
 
             file_name = output_path + "roi{}_".format(idx) + str(roi.mz.__round__(4)) + ".png"
 
             plt.savefig(file_name, dpi=300, bbox_inches="tight")
             plt.close()
-    
-
-    def sum_roi_quality(self):
-        """
-        Function to calculate the sum of all ROI qualities.
-        """
-
-        counter1 = 0
-        counter2 = 0
-        counter3 = 0
-
-        for r in self.rois:
-            if r.quality == "good":
-                counter1 += 1
-            elif r.quality == "short":
-                counter2 += 1
-            elif r.quality == "bad peak shape":
-                counter3 += 1
-        
-        print("Number of good ROIs: " + str(counter1))
-        print("Number of short ROIs: " + str(counter2))
-        print("Number of bad peak shape ROIs: " + str(counter3))
 
 
 class Scan:
@@ -824,72 +751,6 @@ def _clean_ms2(ms2, offset=2):
         ms2.peaks = ms2.peaks[ms2.peaks[:, 1] > 0.01 * np.max(ms2.peaks[:, 1])]
 
 
-def _group_by_threshold(arr, threshold):
-    groups = []
-    current_group = [0]  # Start with the first element
-
-    for i in range(1, len(arr)):
-        if arr[i] - arr[i-1] < threshold:
-            current_group.append(i)
-        else:
-            groups.append(current_group)
-            current_group = [i]
-    groups.append(current_group)  # Add the last group
-    return groups
-
-
-def _merge_roi(d, g, merged_rois):
-
-    current_roi_group = [d.rois[g[i]] for i in range(len(g))]
-    # reorder currect roi group by retention time
-    current_roi_group = sorted(current_roi_group, key=lambda x: x.rt)
-    current_merged = [0]
-    check = False
-    if current_roi_group[0].peak_height > 3*d.params.int_tol:
-        check = True
-    for i in range(1, len(current_roi_group)):
-        if (current_roi_group[i].peak_height > 3*d.params.int_tol and check) or (current_roi_group[i].rt_seq[0] - current_roi_group[i-1].rt_seq[-1] > 0.5):
-            merged_rois.append(_connect_rois([current_roi_group[j] for j in current_merged]))
-            current_merged = [i]
-            if current_roi_group[i].peak_height > 3*d.params.int_tol:
-                check = True
-            else:
-                check = False
-            continue
-        current_merged.append(i)
-        if current_roi_group[i].peak_height > 3*d.params.int_tol:
-            check = True
-    merged_rois.append(_connect_rois([current_roi_group[j] for j in current_merged]))
-
-
-def _connect_rois(rois):
-    output = rois[0]
-    for i in range(1, len(rois)):
-        output.rt_seq.extend(rois[i].rt_seq)
-        output.int_seq.extend(rois[i].int_seq)
-        output.mz_seq.extend(rois[i].mz_seq)
-        output.ms2_seq.extend(rois[i].ms2_seq)
-        output.scan_idx_seq.extend(rois[i].scan_idx_seq)
-    
-    order = np.argsort(output.scan_idx_seq)
-    output.rt_seq = [output.rt_seq[i] for i in order]
-    output.int_seq = [output.int_seq[i] for i in order]
-    output.mz_seq = [output.mz_seq[i] for i in order]
-    output.scan_idx_seq = [output.scan_idx_seq[i] for i in order]
-        
-    i = len(output.scan_idx_seq) - 1
-
-    while i > 0:
-        if output.scan_idx_seq[i] == output.scan_idx_seq[i-1]:
-            output.scan_idx_seq.pop(i)
-            output.rt_seq.pop(i)
-            output.int_seq[i-1] += output.int_seq.pop(i)
-            output.mz_seq.pop(i)
-        i -= 1
-    output.merged = True
-    return output
-
-
 def _centroid(mz_seq, int_seq, centroiding_mz_tol=0.005):
     """
     Function to centroid the m/z and intensity sequences.
@@ -963,3 +824,18 @@ def read_raw_file_to_obj(file_name, params=None, int_tol=0.0, centroid=True, pri
         print("Number of MS1 scans: " + str(len(d.ms1_idx)), "Number of MS2 scans: " + str(len(d.ms2_idx)))
     
     return d
+
+
+def find_best_ms2(ms2_seq):
+    """
+    Function to find the best MS2 spectrum for a list of MS2 spectra.
+    """
+
+    if len(ms2_seq) > 0:
+        total_ints = [np.sum(ms2.peaks[:,1]) for ms2 in ms2_seq]
+        if np.max(total_ints) == 0:
+            return None
+        else:
+            return ms2_seq[max(range(len(total_ints)), key=total_ints.__getitem__)]
+    else:
+        return None
