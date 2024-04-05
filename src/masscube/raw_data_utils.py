@@ -343,16 +343,10 @@ class MSData:
                 for i in range(len(roi.best_ms2.peaks)):
                     ms2 += str(np.round(roi.best_ms2.peaks[i, 0], decimals=4)) + ";" + str(np.round(roi.best_ms2.peaks[i, 1], decimals=0)) + "|"
                 ms2 = ms2[:-1]
-            
-            apexes = ""
-            if len(roi.apexes) > 1 and len(roi.apexes) < 5:
-                for i in range(len(roi.apexes)):
-                    apexes += str(np.round(roi.apexes[i][0] , decimals=3)) + ";" + str(np.round(roi.apexes[i][1], decimals=4)) + "|"
-                apexes = apexes[:-1]
 
             temp = [roi.id, roi.mz.__round__(4), roi.rt.__round__(3), roi.length, roi.rt_seq[0],
-                    roi.rt_seq[-1], roi.peak_area, roi.peak_height, roi.gaussian_similarity,
-                    roi.charge_state, roi.is_isotope, str(roi.isotope_id_seq)[1:-1], iso_dist,
+                    roi.rt_seq[-1], roi.peak_area, roi.peak_height, roi.gaussian_similarity.__round__(2), 
+                    roi.noise_level.__round__(2), roi.charge_state, roi.is_isotope, str(roi.isotope_id_seq)[1:-1], iso_dist,
                     roi.is_in_source_fragment, roi.isf_parent_roi_id, str(roi.isf_child_roi_id)[1:-1],
                     roi.adduct_type, roi.adduct_parent_roi_id, str(roi.adduct_child_roi_id)[1:-1],
                     ]
@@ -363,7 +357,7 @@ class MSData:
 
         # convert result to a pandas dataframe
         columns = [ "ID", "m/z", "RT", "length", "RT_start", "RT_end", "peak_area", "peak_height",
-                    "Gaussian_similarity", "charge", "is_isotope", "isotope_IDs", "isotopes", "is_in_source_fragment",
+                    "Gaussian_similarity", "noise_level", "charge", "is_isotope", "isotope_IDs", "isotopes", "is_in_source_fragment",
                     "ISF_parent_ID", "ISF_child_ID", "adduct", "adduct_base_ID", "adduct_other_ID"]
                     
         
@@ -704,7 +698,7 @@ class Scan:
             print(self.peaks)
     
 
-    def plot_scan(self, mz_range=None):
+    def plot_scan(self, mz_range=None, return_data=False):
         """
         Function to plot a scan.
         
@@ -736,6 +730,9 @@ class Scan:
         plt.xticks(fontsize=14, fontname='Arial')
         plt.yticks(fontsize=14, fontname='Arial')
         plt.show()
+
+        if return_data:
+            return x, y
 
 
 def _clean_ms2(ms2, offset=2):

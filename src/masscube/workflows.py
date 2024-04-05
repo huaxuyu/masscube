@@ -65,7 +65,7 @@ def feature_detection(file_name, params=None, cal_gss=True, annotation=False):
     # label short ROIs, find the best MS2, and sort ROIs by m/z
     d.summarize_roi(cal_gss=cal_gss)
 
-    print("Number of extracted ROIs: " + str(len(d.rois)))
+    print("Number of detected features: " + str(len(d.rois)))
 
     # # annotate isotopes, adducts, and in-source fragments
     annotate_isotope(d)
@@ -110,7 +110,10 @@ def untargeted_metabolomics_workflow(path=None):
     print("Processing files by multiprocessing...")
     workers = int(multiprocessing.cpu_count() * 0.8)
     for i in range(0, len(raw_file_names), 300):
-        print("Processing files from " + str(i) + " to " + str(i+300))
+        if len(raw_file_names) - i < 300:
+            print("Processing files from " + str(i) + " to " + str(len(raw_file_names)))
+        else:
+            print("Processing files from " + str(i) + " to " + str(i+300))
         p = multiprocessing.Pool(workers)
         p.starmap(feature_detection, [(f, params) for f in raw_file_names[i:i+300]])
         p.close()

@@ -85,8 +85,8 @@ def feature_alignment(path, parameters):
                 # if the intensity is the largest, update the reference file
                 if current_table.loc[j, "peak_height"] > int_seq[idx]:
                     feature_table.iloc[idx, 3:10] = [current_table.loc[j, "adduct"], current_table.loc[j, "is_isotope"], 
-                                                     current_table.loc[j, "is_in_source_fragment"], current_table.loc[j, "peak_shape"], 
-                                                     current_table.loc[j, "Gaussian_similarity"], current_table.loc[j, "charge"], 
+                                                     current_table.loc[j, "is_in_source_fragment"], current_table.loc[j, "Gaussian_similarity"], 
+                                                     current_table.loc[j, "noise_level"], current_table.loc[j, "charge"], 
                                                      current_table.loc[j, "isotopes"]]
                     # only overwrite the MS2 if the current MS2 is not nan
                     if current_table.loc[j, "MS2"] == current_table.loc[j, "MS2"]:
@@ -111,7 +111,7 @@ def feature_alignment(path, parameters):
         feature_table.loc[last_file_feature_idx:a, "m/z"] = new_feature_table["m/z"]
         feature_table.loc[last_file_feature_idx:a, "RT"] = new_feature_table["RT"]
         feature_table.loc[last_file_feature_idx:a, "adduct"] = new_feature_table["adduct"]
-        feature_table.loc[last_file_feature_idx:a, "peak_shape"] = new_feature_table["peak_shape"]
+        feature_table.loc[last_file_feature_idx:a, "noise_level"] = new_feature_table["noise_level"]
         feature_table.loc[last_file_feature_idx:a, "Gaussian_similarity"] = new_feature_table["Gaussian_similarity"]
         feature_table.loc[last_file_feature_idx:a, "charge"] = new_feature_table["charge"]
         feature_table.loc[last_file_feature_idx:a, "isotopes"] = new_feature_table["isotopes"]
@@ -185,140 +185,6 @@ def gap_filling(feature_table, parameters, mode='forced_peak_picking', fill_perc
                         _, eic_int, _, _ = d.get_eic_data(feature_table.loc[i, "m/z"], feature_table.loc[i, "RT"], parameters.align_mz_tol, 0.05)
                         feature_table.loc[i, file_name] = np.max(eic_int)
     return feature_table
-
-
-def feature_alignment_object(path, parameters):
-    """
-    A function to align the features from individual files.
-
-    Parameters
-    ----------------------------------------------------------
-    d_list: list
-        A list of MS data to be aligned.
-    parameters: Params object
-        The parameters for alignment.
-
-    Returns
-    ----------------------------------------------------------
-    feature_table: DataFrame
-        The aligned feature table.
-    """
-
-    # STEP 1: get names of individual files (.csv)
-    csv_file_names = parameters.sample_names
-    csv_file_names = [f + ".csv" for f in csv_file_names]
-    csv_file_names = [os.path.join(path, name) for name in csv_file_names]
-
-    # STEP 2: initiate aligned features
-    feature_list = []
-
-    df = pd.read_csv(csv_file_names[0])
-    for i in range(len(df)):
-        feature = AlignedFeature()
-        feature.extend_feat_from_a_row(df.iloc[i])
-        feature_list.append(feature)
-
-    mz_tol = parameters.align_mz_tol
-    rt_tol = parameters.align_rt_tol
-
-    # STEP 3: read individual feature tables and align features
-    for i in tqdm(range(1, len(csv_file_names))):
-        # read feature table
-        df = pd.read_csv(csv_file_names[i])
-        # sort current table by peak height from high to low
-        df = df.sort_values(by="peak_height", ascending=False)
-
-        mz_seq = np.array([feat.mz for feat in feature_list])
-        rt_seq = np.array([feat.rt for feat in feature_list])
-        int_seq = np.array([feat.highest_roi_intensity for feat in feature_list])
-
-        unmatched_feat = np.ones(len(feature_list), dtype=bool)
-        # compare the m/z and RT of the features
-        for j in range(len(df)):
-            v = np.logical_and(np.abs(mz_seq - df.loc[j, "m/z"]) < mz_tol, np.abs(rt_seq - df.loc[j, "RT"]) < rt_tol)
-            # check if the feature is already in the aligned feature table using tolerance
-            # including parameters.align_mz_tol and parameters.align_rt_tol
-            v = np.where(np.logical_and(v, unmatched_feat))[0]
-            # if the feature is already in the aligned feature table, update the feature
-            if len(v) == 0:
-                feature = AlignedFeature()
-                feature.extend_feat_from_a_row(row=df.iloc[j], front_zeros=[0.0] * i)
-                feature_list.append(feature)
-                continue
-            
-            if len(v) > 1:
-                idx = v[np.argmax(int_seq[v])]
-            else:
-                idx = v[0]
-            
-            feature_list[idx].extend_feat_from_a_row(row=df.iloc[j])
-
-    feature_list.sort(key=lambda x: x.highest_roi_intensity, reverse=True)
-
-    return feature_list
-
-    # STEP 4: output the aligned feature table
-    output_aligned_features(feature_list, parameters.sample_names, parameters.project_dir, int_values="peak_height")
-    
-
-
-
-def feature_alignment_old(feature_list, d):
-    """
-    A function to correct the retention time (RT) of the MS data to be aligned.
-
-    Parameters
-    ----------------------------------------------------------
-    feature_list: list
-        A list of features to be aligned.
-    d: MSData
-        The MS data to be aligned.
-    """
-
-    # Initiate the aligned features using the first MS data if feature_list is empty
-    if len(feature_list) == 0:
-        for roi in d.rois:
-            aligned_feature = AlignedFeature()
-            aligned_feature.extend_feat(roi)
-            feature_list.append(aligned_feature)
-
-        # sort features in feature list by peak height from high to low
-        feature_list.sort(key=lambda x: x.highest_roi_intensity, reverse=True)
-        
-    else:
-        # get the number of features in the feature list
-        existed_file_num = len(feature_list[0].mz_seq)
-
-        mz_seq = np.array([roi.mz for roi in d.rois])
-        rt_seq = np.array([roi.rt for roi in d.rois])
-        int_seq = np.array([roi.peak_height for roi in d.rois])
-        labeled_roi = np.ones(len(d.rois), dtype=bool)
-
-        for feat in feature_list:
-            v = np.logical_and(np.abs(mz_seq - feat.mz) < d.params.align_mz_tol, np.abs(rt_seq - feat.rt) < d.params.align_rt_tol)
-            v = np.where(np.logical_and(v, labeled_roi))[0]
-
-            if len(v) == 0:
-                feat.extend_feat(roi=None)
-                continue
-
-            if len(v) > 1:
-                # select the one with the highest intensity
-                v = v[np.argmax(int_seq[v])]
-            else:
-                v = v[0]
-
-            feat.extend_feat(roi=d.rois[v])
-            labeled_roi[v] = False
-        
-        # For newly detected features, add them to the feature list
-        for i in range(len(labeled_roi)):
-            if labeled_roi[i]:
-                aligned_feature = AlignedFeature()
-                aligned_feature.extend_feat(roi=d.rois[i], front_zeros=[0.0] * existed_file_num)
-                feature_list.append(aligned_feature)
-        
-        feature_list.sort(key=lambda x: x.highest_roi_intensity, reverse=True)
 
 
 class AlignedFeature:
@@ -494,250 +360,83 @@ class AlignedFeature:
         self.adduct_type = self.highest_roi.adduct_type
 
 
-def summarize_aligned_features(feature_list):
-    """
-    A function to summarize the aligned features.
+# def summarize_aligned_features(feature_list):
+#     """
+#     A function to summarize the aligned features.
 
-    Parameters
-    ----------------------------------------------------------
-    feature_list: list
-        A list of aligned features.   
-    """
+#     Parameters
+#     ----------------------------------------------------------
+#     feature_list: list
+#         A list of aligned features.   
+#     """
 
-    for i, f in enumerate(feature_list):
-        f.sum_feature(i)
+#     for i, f in enumerate(feature_list):
+#         f.sum_feature(i)
 
 
-def output_aligned_features(feature_list, file_names, path, int_values="peak_height"):
-    """
-    A function to output the aligned features.
+# def output_aligned_features(feature_list, file_names, path, int_values="peak_height"):
+#     """
+#     A function to output the aligned features.
 
-    Parameters
-    ----------------------------------------------------------
-    feature_list: list
-        A list of aligned features.
-    output_path: str
-        The path to the output file.
-    """
+#     Parameters
+#     ----------------------------------------------------------
+#     feature_list: list
+#         A list of aligned features.
+#     output_path: str
+#         The path to the output file.
+#     """
 
-    result = []
+#     result = []
 
-    for idx, f in enumerate(feature_list):
+#     for idx, f in enumerate(feature_list):
         
-        iso_dist = ""
-        for i in range(len(f.isotope_mz_seq)):
-            iso_dist += str(np.round(f.isotope_mz_seq[i], decimals=4)) + ";" + str(np.round(f.isotope_int_seq[i], decimals=0)) + "|"
-        iso_dist = iso_dist[:-1]
+#         iso_dist = ""
+#         for i in range(len(f.isotope_mz_seq)):
+#             iso_dist += str(np.round(f.isotope_mz_seq[i], decimals=4)) + ";" + str(np.round(f.isotope_int_seq[i], decimals=0)) + "|"
+#         iso_dist = iso_dist[:-1]
 
-        ms2 = ""
-        if f.best_ms2 is not None:
-            for i in range(len(f.best_ms2.peaks)):
-                ms2 += str(np.round(f.best_ms2.peaks[i, 0], decimals=4)) + ";" + str(np.round(f.best_ms2.peaks[i, 1], decimals=0)) + "|"
-            ms2 = ms2[:-1]
+#         ms2 = ""
+#         if f.best_ms2 is not None:
+#             for i in range(len(f.best_ms2.peaks)):
+#                 ms2 += str(np.round(f.best_ms2.peaks[i, 0], decimals=4)) + ";" + str(np.round(f.best_ms2.peaks[i, 1], decimals=0)) + "|"
+#             ms2 = ms2[:-1]
 
-        if int_values.lower()=="peak_area":
-            int_seq = f.peak_area_seq
-        elif int_values.lower()=="peak_height":
-            int_seq = f.peak_height_seq
-        elif int_values.lower()=="top_average":
-            int_seq = f.top_average_seq
+#         if int_values.lower()=="peak_area":
+#             int_seq = f.peak_area_seq
+#         elif int_values.lower()=="peak_height":
+#             int_seq = f.peak_height_seq
+#         elif int_values.lower()=="top_average":
+#             int_seq = f.top_average_seq
 
-        temp = [idx+1, f.mz, f.rt, ms2, f.charge_state, f.is_isotope, iso_dist,
-                f.is_in_source_fragment, f.adduct_type, f.annotation, f.annotation_mode,
-                f.similarity, f.matched_peak_number, f.smiles, f.inchikey]
+#         temp = [idx+1, f.mz, f.rt, ms2, f.charge_state, f.is_isotope, iso_dist,
+#                 f.is_in_source_fragment, f.adduct_type, f.annotation, f.annotation_mode,
+#                 f.similarity, f.matched_peak_number, f.smiles, f.inchikey]
                 
-        temp.extend(int_seq)
+#         temp.extend(int_seq)
 
-        result.append(temp)
+#         result.append(temp)
 
-    # convert result to a pandas dataframe
-    columns = ["id", "mz", "rt", "ms2", "charge_state", "is_isotope", "isotope_dist",
-                "in_source_fragment", "adduct_type", "annotation", "annotation mode", 
-                "similarity_score", "matched_peak_number", "smiles", "inchikey"]
+#     # convert result to a pandas dataframe
+#     columns = ["id", "mz", "rt", "ms2", "charge_state", "is_isotope", "isotope_dist",
+#                 "in_source_fragment", "adduct_type", "annotation", "annotation mode", 
+#                 "similarity_score", "matched_peak_number", "smiles", "inchikey"]
 
-    file_names_output = [name.split("/")[-1].split(".")[0] for name in file_names]
+#     file_names_output = [name.split("/")[-1].split(".")[0] for name in file_names]
 
-    columns.extend(file_names_output)
-    df = pd.DataFrame(result, columns=columns)
+#     columns.extend(file_names_output)
+#     df = pd.DataFrame(result, columns=columns)
     
-    # save the dataframe to csv file
-    path = path + "aligned_feature_table.csv"
-    df.to_csv(path, index=False)
+#     # save the dataframe to csv file
+#     path = path + "aligned_feature_table.csv"
+#     df.to_csv(path, index=False)
 
 
 # generate an empty feature table with 100000 rows
 def _init_feature_table(rows=5000, sample_names=[]):
     tmp = pd.DataFrame(
-        columns=["ID", "m/z", "RT", "adduct", "is_isotope", "is_in_source_fragment", "peak_shape", "Gaussian_similarity", "charge", "isotopes", "MS2", 
+        columns=["ID", "m/z", "RT", "adduct", "is_isotope", "is_in_source_fragment", "Gaussian_similarity", "noise_level", "charge", "isotopes", "MS2", 
                 "matched_MS2", "search_mode", "annotation", "formula", "similarity", "matched_peak_number", "SMILES", "InChIKey", 
                 "fill_percentage", "alignment_reference"] + sample_names,
         index=range(rows)
     )
     return tmp
-
-
-
-
-# def feature_alignment(path, parameters):
-#     """
-#     A function to align the features from individual files.
-
-#     Parameters
-#     ----------------------------------------------------------
-#     d_list: list
-#         A list of MS data to be aligned.
-#     parameters: Params object
-#         The parameters for alignment.
-
-#     Returns
-#     ----------------------------------------------------------
-#     feature_table: DataFrame
-#         The aligned feature table.
-#     """
-
-#     # STEP 1: get names of individual files (.csv)
-#     csv_file_names = parameters.sample_names
-#     csv_file_names = [f + ".csv" for f in csv_file_names]
-#     csv_file_names = [os.path.join(path, name) for name in csv_file_names]
-
-#     # STEP 2: initiate aligned features
-#     feature_table = _init_feature_table(sample_names=parameters.sample_names)
-
-#     mz_tol = parameters.align_mz_tol
-#     rt_tol = parameters.align_rt_tol
-
-#     # STEP 3: read individual feature tables and align features
-#     last_file_feature_idx = 0
-#     int_seq = np.zeros(len(feature_table))
-#     for i, file_name in enumerate(tqdm(parameters.sample_names[:2])):
-#         # read feature table
-#         current_table = pd.read_csv(csv_file_names[i])
-#         # sort current table by peak height from high to low
-#         current_table = current_table.sort_values(by="peak_height", ascending=False)
-#         current_table.index = range(len(current_table))
-#         new_feature_idx = []
-
-#         mz_seq = np.array(feature_table["m/z"], dtype=float)
-#         rt_seq = np.array(feature_table["RT"], dtype=float)
-#         mz_to_be_matched = np.array(current_table["m/z"], dtype=float)
-#         rt_to_be_matched = np.array(current_table["RT"], dtype=float)
-#         labeled_v = feature_table[file_name].isna()
-#         # compare the m/z and RT of the features
-#         for j in range(len(current_table)):
-#             v = np.logical_and(np.abs(mz_seq - mz_to_be_matched[j]) < mz_tol, np.abs(rt_seq - rt_to_be_matched[j]) < rt_tol)
-#             # check if the feature is already in the aligned feature table using tolerance
-#             # including parameters.align_mz_tol and parameters.align_rt_tol
-#             v = np.logical_and(v, labeled_v)
-#             v = np.where(v)[0]
-#             # if the feature is already in the aligned feature table, update the feature
-#             if len(v) > 0:
-#                 if len(v) > 1:
-#                     idx = v[np.argmax(int_seq[v])]
-#                 else:
-#                     idx = v[0]
-#                 feature_table.loc[idx, file_name] = current_table.loc[j, "peak_height"]
-#                 # update the m/z and RT of the feature by averaging the values
-#                 feature_table.loc[idx, "m/z"] = (feature_table.loc[idx, "m/z"]*i + current_table.loc[j, "m/z"])/(i+1)
-#                 feature_table.loc[idx, "RT"] = (feature_table.loc[idx, "RT"]*i + current_table.loc[j, "RT"])/(i+1)
-#                 # if the intensity is the largest, update the reference file
-#                 if current_table.loc[j, "peak_height"] == np.max(feature_table.iloc[idx, -len(parameters.sample_names):]):
-#                     feature_table.iloc[idx, 3:12] = [current_table.loc[j, "adduct"], current_table.loc[j, "is_isotope"], 
-#                                                      current_table.loc[j, "is_in_source_fragment"], current_table.loc[j, "peak_shape"], 
-#                                                      current_table.loc[j, "Gaussian_similarity"], current_table.loc[j, "charge"], 
-#                                                      current_table.loc[j, "isotopes"], file_name, current_table.loc[j, "MS2"]]
-#                     feature_table.loc[idx, "alignment_reference"] = file_name
-#                 int_seq[idx] = current_table.loc[j, "peak_height"]
-
-#             # if the feature is not in the aligned feature table, add the feature to the table
-#             elif len(v) == 0:
-#                 new_feature_idx.append(j)
-
-#         # add new features to the aligned feature table
-#         # check if the aligned feature table is full
-#         if last_file_feature_idx + len(new_feature_idx) > len(feature_table):
-#             empty_row = pd.DataFrame(np.nan, index=range(len(new_feature_idx)), columns=feature_table.columns)
-#             feature_table = pd.concat([feature_table, empty_row], ignore_index=True)
-#             int_seq = np.append(int_seq, np.zeros(len(new_feature_idx)))
-        
-#         new_feature_table = current_table.loc[new_feature_idx]
-#         new_feature_table.index = range(last_file_feature_idx, last_file_feature_idx+len(new_feature_table))
-#         a = last_file_feature_idx+len(new_feature_table)-1
-#         feature_table.loc[last_file_feature_idx:a, "m/z"] = new_feature_table["m/z"]
-#         feature_table.loc[last_file_feature_idx:a, "RT"] = new_feature_table["RT"]
-#         feature_table.loc[last_file_feature_idx:a, "adduct"] = new_feature_table["adduct"]
-#         feature_table.loc[last_file_feature_idx:a, "peak_shape"] = new_feature_table["peak_shape"]
-#         feature_table.loc[last_file_feature_idx:a, "Gaussian_similarity"] = new_feature_table["Gaussian_similarity"]
-#         feature_table.loc[last_file_feature_idx:a, "charge"] = new_feature_table["charge"]
-#         feature_table.loc[last_file_feature_idx:a, "isotopes"] = new_feature_table["isotopes"]
-#         feature_table.loc[last_file_feature_idx:a, "MS2"] = new_feature_table["MS2"]
-#         feature_table.loc[last_file_feature_idx:a, "alignment_reference"] = file_name
-#         feature_table.loc[last_file_feature_idx:a, "is_isotope"] = new_feature_table["is_isotope"]
-#         feature_table.loc[last_file_feature_idx:a, "is_in_source_fragment"] = new_feature_table["is_in_source_fragment"]
-#         feature_table.loc[last_file_feature_idx:a, file_name] = new_feature_table["peak_height"]
-#         int_seq[last_file_feature_idx:last_file_feature_idx+len(new_feature_table)] = new_feature_table["peak_height"]
-#         last_file_feature_idx += len(new_feature_table)
-
-
-#     # STEP 4: drop the empty rows and index the feature table
-#     feature_table.dropna(subset=["m/z"], inplace=True)
-#     feature_table['ID'] = range(1, len(feature_table)+1)
-
-#     return feature_table
-
-
-# def _alignement_old(feature_list, d):
-#     """
-#     A function to correct the retention time (RT) of the MS data to be aligned.
-
-#     Parameters
-#     ----------------------------------------------------------
-#     feature_list: list
-#         A list of features to be aligned.
-#     d: MSData
-#         The MS data to be aligned.
-#     """
-
-#     # Initiate the aligned features using the first MS data if feature_list is empty
-#     if len(feature_list) == 0:
-#         for roi in d.rois:
-#             aligned_feature = AlignedFeature()
-#             aligned_feature.extend_feat(roi)
-#             feature_list.append(aligned_feature)
-
-#         # sort features in feature list by peak height from high to low
-#         feature_list.sort(key=lambda x: x.highest_roi_intensity, reverse=True)
-        
-#     else:
-#         # get the number of features in the feature list
-#         existed_file_num = len(feature_list[0].mz_seq)
-
-#         mz_seq = np.array([roi.mz for roi in d.rois])
-#         rt_seq = np.array([roi.rt for roi in d.rois])
-#         int_seq = np.array([roi.peak_height for roi in d.rois])
-#         labeled_roi = np.ones(len(d.rois), dtype=bool)
-
-#         for feat in feature_list:
-#             v = np.logical_and(np.abs(mz_seq - feat.mz) < d.params.align_mz_tol, np.abs(rt_seq - feat.rt) < d.params.align_rt_tol)
-#             v = np.where(np.logical_and(v, labeled_roi))[0]
-
-#             if len(v) == 0:
-#                 feat.extend_feat(roi=None)
-#                 continue
-
-#             if len(v) > 1:
-#                 # select the one with the highest intensity
-#                 v = v[np.argmax(int_seq[v])]
-#             else:
-#                 v = v[0]
-
-#             feat.extend_feat(roi=d.rois[v])
-#             labeled_roi[v] = False
-        
-#         # For newly detected features, add them to the feature list
-#         for i in range(len(labeled_roi)):
-#             if labeled_roi[i]:
-#                 aligned_feature = AlignedFeature()
-#                 aligned_feature.extend_feat(roi=d.rois[i], front_zeros=[0.0] * existed_file_num)
-#                 feature_list.append(aligned_feature)
-        
-#         feature_list.sort(key=lambda x: x.highest_roi_intensity, reverse=True)

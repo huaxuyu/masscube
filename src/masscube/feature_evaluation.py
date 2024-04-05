@@ -51,7 +51,7 @@ def calculate_gaussian_similarity(x, y):
     if type(y) is not np.ndarray:
         y = np.array(y)
 
-    mask = y > 0
+    mask = y > np.max(y) * 0.05
     x = x[mask]
     y = y[mask]
 
@@ -77,3 +77,32 @@ def calculate_gaussian_similarity(x, y):
     similarity = spearmanr(y, y_fit)[0]
     
     return similarity
+
+
+def calculate_noise_level(y):
+    """
+    Calculate the noise level of the peak shape
+
+    Parameters
+    ----------
+    y: numpy array
+        Intensity
+    
+    Returns
+    -------
+    float
+        noise level
+    """
+
+    y = y[y > np.max(y) * 0.05]
+
+    if len(y) < 5:
+        return 0.0
+
+    diff = np.diff(y)
+    counter = 0
+    for i in range(1, len(diff)):
+        if diff[i] * diff[i - 1] < 0:
+            counter += 1
+    
+    return counter / (len(y)-2)

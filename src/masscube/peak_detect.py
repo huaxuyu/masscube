@@ -7,6 +7,7 @@ import numpy as np
 from scipy.signal import find_peaks
 from scipy.ndimage import gaussian_filter1d
 from copy import deepcopy
+from .feature_evaluation import calculate_noise_level
 
 from .feature_evaluation import calculate_gaussian_similarity
 
@@ -92,11 +93,16 @@ def cut_roi(r, int_tol=1000):
     Function to cut an ROI by providing the start and end positions.
     """
 
-    a = np.array(r.int_seq)
-    ss = gaussian_filter1d(a, sigma=1)
-    peaks, _ = find_peaks(ss, prominence=np.max(ss)*0.05, distance=5)
+    r.int_seq = np.array(r.int_seq)
+    r.noise_level = calculate_noise_level(r.int_seq)
 
-    peaks = peaks[a[peaks] > 2*int_tol]
+    if r.noise_level > 0.4 or len(r.int_seq) < 10 or r.peak_height < 3*int_tol:
+        return [r]
+
+    ss = gaussian_filter1d(r.int_seq, sigma=1)
+    peaks, _ = find_peaks(ss, prominence=np.max(ss)*0.01, distance=5)
+
+    peaks = peaks[r.int_seq[peaks] > 2*int_tol]
 
     if len(peaks) < 2:
         return [r]
@@ -168,6 +174,7 @@ class Roi:
         self.length = 0
         self.merged = False
         self.gaussian_similarity = 0.0
+        self.noise_level = 0.0
         self.cut = False
         
         # Isotopes
@@ -262,6 +269,7 @@ class Roi:
         """
         
         idx = np.argmax(self.int_seq)
+        self.mz = self.mz_seq[idx]
         self.rt = self.rt_seq[idx]
         self.peak_height = self.int_seq[idx]
         self.peak_area = int(np.trapz(y=self.int_seq, x=self.rt_seq) * 60)
@@ -298,6 +306,9 @@ class Roi:
         self.scan_idx_seq = self.scan_idx_seq[:end_idx]
         
         self.find_rt_ph_pa()
+
+        self.noise_level = calculate_noise_level(self.int_seq)
+
         if cal_gss:
             self.gaussian_similarity = calculate_gaussian_similarity(self.rt_seq, self.int_seq)
         self.length = np.sum(self.int_seq > 0)

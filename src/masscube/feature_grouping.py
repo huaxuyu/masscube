@@ -43,13 +43,13 @@ def annotate_isotope(d):
             if iso - last_mz > 2.2:
                 break
 
-            v = np.where(np.logical_and(np.abs(d.roi_mz_seq - iso) < 0.01, np.abs(d.roi_rt_seq - r.rt) < 0.2))[0]
+            v = np.where(np.logical_and(np.abs(d.roi_mz_seq - iso) < 0.01, np.abs(d.roi_rt_seq - r.rt) < 0.05))[0]
 
             if len(v) == 0:
                 continue
 
             # an isotope can't have intensity 3 fold or higher than M0 or 1% lower than the M0
-            v = [v[i] for i in range(len(v)) if d.rois[v[i]].peak_height < 3*r.peak_height]
+            v = [v[i] for i in range(len(v)) if d.rois[v[i]].peak_height < 1.2*r.peak_height]
             v = [v[i] for i in range(len(v)) if d.rois[v[i]].peak_height > 0.01*r.peak_height]
 
             if len(v) == 0:
@@ -227,8 +227,11 @@ def peak_peak_correlation(roi1, roi2):
     int2 = roi2.int_seq[np.isin(roi2.scan_idx_seq, common_scans)]
 
     # calculate the correlation
+    # if all values are same, return 1
+    if np.all(int1 == int1[0]) or np.all(int2 == int2[0]):
+        return 1.0
+    
     pp_cor = np.corrcoef(int1, int2)[0, 1]
-
     return pp_cor
 
 

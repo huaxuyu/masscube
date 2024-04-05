@@ -7,6 +7,7 @@ import matplotlib.colors as mcolors
 import random
 import numpy as np
 import os
+import re
 
 from .annotation import _extract_peaks_from_string
 
@@ -67,27 +68,31 @@ def plot_roi(d, roi, mz_tol=0.005, rt_tol=1.0, output=False, break_scan=None):
     if break_scan is not None:
         idx_middle = np.where(eic_scan_idx == break_scan)[0][0]
 
+    max_int = np.max(eic_int)
+
     plt.figure(figsize=(9, 3))
     plt.rcParams['font.size'] = 14
     plt.rcParams['font.family'] = 'Arial'
     plt.plot(eic_rt, eic_int, linewidth=0.5, color="black")
+    plt.ylim(0, max_int*1.2)
 
     if break_scan is not None:
         plt.fill_between(eic_rt[idx_start:(idx_middle+1)], eic_int[idx_start:(idx_middle+1)], color="blue", alpha=0.2)
         plt.fill_between(eic_rt[idx_middle:idx_end], eic_int[idx_middle:idx_end], color="red", alpha=0.2)
     else:
         plt.fill_between(eic_rt[idx_start:idx_end], eic_int[idx_start:idx_end], color="black", alpha=0.2)
-    plt.axvline(x = roi.rt, color = 'b', linestyle = '--', linewidth=1)
+    plt.axvline(x = roi.rt, color = 'b', linestyle = '--', linewidth=1, ymax=0.8)
     # label the left and right of the ROI
-    plt.axvline(x = roi.rt_seq[0], color = 'grey', linestyle = '--', linewidth=0.5)
-    plt.axvline(x = roi.rt_seq[-1], color = 'grey', linestyle = '--', linewidth=0.5)
+    plt.axvline(x = roi.rt_seq[0], color = 'black', linestyle = '--', linewidth=0.5, ymax=0.8)
+    plt.axvline(x = roi.rt_seq[-1], color = 'black', linestyle = '--', linewidth=0.5, ymax=0.8)
     plt.xlabel("Retention Time (min)", fontsize=18, fontname='Arial')
     plt.ylabel("Intensity", fontsize=18, fontname='Arial')
     plt.xticks(fontsize=14, fontname='Arial')
     plt.yticks(fontsize=14, fontname='Arial')
-    plt.text(eic_rt[0], np.max(eic_int)*0.95, "m/z = {:.4f}".format(roi.mz), fontsize=12, fontname='Arial')
-    plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.2, np.max(eic_int)*0.95, "G-score = {:.2f}".format(roi.gaussian_similarity), fontsize=12, fontname='Arial', color="blue")
-    plt.text(eic_rt[0] + (eic_rt[-1]-eic_rt[0])*0.6, np.max(eic_int)*0.95, d.file_name, fontsize=10, fontname='Arial', color="gray")
+    plt.text(eic_rt[0], max_int*1.1, "m/z = {:.4f}".format(roi.mz), fontsize=11, fontname='Arial')
+    plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.2, max_int*1.1, "G-score = {:.2f}".format(roi.gaussian_similarity), fontsize=11, fontname='Arial', color="blue")
+    plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.4, max_int*1.1, "N-score = {:.2f}".format(roi.noise_level), fontsize=11, fontname='Arial', color="red")
+    plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.6,max_int*1.1, d.file_name, fontsize=11, fontname='Arial', color="gray")
 
     if output:
         plt.savefig(output, dpi=600, bbox_inches="tight")
@@ -224,9 +229,9 @@ def plot_ms2_matching_from_feature_table(feature_table, params=None, output_dir=
         peaks1 = _extract_peaks_from_string(ms2[i])
         peaks2 = _extract_peaks_from_string(matched_ms2[i])
 
-        a = annotations[i].replace("/", "_")
-        a = a.replace(":", "_")
-        a = a.replace(";", "_")
+        # replace all the special characters to "_"
+        a = re.sub(r"[^a-zA-Z0-9]", "_", annotations[i])
+        a = re.sub(r"[^a-zA-Z0-9]+", "_", a)
         a = "ID" + "_" + str(id[i]) + "_" + a
         output = os.path.join(output_dir, "{}.png".format(a))
         mirror_ms2(mz[i], mz[i], peaks1, peaks2, annotations[i], score[i], output)
