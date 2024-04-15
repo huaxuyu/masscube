@@ -377,8 +377,8 @@ class MSData:
             path = os.path.join(self.params.single_file_dir)
             if not os.path.exists(path):
                 os.makedirs(path)
-            path = os.path.join(self.params.single_file_dir, self.file_name + ".csv")
-        df.to_csv(path, index=False)
+            path = os.path.join(self.params.single_file_dir, self.file_name + ".txt")
+        df.to_csv(path, index=False, sep="\t")
     
 
     def get_eic_data(self, target_mz, target_rt=None, mz_tol=0.005, rt_tol=0.3, rt_range=None):

@@ -29,10 +29,10 @@ def feature_alignment(path, parameters):
         The aligned feature table.
     """
 
-    # STEP 1: get names of individual files (.csv)
-    csv_file_names = parameters.sample_names
-    csv_file_names = [f + ".csv" for f in csv_file_names]
-    csv_file_names = [os.path.join(path, name) for name in csv_file_names]
+    # STEP 1: get names of individual files (.txt)
+    txt_file_names = parameters.sample_names
+    txt_file_names = [f + ".txt" for f in txt_file_names]
+    txt_file_names = [os.path.join(path, name) for name in txt_file_names]
 
     # STEP 2: initiate aligned features
     feature_table = _init_feature_table(sample_names=parameters.sample_names)
@@ -46,12 +46,12 @@ def feature_alignment(path, parameters):
     for i, file_name in enumerate(tqdm(parameters.sample_names)):
 
         # check if the file exists
-        if not os.path.exists(csv_file_names[i]):
+        if not os.path.exists(txt_file_names[i]):
             problematic_files.append(file_name)
             continue
         
         # read feature table
-        current_table = pd.read_csv(csv_file_names[i], low_memory=False)
+        current_table = pd.read_csv(txt_file_names[i], low_memory=False, sep="\t")
         current_table = current_table[current_table["MS2"].notna()|(current_table["peak_height"] > parameters.int_tol*3)]
         # sort current table by peak height from high to low
         current_table = current_table.sort_values(by="peak_height", ascending=False)
@@ -317,9 +317,7 @@ class AlignedFeature:
         if row["peak_height"] > self.highest_roi_intensity:
             self.highest_roi_intensity = row["peak_height"]
             self.highest_roi = row
-            
 
-    
     def choose_best_ms2(self):
         """
         A function to choose the best MS2 for the feature. 
@@ -358,77 +356,6 @@ class AlignedFeature:
         self.isotope_int_seq = self.highest_roi.isotope_int_seq
         self.is_in_source_fragment = self.highest_roi.is_in_source_fragment
         self.adduct_type = self.highest_roi.adduct_type
-
-
-# def summarize_aligned_features(feature_list):
-#     """
-#     A function to summarize the aligned features.
-
-#     Parameters
-#     ----------------------------------------------------------
-#     feature_list: list
-#         A list of aligned features.   
-#     """
-
-#     for i, f in enumerate(feature_list):
-#         f.sum_feature(i)
-
-
-# def output_aligned_features(feature_list, file_names, path, int_values="peak_height"):
-#     """
-#     A function to output the aligned features.
-
-#     Parameters
-#     ----------------------------------------------------------
-#     feature_list: list
-#         A list of aligned features.
-#     output_path: str
-#         The path to the output file.
-#     """
-
-#     result = []
-
-#     for idx, f in enumerate(feature_list):
-        
-#         iso_dist = ""
-#         for i in range(len(f.isotope_mz_seq)):
-#             iso_dist += str(np.round(f.isotope_mz_seq[i], decimals=4)) + ";" + str(np.round(f.isotope_int_seq[i], decimals=0)) + "|"
-#         iso_dist = iso_dist[:-1]
-
-#         ms2 = ""
-#         if f.best_ms2 is not None:
-#             for i in range(len(f.best_ms2.peaks)):
-#                 ms2 += str(np.round(f.best_ms2.peaks[i, 0], decimals=4)) + ";" + str(np.round(f.best_ms2.peaks[i, 1], decimals=0)) + "|"
-#             ms2 = ms2[:-1]
-
-#         if int_values.lower()=="peak_area":
-#             int_seq = f.peak_area_seq
-#         elif int_values.lower()=="peak_height":
-#             int_seq = f.peak_height_seq
-#         elif int_values.lower()=="top_average":
-#             int_seq = f.top_average_seq
-
-#         temp = [idx+1, f.mz, f.rt, ms2, f.charge_state, f.is_isotope, iso_dist,
-#                 f.is_in_source_fragment, f.adduct_type, f.annotation, f.annotation_mode,
-#                 f.similarity, f.matched_peak_number, f.smiles, f.inchikey]
-                
-#         temp.extend(int_seq)
-
-#         result.append(temp)
-
-#     # convert result to a pandas dataframe
-#     columns = ["id", "mz", "rt", "ms2", "charge_state", "is_isotope", "isotope_dist",
-#                 "in_source_fragment", "adduct_type", "annotation", "annotation mode", 
-#                 "similarity_score", "matched_peak_number", "smiles", "inchikey"]
-
-#     file_names_output = [name.split("/")[-1].split(".")[0] for name in file_names]
-
-#     columns.extend(file_names_output)
-#     df = pd.DataFrame(result, columns=columns)
-    
-#     # save the dataframe to csv file
-#     path = path + "aligned_feature_table.csv"
-#     df.to_csv(path, index=False)
 
 
 # generate an empty feature table with 100000 rows

@@ -1,7 +1,7 @@
 # A module for statistical analysis
 
 # imports
-from scipy.stats import ttest_ind, false_discovery_control, f_oneway
+from scipy.stats import ttest_ind, f_oneway
 import numpy as np
 import os
 

@@ -8,6 +8,7 @@ import random
 import numpy as np
 import os
 import re
+from tqdm import tqdm
 
 from .annotation import _extract_peaks_from_string
 
@@ -225,7 +226,7 @@ def plot_ms2_matching_from_feature_table(feature_table, params=None, output_dir=
         print("Please provide the output directory for MS2 matching plots.")
         return None
 
-    for i in range(len(ms2)):
+    for i in tqdm(range(len(ms2))):
         peaks1 = _extract_peaks_from_string(ms2[i])
         peaks2 = _extract_peaks_from_string(matched_ms2[i])
 

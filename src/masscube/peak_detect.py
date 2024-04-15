@@ -78,6 +78,8 @@ def find_rois(d):
                 roi = Roi(scan_idx=last_ms1_idx, rt=last_rt, mz=s.mz_seq[i], intensity=0)
                 roi.extend_roi(scan_idx=ms1_idx, rt=s.rt, mz=s.mz_seq[i], intensity=s.int_seq[i])
                 rois.append(roi)
+        
+        rois.sort(key=lambda x: x.int_seq[-1], reverse=True)
         last_ms1_idx = ms1_idx
         last_rt = s.rt
            
@@ -96,7 +98,7 @@ def cut_roi(r, int_tol=1000):
     r.int_seq = np.array(r.int_seq)
     r.noise_level = calculate_noise_level(r.int_seq)
 
-    if r.noise_level > 0.4 or len(r.int_seq) < 10 or r.peak_height < 3*int_tol:
+    if r.noise_level > 0.5 or len(r.int_seq) < 10 or r.peak_height < 3*int_tol:
         return [r]
 
     ss = gaussian_filter1d(r.int_seq, sigma=1)
