@@ -56,7 +56,7 @@ def random_color_generator():
 _color_list = ["red", "blue", "green", "orange", "purple", "brown", "pink", "gray", "olive", "cyan"]
 
 
-def plot_roi(d, roi, mz_tol=0.005, rt_tol=1.0, output=False, break_scan=None):
+def plot_roi(d, roi, mz_tol=0.01, rt_tol=1.0, output=False, break_scan=None):
     """
     Function to plot EIC of a target m/z.
     """
@@ -69,7 +69,7 @@ def plot_roi(d, roi, mz_tol=0.005, rt_tol=1.0, output=False, break_scan=None):
     if break_scan is not None:
         idx_middle = np.where(eic_scan_idx == break_scan)[0][0]
 
-    max_int = np.max(eic_int)
+    max_int = np.max(eic_int[idx_start:idx_end])
 
     plt.figure(figsize=(9, 3))
     plt.rcParams['font.size'] = 14
@@ -93,7 +93,8 @@ def plot_roi(d, roi, mz_tol=0.005, rt_tol=1.0, output=False, break_scan=None):
     plt.text(eic_rt[0], max_int*1.1, "m/z = {:.4f}".format(roi.mz), fontsize=11, fontname='Arial')
     plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.2, max_int*1.1, "G-score = {:.2f}".format(roi.gaussian_similarity), fontsize=11, fontname='Arial', color="blue")
     plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.4, max_int*1.1, "N-score = {:.2f}".format(roi.noise_level), fontsize=11, fontname='Arial', color="red")
-    plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.6,max_int*1.1, d.file_name, fontsize=11, fontname='Arial', color="gray")
+    plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.6, max_int*1.1, "A-score = {:.2f}".format(roi.asymmetry_factor), fontsize=11, fontname='Arial', color="darkgreen")
+    plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.8,max_int*1.1, d.file_name, fontsize=7, fontname='Arial', color="gray")
 
     if output:
         plt.savefig(output, dpi=600, bbox_inches="tight")

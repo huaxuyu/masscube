@@ -9,7 +9,7 @@ from scipy.ndimage import gaussian_filter1d
 from copy import deepcopy
 from .feature_evaluation import calculate_noise_level
 
-from .feature_evaluation import calculate_gaussian_similarity
+from .feature_evaluation import calculate_gaussian_similarity, calculate_asymmetry_factor
 
 def find_rois(d):
     """
@@ -96,13 +96,13 @@ def cut_roi(r, int_tol=1000):
     """
 
     r.int_seq = np.array(r.int_seq)
-    r.noise_level = calculate_noise_level(r.int_seq)
+    # r.noise_level = calculate_noise_level(r.int_seq)
 
-    if r.noise_level > 0.5 or len(r.int_seq) < 10 or r.peak_height < 3*int_tol:
+    if  len(r.int_seq) < 10 or r.peak_height < 3*int_tol or np.max(r.int_seq)/np.mean(r.int_seq) < 3:
         return [r]
 
-    ss = gaussian_filter1d(r.int_seq, sigma=1)
-    peaks, _ = find_peaks(ss, prominence=np.max(ss)*0.01, distance=5)
+    ss = gaussian_filter1d(r.int_seq, sigma=1.5)
+    peaks, _ = find_peaks(ss, prominence=np.max(ss)*0.05, distance=5)
 
     peaks = peaks[r.int_seq[peaks] > 2*int_tol]
 
@@ -177,6 +177,7 @@ class Roi:
         self.merged = False
         self.gaussian_similarity = 0.0
         self.noise_level = 0.0
+        self.asymmetry_factor = 0.0
         self.cut = False
         
         # Isotopes
@@ -289,7 +290,7 @@ class Roi:
         self.top_average = np.mean(d, dtype=np.int64)
     
 
-    def sum_roi(self, cal_gss=True):
+    def sum_roi(self, cal_g_score=True, cal_a_score=True):
         """
         Function to summarize the ROI to generate attributes.
         """
@@ -311,8 +312,11 @@ class Roi:
 
         self.noise_level = calculate_noise_level(self.int_seq)
 
-        if cal_gss:
+        if cal_g_score:
             self.gaussian_similarity = calculate_gaussian_similarity(self.rt_seq, self.int_seq)
+        if cal_a_score:
+            self.asymmetry_factor = calculate_asymmetry_factor(self.int_seq)
+            
         self.length = np.sum(self.int_seq > 0)
     
 

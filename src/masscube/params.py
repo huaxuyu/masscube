@@ -37,8 +37,8 @@ class Params:
         # Feature detection
         self.mz_tol_ms1 = 0.01              # m/z tolerance for MS1, default is 0.01
         self.mz_tol_ms2 = 0.015             # m/z tolerance for MS2, default is 0.015
-        self.int_tol = 1000                 # Intensity tolerance, default is 30000 for Orbitrap and 1000 for other instruments, integer
-        self.roi_gap = 50                   # Gap within a feature, default is 2 (i.e. 2 consecutive scans without signal), integer
+        self.int_tol = 30000                # Intensity tolerance, default is 30000 for Orbitrap and 1000 for other instruments, integer
+        self.roi_gap = 10                   # Gap within a feature, default is 10 (i.e. 10 consecutive scans without signal), integer
         self.min_ion_num = 10               # Minimum scan number a feature, default is 10, integer
 
         # Parameters for feature alignment
@@ -95,6 +95,9 @@ class Params:
             setattr(self, df.iloc[i, 0], value)
         
         self.rt_range = [self.rt_start, self.rt_end]
+
+        # check if the parameters are correct
+        self.check_parameters()
     
 
     def _untargeted_metabolomics_workflow_preparation(self):
@@ -118,9 +121,10 @@ class Params:
         if not os.path.exists(self.sample_dir) or len(os.listdir(self.sample_dir)) == 0:
             raise ValueError("No raw MS data is found in the project directory.")
         if not os.path.exists(os.path.join(self.project_dir, "sample_table.csv")):
-            raise ValueError("No sample table is found in the project directory.")
+            print("No sample table is found in the project directory. No statistical analysis and sample normalization will be performed.")
         if not os.path.exists(os.path.join(self.project_dir, "parameters.csv")):
-            raise ValueError("No parameter file is found in the project directory.")
+            print("No parameter file is found in the project directory. Default parameters will be used.")
+            print("To perform feature annotation, please specify the path of MS/MS library in the parameter file.")
 
         # STEP 3: create the output directories if not exist
         if not os.path.exists(self.single_file_dir):
@@ -133,32 +137,8 @@ class Params:
             os.makedirs(self.network_dir)
         if not os.path.exists(self.statistics_dir):
             os.makedirs(self.statistics_dir)
-
-        # STEP 4: read the sample table and allocate the sample groups
-        #         reorder the samples by qc, sample, and blank
-        sample_table = pd.read_csv(os.path.join(self.project_dir, "sample_table.csv"))
-        try:
-            sample_table.iloc[:, 1] = sample_table.iloc[:, 1].str.lower()
-        except:
-            raise ValueError("The second column of the sample table is not correct.")
-        sample_groups_pre = list(set(sample_table.iloc[:, 1]))
-        sample_groups = [i for i in sample_groups_pre if i not in ["qc", "blank"]]
-        self.sample_group_num = len(sample_groups)
-        if "qc" in sample_groups_pre:
-            sample_groups = ["qc"] + sample_groups
-        if "blank" in sample_groups_pre:
-            sample_groups = sample_groups + ["blank"]
-
-        sample_table_new = pd.DataFrame(columns=sample_table.columns)
-        for i in range(len(sample_groups)):
-            sample_table_new = pd.concat([sample_table_new, sample_table[sample_table.iloc[:, 1].str.contains(sample_groups[i])]])
-        self.sample_names = list(sample_table_new.iloc[:, 0])
-        self.sample_groups = sample_groups
-        self.individual_sample_groups = []
-        for name in self.sample_names:
-            self.individual_sample_groups.append(sample_table_new[sample_table_new.iloc[:, 0] == name].iloc[0, 1])
-
-        # STEP 5: read the parameters from csv file or use default values
+        
+        # STEP 4: read the parameters from csv file or use default values
         if os.path.exists(os.path.join(self.project_dir, "parameters.csv")):
             self.read_parameters_from_csv(os.path.join(self.project_dir, "parameters.csv"))
         else:
@@ -167,16 +147,50 @@ class Params:
             file_names = os.listdir(self.sample_dir)
             file_names = [f for f in file_names if f.lower().endswith(".mzml") or f.lower().endswith(".mzxml")]
             file_name = os.path.join(self.sample_dir, file_names[0])
-            ms_type, ion_mode = find_ms_info(file_name)
+            ms_type, ion_mode, _ = find_ms_info(file_name)
             self.set_default(ms_type, ion_mode)
             self.run_statistics = True
             self.plot_bpc = True
+            # annotation will not be performed if no MS/MS library is provided
             self.plot_ms2 = False
+
+        # STEP 5: read the sample table and allocate the sample groups
+        #         reorder the samples by qc, sample, and blank
+        if not os.path.exists(os.path.join(self.project_dir, "sample_table.csv")):
+            self.sample_names = [f.split(".")[0] for f in os.listdir(self.sample_dir)]
+            self.sample_groups = ["sample"] * len(self.sample_names)
+            self.individual_sample_groups = ["sample"] * len(self.sample_names)
+            self.sample_group_num = 1
+            # skip the normalization and statistics if no sample table is provided
+            self.run_normalization = False
+            self.run_statistics = False
+        else:
+            sample_table = pd.read_csv(os.path.join(self.project_dir, "sample_table.csv"))
+            try:
+                sample_table.iloc[:, 1] = sample_table.iloc[:, 1].str.lower()
+            except:
+                raise ValueError("The second column of the sample table is not correct.")
+            sample_groups_pre = list(set(sample_table.iloc[:, 1]))
+            sample_groups = [i for i in sample_groups_pre if i not in ["qc", "blank"]]
+            self.sample_group_num = len(sample_groups)
+            if "qc" in sample_groups_pre:
+                sample_groups = ["qc"] + sample_groups
+            if "blank" in sample_groups_pre:
+                sample_groups = sample_groups + ["blank"]
+
+            sample_table_new = pd.DataFrame(columns=sample_table.columns)
+            for i in range(len(sample_groups)):
+                sample_table_new = pd.concat([sample_table_new, sample_table[sample_table.iloc[:, 1].str.contains(sample_groups[i])]])
+            self.sample_names = list(sample_table_new.iloc[:, 0])
+            self.sample_groups = sample_groups
+            self.individual_sample_groups = []
+            for name in self.sample_names:
+                self.individual_sample_groups.append(sample_table_new[sample_table_new.iloc[:, 0] == name].iloc[0, 1])
 
         # STEP 6: set output
         self.output_single_file = True
         self.output_aligned_file = True
-    
+
 
     def set_default(self, ms_type, ion_mode):
         """
@@ -196,7 +210,19 @@ class Params:
             self.ion_mode = "positive"
         elif ion_mode == "negative":
             self.ion_mode = "negative"
+    
 
+    def check_parameters(self):
+        """
+        Check if the parameters are correct using PARAMETER_RAGEES.
+        ------------------------------------
+        """
+
+        for key, value in PARAMETER_RAGEES.items():
+            if not value[0] <= getattr(self, key) <= value[1]:
+                print(f"Parameter {key} is not out of range. The value is set to the default value.")
+                setattr(self, key, PARAMETER_DEFAULT[key])
+        
 
 def find_ms_info(file_name):
     """
@@ -215,19 +241,48 @@ def find_ms_info(file_name):
         The ion mode.
     """
 
-    ms_type = None
-    ion_mode = None
+    ms_type = 'tof'
+    ion_mode = 'positive'
+    centroid = False
 
     with open(file_name, 'r') as f:
-        for line in f:
+        for i, line in enumerate(f):
             if 'orbitrap' in line.lower():
                 ms_type = 'orbitrap'
-            if 'tof' in line.lower():
-                ms_type = 'tof'
-            if 'positive' in line.lower():
-                ion_mode = 'positive'
             if 'negative' in line.lower():
                 ion_mode = 'negative'
-            if ms_type is not None and ion_mode is not None:
+            if "centroid spectrum" in line.lower():
+                centroid = True
+            if i > 200:
                 break
-    return ms_type, ion_mode
+
+    return ms_type, ion_mode, centroid
+
+
+PARAMETER_RAGEES = {
+    "rt_start": [0.0, 1000.0],
+    "rt_end": [0.0, 1000.0],
+    "mz_tol_ms1": [0.0, 0.015],
+    "mz_tol_ms2": [0.0, 0.015],
+    "int_tol": [0, 1e10],
+    "roi_gap": [0, 50],
+    "min_ion_num": [5, 50],
+    "align_mz_tol": [0.0, 0.02],
+    "align_rt_tol": [0.0, 2.0],
+    "ppr": [0.5, 1.0],
+    "ms2_sim_tol": [0.0, 1.0]
+}
+
+PARAMETER_DEFAULT = {
+    "rt_start": 0.0,
+    "rt_end": 1000.0,
+    "mz_tol_ms1": 0.01,
+    "mz_tol_ms2": 0.015,
+    "int_tol": 30000,
+    "roi_gap": 10,
+    "min_ion_num": 10,
+    "align_mz_tol": 0.01,
+    "align_rt_tol": 0.2,
+    "ppr": 0.7,
+    "ms2_sim_tol": 0.7
+}

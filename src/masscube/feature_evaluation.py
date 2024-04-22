@@ -100,9 +100,47 @@ def calculate_noise_level(y):
         return 0.0
 
     diff = np.diff(y)
-    counter = 0
+    signs = np.sign(diff)
+    counter = -1
     for i in range(1, len(diff)):
-        if diff[i] * diff[i - 1] < 0:
+        if signs[i] != signs[i-1]:
             counter += 1
     
     return counter / (len(y)-2)
+
+
+def calculate_asymmetry_factor(y):
+    """
+    Calcualte the asymmetry factor of the peak at 10% of the peak height.
+
+    Parameters
+    ----------
+    y: numpy array
+        Intensity
+
+    Returns
+    -------
+    float
+        asymmetry factor
+    """
+
+    y = y[y > np.max(y) * 0.05]
+    if len(y) < 5:
+        return 0.0
+    
+    # interpolate y to get 100 points
+    x = np.linspace(0, 1, 100)
+    y = np.interp(x, np.linspace(0, 1, len(y)), y)
+
+    ten_height = np.max(y) * 0.1
+    idx = np.argmax(y)
+
+    if idx == 0 or idx == len(y) - 1:
+        return -1
+
+    left_idx = np.argmin(np.abs(y[:idx] - ten_height))
+    right_idx = np.argmin(np.abs(y[idx:] - ten_height)) + idx
+
+    return (right_idx - idx) / (idx - left_idx)
+
+

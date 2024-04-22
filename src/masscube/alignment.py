@@ -84,10 +84,11 @@ def feature_alignment(path, parameters):
                 feature_table.loc[idx, "RT"] = (feature_table.loc[idx, "RT"]*i + current_table.loc[j, "RT"])/(i+1)
                 # if the intensity is the largest, update the reference file
                 if current_table.loc[j, "peak_height"] > int_seq[idx]:
-                    feature_table.iloc[idx, 3:10] = [current_table.loc[j, "adduct"], current_table.loc[j, "is_isotope"], 
+                    feature_table.iloc[idx, 3:11] = [current_table.loc[j, "adduct"], current_table.loc[j, "is_isotope"], 
                                                      current_table.loc[j, "is_in_source_fragment"], current_table.loc[j, "Gaussian_similarity"], 
-                                                     current_table.loc[j, "noise_level"], current_table.loc[j, "charge"], 
-                                                     current_table.loc[j, "isotopes"]]
+                                                     current_table.loc[j, "noise_level"], current_table.loc[j, "asymmetry_factor"],
+                                                     current_table.loc[j, "charge"], current_table.loc[j, "isotopes"]]
+
                     # only overwrite the MS2 if the current MS2 is not nan
                     if current_table.loc[j, "MS2"] == current_table.loc[j, "MS2"]:
                         feature_table.loc[idx,"MS2"] = current_table.loc[j, "MS2"]
@@ -113,6 +114,7 @@ def feature_alignment(path, parameters):
         feature_table.loc[last_file_feature_idx:a, "adduct"] = new_feature_table["adduct"]
         feature_table.loc[last_file_feature_idx:a, "noise_level"] = new_feature_table["noise_level"]
         feature_table.loc[last_file_feature_idx:a, "Gaussian_similarity"] = new_feature_table["Gaussian_similarity"]
+        feature_table.loc[last_file_feature_idx:a, "asymmetry_factor"] = new_feature_table["asymmetry_factor"]
         feature_table.loc[last_file_feature_idx:a, "charge"] = new_feature_table["charge"]
         feature_table.loc[last_file_feature_idx:a, "isotopes"] = new_feature_table["isotopes"]
         feature_table.loc[last_file_feature_idx:a, "MS2"] = new_feature_table["MS2"]
@@ -185,6 +187,24 @@ def gap_filling(feature_table, parameters, mode='forced_peak_picking', fill_perc
                         _, eic_int, _, _ = d.get_eic_data(feature_table.loc[i, "m/z"], feature_table.loc[i, "RT"], parameters.align_mz_tol, 0.05)
                         feature_table.loc[i, file_name] = np.max(eic_int)
     return feature_table
+
+def output_feature_table(feature_table, output_path):
+    """
+    A function to output the aligned feature table.
+
+    Parameters
+    ----------------------------------------------------------
+    feature_table: DataFrame
+        The aligned feature table.
+    output_path: str
+        The path to save the aligned feature table.
+    """
+
+    # keep four digits for the m/z column and three digits for the RT column
+    feature_table["m/z"] = feature_table["m/z"].apply(lambda x: round(x, 4))
+    feature_table["RT"] = feature_table["RT"].apply(lambda x: round(x, 3))
+
+    feature_table.to_csv(output_path, index=False, sep="\t")
 
 
 class AlignedFeature:
@@ -361,7 +381,8 @@ class AlignedFeature:
 # generate an empty feature table with 100000 rows
 def _init_feature_table(rows=5000, sample_names=[]):
     tmp = pd.DataFrame(
-        columns=["ID", "m/z", "RT", "adduct", "is_isotope", "is_in_source_fragment", "Gaussian_similarity", "noise_level", "charge", "isotopes", "MS2", 
+        columns=["ID", "m/z", "RT", "adduct", "is_isotope", "is_in_source_fragment", "Gaussian_similarity", "noise_level", "asymmetry_factor",
+                 "charge", "isotopes", "MS2", 
                 "matched_MS2", "search_mode", "annotation", "formula", "similarity", "matched_peak_number", "SMILES", "InChIKey", 
                 "fill_percentage", "alignment_reference"] + sample_names,
         index=range(rows)

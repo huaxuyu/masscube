@@ -11,10 +11,10 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 
-from .raw_data_utils import MSData, get_start_time, read_raw_file_to_obj
+from .raw_data_utils import MSData, get_start_time
 from .params import Params, find_ms_info
 from .feature_grouping import annotate_isotope, annotate_adduct, annotate_in_source_fragment
-from .alignment import feature_alignment, gap_filling
+from .alignment import feature_alignment, gap_filling, output_feature_table
 from .annotation import feature_annotation, annotate_rois
 from .normalization import sample_normalization
 from .visualization import plot_ms2_matching_from_feature_table
@@ -24,9 +24,9 @@ from .feature_table_utils import calculate_fill_percentage
 
 
 # 1. Untargeted feature detection for a single file
-def feature_detection(file_name, params=None, cal_gss=True, anno_isotope=True,  
-                      anno_adduct=True, anno_in_source_fragment=True, annotation=False, 
-                      ms2_library_path=None, output_dir=None):
+def feature_detection(file_name, params=None, cal_g_score=True, cal_a_score=True,
+                      anno_isotope=True, anno_adduct=True, anno_in_source_fragment=True, 
+                      annotation=False, ms2_library_path=None, output_dir=None):
     """
     Untargeted feature detection from a single file (.mzML or .mzXML).
 
@@ -53,60 +53,67 @@ def feature_detection(file_name, params=None, cal_gss=True, anno_isotope=True,
         An MSData object containing the processed data.
     """
 
-    # create a MSData object
-    d = MSData()
+    try:
+        # create a MSData object
+        d = MSData()
 
-    # set parameters
-    # if params is None, use the default parameters
-    if params is None:
-        params = Params()
-        ms_type, ion_mode = find_ms_info(file_name)
-        print("MS type: " + ms_type, "Ion mode: " + ion_mode)
-        params.set_default(ms_type, ion_mode)
+        # set parameters
+        # if params is None, use the default parameters
+        ms_type, ion_mode, centrod = find_ms_info(file_name)
+        if not centrod:
+            print("File: " + file_name + " is not centroided and skipped.")
+            return None
+        
+        if params is None:
+            params = Params()
+            print("MS type: " + ms_type, "Ion mode: " + ion_mode)
+            params.set_default(ms_type, ion_mode)
+        
+        if ms2_library_path is not None:
+            params.msms_library = ms2_library_path
+
+        # read raw data
+        d.read_raw_data(file_name, params)
+
+        # detect region of interests (ROIs)
+        d.find_rois()
+
+        # cut ROIs
+        d.cut_rois()
+
+        # label short ROIs, find the best MS2, and sort ROIs by m/z
+        d.summarize_roi(cal_g_score=cal_g_score, cal_a_score=cal_a_score)
+
+        # # annotate isotopes, adducts, and in-source fragments
+        if anno_isotope:
+            annotate_isotope(d)
+        if anno_in_source_fragment:
+            annotate_in_source_fragment(d)
+        if anno_adduct:
+            annotate_adduct(d)
+
+        # annotate MS2 spectra
+        if annotation and d.params.msms_library is not None:
+            annotate_rois(d)
+
+        if params.plot_bpc:
+            d.plot_bpc(label_name=True, output=os.path.join(params.bpc_dir, d.file_name + "_bpc.png"))
+
+        # output single file to a txt file
+        if d.params.output_single_file:
+            d.output_single_file()
+        elif output_dir is not None:
+            d.output_single_file(os.path.join(output_dir, d.file_name + ".txt"))
+
+        return d
     
-    if ms2_library_path is not None:
-        params.msms_library = ms2_library_path
-
-    # read raw data
-    d.read_raw_data(file_name, params)
-
-    # drop ions by intensity (defined in params.int_tol)
-    d.drop_ion_by_int()
-    # detect region of interests (ROIs)
-    d.find_rois()
-
-    # cut ROIs
-    d.cut_rois()
-
-    # label short ROIs, find the best MS2, and sort ROIs by m/z
-    d.summarize_roi(cal_gss=cal_gss)
-
-    # # annotate isotopes, adducts, and in-source fragments
-    if anno_isotope:
-        annotate_isotope(d)
-    if anno_in_source_fragment:
-        annotate_in_source_fragment(d)
-    if anno_adduct:
-        annotate_adduct(d)
-
-    # annotate MS2 spectra
-    if annotation and d.params.msms_library is not None:
-        annotate_rois(d)
-
-    if params.plot_bpc:
-        d.plot_bpc(label_name=True, output=os.path.join(params.bpc_dir, d.file_name + "_bpc.png"))
-
-    # output single file to a txt file
-    if d.params.output_single_file:
-        d.output_single_file()
-    elif output_dir is not None:
-        d.output_single_file(output_dir)
-
-    return d
+    except Exception as e:
+        print("Error: " + str(e))
+        return None
 
 
 # 2. Untargeted metabolomics workflow
-def untargeted_metabolomics_workflow(path=None):
+def untargeted_metabolomics_workflow(path=None, batch_size=100):
     """
     The untargeted metabolomics workflow. See the documentation for details.
 
@@ -131,16 +138,16 @@ def untargeted_metabolomics_workflow(path=None):
     raw_file_names = [f for f in raw_file_names if f.lower().endswith(".mzml") or f.lower().endswith(".mzxml")]
     raw_file_names = [os.path.join(params.sample_dir, f) for f in raw_file_names]
 
-    # process files by multiprocessing, each batch contains 300 files
+    # process files by multiprocessing, each batch contains 100 files by default (tunable in batch_size)
     print("Processing files by multiprocessing...")
     workers = int(multiprocessing.cpu_count() * 0.8)
-    for i in range(0, len(raw_file_names), 300):
-        if len(raw_file_names) - i < 300:
+    for i in range(0, len(raw_file_names), batch_size):
+        if len(raw_file_names) - i < batch_size:
             print("Processing files from " + str(i) + " to " + str(len(raw_file_names)))
         else:
-            print("Processing files from " + str(i) + " to " + str(i+300))
+            print("Processing files from " + str(i) + " to " + str(i+batch_size))
         p = multiprocessing.Pool(workers)
-        p.starmap(feature_detection, [(f, params) for f in raw_file_names[i:i+300]])
+        p.starmap(feature_detection, [(f, params) for f in raw_file_names[i:i+batch_size]])
         p.close()
         p.join()
 
@@ -164,7 +171,8 @@ def untargeted_metabolomics_workflow(path=None):
 
     # normalization
     if params.run_normalization:
-        feature_table.to_csv(os.path.join(params.project_dir, "aligned_feature_table_before_normalization.txt"), index=False, sep="\t")
+        output_path = os.path.join(params.project_dir, "aligned_feature_table_before_normalization.txt")
+        output_feature_table(feature_table, output_path)
         feature_table_before_normalization = deepcopy(feature_table)
         print("Running normalization...")
         feature_table = sample_normalization(feature_table, params.individual_sample_groups, params.normalization_method)
@@ -186,7 +194,8 @@ def untargeted_metabolomics_workflow(path=None):
         plot_ms2_matching_from_feature_table(feature_table, params)
     
     # output feature table
-    feature_table.to_csv(os.path.join(params.project_dir, "aligned_feature_table.txt"), index=False, sep="\t")
+    output_path = os.path.join(params.project_dir, "aligned_feature_table.txt")
+    output_feature_table(feature_table, output_path)
     print("The workflow is completed.")
 
 
@@ -277,47 +286,112 @@ def targeted_metabolomics_workflow(path=None):
         The working directory. If None, the current working directory is used.
     """
 
-    # 
+    pass
 
 
 # 6. Single-file peak picking (batch mode)
-def single_file_processing(path=None, params=None):
+def batch_file_processing(path=None, params=None, cal_g_score=True, cal_a_score=True,
+                          anno_isotope=True, anno_adduct=True, anno_in_source_fragment=True, 
+                          annotation=False, ms2_library_path=None):
+    """
+    Single MS data processing for multiple files in batch mode.
+
+    Parameters
+    ----------
+    path : str
+        Path to the mzML or mzXML files.
+    params : Params object
+        Parameters for feature detection.
+    """
     
-    params = Params()
     # obtain the working directory
     if path is not None:
-        params.project_dir = path
+        wd = path
     else:
-        params.project_dir = os.getcwd()
-    params._untargeted_metabolomics_workflow_preparation()
-
-    with open(os.path.join(params.project_dir, "project.mc"), "wb") as f:
-        pickle.dump(params, f)
+        wd = os.getcwd()
     
-    raw_file_names = os.listdir(params.sample_dir)
-    raw_file_names = [f for f in raw_file_names if f.lower().endswith(".mzml") or f.lower().endswith(".mzxml")]
-    raw_file_names = [os.path.join(params.sample_dir, f) for f in raw_file_names]
+    if os.path.exists(os.path.join(wd, "parameters.csv")):
+        params = Params()
+        params.read_parameters_from_csv(os.path.join(wd, "parameters.csv"))
+
+    
+    all_file_names = os.listdir(wd)
+    raw_file_names = [f for f in all_file_names if f.lower().endswith(".mzml") or f.lower().endswith(".mzxml")]
+    txt_files = [f.split(".")[0] for f in all_file_names if f.lower().endswith(".txt")]
+
+    # if the file has been processed, skip it
+    raw_file_names = [f for f in raw_file_names if f.split(".")[0]+"_feature_table" not in txt_files]
+    raw_file_names = [f for f in raw_file_names if f.split(".")[0] not in txt_files]
+    raw_file_names = [os.path.join(wd, f) for f in raw_file_names]
+
+    print("Total number of files to be processed: " + str(len(raw_file_names)))
 
     # process files by multiprocessing, each batch contains 300 files
     print("Processing files by multiprocessing...")
     workers = int(multiprocessing.cpu_count() * 0.8)
-    for i in range(0, len(raw_file_names), 300):
-        if len(raw_file_names) - i < 300:
+    for i in range(0, len(raw_file_names), 50):
+        if len(raw_file_names) - i < 50:
             print("Processing files from " + str(i) + " to " + str(len(raw_file_names)))
         else:
-            print("Processing files from " + str(i) + " to " + str(i+300))
+            print("Processing files from " + str(i) + " to " + str(i+50))
         p = multiprocessing.Pool(workers)
-        p.starmap(feature_detection, [(f, params) for f in raw_file_names[i:i+300]])
+        p.starmap(feature_detection, [(f, params, cal_g_score, cal_a_score, anno_isotope, anno_adduct, anno_in_source_fragment, 
+                                       annotation, ms2_library_path, wd) for f in raw_file_names[i:i+50]])
         p.close()
         p.join()
 
 
-# 7. Determine normalization factors
+# 7. Determine sample total amount
+def sample_total_amount(path):
+    """
+    Determine the total amount of the samples based on LC-MS data. See the documentation for details.
 
+    Parameters
+    ----------
+    path : str
+        Path to the mzML or mzXML files.
+    """
+
+    pass
 
 # 8. Serial QC calibration
+def qc_calibration(path):
+    """
+    Serial QC calibration. See the documentation for details.
+
+    Parameters
+    ----------
+    path : str
+        Path to the mzML or mzXML files.
+    """
+
+    pass
+
+
 
 # 9. Mass calibration
+def mass_calibration(path):
+    """
+    Mass calibration. See the documentation for details.
+
+    Parameters
+    ----------
+    path : str
+        Path to the mzML or mzXML files.
+    """
+
+    pass
 
 
 # 10. Untargeted metabolomics workflow with multiple analytical modes (RP+, RP-, HILIC+, HILIC-)
+def untargeted_metabolomics_workflow_multi_mode(path=None):
+    """
+    The untargeted metabolomics workflow with multiple analytical modes. See the documentation for details.
+
+    Parameters
+    ----------
+    path : str
+        The working directory. If None, the current working directory is used.
+    """
+
+    pass

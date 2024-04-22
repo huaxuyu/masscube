@@ -10,6 +10,7 @@ import os
 import matplotlib.pyplot as plt
 import pandas as pd
 from datetime import datetime
+from time import time
 
 from .params import Params
 from .peak_detect import find_rois, cut_roi
@@ -76,15 +77,15 @@ class MSData:
 
             if ext.lower() == ".mzml":
                 with mzml.MzML(file_name) as reader:
-                    self.extract_scan_mzml(reader, centroid)
+                    self.extract_scan_mzml(reader, params.int_tol, centroid)
             elif ext.lower() == ".mzxml":
                 with mzxml.MzXML(file_name) as reader:
-                    self.extract_scan_mzxml(reader, centroid)
+                    self.extract_scan_mzxml(reader, params.int_tol, centroid)
         else:
             print("File does not exist.")
 
 
-    def extract_scan_mzml(self, spectra, centroid=True):
+    def extract_scan_mzml(self, spectra, int_tol, centroid=True):
         """
         Function to extract all scans and convert them to Scan objects.
 
@@ -115,8 +116,14 @@ class MSData:
             if self.params.rt_range[0] < rt < self.params.rt_range[1]:
                 if spec['ms level'] == 1:
                     temp_scan = Scan(level=1, scan=idx, rt=rt)
-                    mz_array = spec['m/z array']
-                    int_array = spec['intensity array']
+                    mz_array = np.array(spec['m/z array'], dtype=np.float64)
+                    int_array = np.array(spec['intensity array'], dtype=np.int64)
+                    mz_array = mz_array[int_array > int_tol]
+                    int_array = int_array[int_array > int_tol]
+
+                    if len(mz_array) == 0:
+                        continue
+
                     if centroid:
                         mz_array, int_array = _centroid(mz_array, int_array)
 
@@ -124,7 +131,7 @@ class MSData:
                     self.ms1_idx.append(idx)
 
                     # update base peak chromatogram
-                    self.bpc_int.append(np.max(spec['intensity array']))
+                    self.bpc_int.append(np.max(int_array))
                     self.ms1_rt_seq.append(rt)
 
                 elif spec['ms level'] == 2:
@@ -167,8 +174,12 @@ class MSData:
             if self.params.rt_range[0] < rt < self.params.rt_range[1]:
                 if spec['msLevel'] == 1:
                     temp_scan = Scan(level=1, scan=idx, rt=rt)
-                    mz_array = spec['m/z array']
-                    int_array = spec['intensity array']
+                    mz_array = np.array(spec['m/z array'], dtype=np.float64)
+                    int_array = np.array(spec['intensity array'], dtype=np.int64)
+
+                    mz_array = mz_array[int_array > self.params.int_tol]
+                    int_array = int_array[int_array > self.params.int_tol]
+
                     if centroid:
                         mz_array, int_array = _centroid(mz_array, int_array)
 
@@ -176,7 +187,7 @@ class MSData:
                     self.ms1_idx.append(idx)
 
                     # update base peak chromatogram
-                    self.bpc_int.append(np.max(spec['intensity array']))
+                    self.bpc_int.append(np.max(int_array))
                     self.ms1_rt_seq.append(rt)
 
                 elif spec['msLevel'] == 2:
@@ -232,7 +243,7 @@ class MSData:
         self.rois = tmp
 
 
-    def summarize_roi(self, cal_gss=True):
+    def summarize_roi(self, cal_g_score=True, cal_a_score=True):
         """
         Function to process ROIs.
 
@@ -243,7 +254,7 @@ class MSData:
         """      
 
         for roi in self.rois:
-            roi.sum_roi(cal_gss=cal_gss)
+            roi.sum_roi(cal_g_score, cal_a_score)
 
         # sort rois by m/z
         self.rois.sort(key=lambda x: x.mz)
@@ -297,7 +308,7 @@ class MSData:
             self.rois[idx].id = idx
     
 
-    def plot_bpc(self, label_name=False, output=False):
+    def plot_bpc(self, rt_range=None, label_name=False, output=False):
         """
         Function to plot base peak chromatogram.
 
@@ -307,10 +318,18 @@ class MSData:
             Output file name. If not specified, the plot will be shown.
         """
 
+        if rt_range is not None:
+            x = [rt for rt in self.ms1_rt_seq if rt > rt_range[0] and rt < rt_range[1]]
+            y = [intensity for rt, intensity in zip(self.ms1_rt_seq, self.bpc_int) if rt > rt_range[0] and rt < rt_range[1]]
+
+        else:
+            x = self.ms1_rt_seq
+            y = self.bpc_int
+
         plt.figure(figsize=(10, 3))
         plt.rcParams['font.size'] = 14
         plt.rcParams['font.family'] = 'Arial'
-        plt.plot(self.ms1_rt_seq, self.bpc_int, linewidth=1, color="black")
+        plt.plot(x, y, linewidth=1, color="black")
         plt.xlabel("Retention Time (min)", fontsize=18, fontname='Arial')
         plt.ylabel("Intensity", fontsize=18, fontname='Arial')
         plt.xticks(fontsize=14, fontname='Arial')
@@ -351,7 +370,7 @@ class MSData:
 
             temp = [roi.id, roi.mz.__round__(4), roi.rt.__round__(3), roi.length, roi.rt_seq[0],
                     roi.rt_seq[-1], roi.peak_area, roi.peak_height, roi.gaussian_similarity.__round__(2), 
-                    roi.noise_level.__round__(2), roi.charge_state, roi.is_isotope, str(roi.isotope_id_seq)[1:-1], iso_dist,
+                    roi.noise_level.__round__(2), roi.asymmetry_factor.__round__(2), roi.charge_state, roi.is_isotope, str(roi.isotope_id_seq)[1:-1], iso_dist,
                     roi.is_in_source_fragment, roi.isf_parent_roi_id, str(roi.isf_child_roi_id)[1:-1],
                     roi.adduct_type, roi.adduct_parent_roi_id, str(roi.adduct_child_roi_id)[1:-1],
                     ]
@@ -362,8 +381,9 @@ class MSData:
 
         # convert result to a pandas dataframe
         columns = [ "ID", "m/z", "RT", "length", "RT_start", "RT_end", "peak_area", "peak_height",
-                    "Gaussian_similarity", "noise_level", "charge", "is_isotope", "isotope_IDs", "isotopes", "is_in_source_fragment",
-                    "ISF_parent_ID", "ISF_child_ID", "adduct", "adduct_base_ID", "adduct_other_ID"]
+                    "Gaussian_similarity", "noise_level", "asymmetry_factor", "charge", "is_isotope", 
+                    "isotope_IDs", "isotopes", "is_in_source_fragment", "ISF_parent_ID", 
+                    "ISF_child_ID", "adduct", "adduct_base_ID", "adduct_other_ID"]
                     
         
         columns.extend(["MS2", "annotation", "formula", "similarity", "matched_peak_number", "SMILES", "InChIKey"])
@@ -753,7 +773,7 @@ def _clean_ms2(ms2, offset=2):
         ms2.peaks = ms2.peaks[ms2.peaks[:, 1] > 0.01 * np.max(ms2.peaks[:, 1])]
 
 
-def _centroid(mz_seq, int_seq, centroiding_mz_tol=0.005):
+def _centroid(mz_seq, int_seq, mz_tol=0.005):
     """
     Function to centroid the m/z and intensity sequences.
 
@@ -763,12 +783,12 @@ def _centroid(mz_seq, int_seq, centroiding_mz_tol=0.005):
         m/z sequence.
     int_seq: numpy array or list
         Intensity sequence.
-    centroiding_mz_tol: float
+    mz_tol: float
         m/z tolerance for centroiding. Default is 0.005.
     """
 
     diff = np.diff(mz_seq)
-    tmp = np.where(diff < centroiding_mz_tol)[0]
+    tmp = np.where(diff < mz_tol)[0]
 
     if len(tmp) == 0:
         return mz_seq, int_seq
@@ -784,7 +804,7 @@ def _centroid(mz_seq, int_seq, centroiding_mz_tol=0.005):
     return np.array(mz_seq), int_seq
 
 
-def read_raw_file_to_obj(file_name, params=None, int_tol=0.0, centroid=True, print_summary=False):
+def read_raw_file_to_obj(file_name, params=None, int_tol=1000, centroid=True, print_summary=False):
     """
     Read a raw file to a MSData object.
     It's a useful function for data visualization or brief data analysis.
@@ -816,11 +836,9 @@ def read_raw_file_to_obj(file_name, params=None, int_tol=0.0, centroid=True, pri
     # read raw data
     if params is None:
         params = Params()
+        params.int_tol = int_tol
+    
     d.read_raw_data(file_name, params, centroid)
-
-    if int_tol > 0:
-        d.params.int_tol = int_tol
-        d.drop_ion_by_int()
     
     if print_summary:
         print("Number of MS1 scans: " + str(len(d.ms1_idx)), "Number of MS2 scans: " + str(len(d.ms2_idx)))

@@ -1,8 +1,21 @@
 # Author: Hauxu Yu
 
-# A module for sample normalization
+# A module for normalization
+# There are two types of normalization:
+# 1. Sample normalization - to normalize samples with different total amounts/concentrations.
+# 2. Signal normalization - to address the signal drifts in the mass spectrometry data.
 
 import numpy as np
+
+"""
+Sample normalization
+====================
+
+Provides
+    1. Find the normalization factors.
+    2. Find reference sample.
+    3. Normalize samples by factors.
+"""
 
 def find_normalization_factors(array, method='pqn'):
     """ 
@@ -119,3 +132,16 @@ def sample_normalization(feature_table, individual_sample_groups, method='pqn'):
         feature_table.iloc[:, -total_number:-total_number+array.shape[1]] = array
 
     return feature_table
+
+
+
+"""
+Signal normalization
+====================
+
+Provides
+    1. Feature-wise normalization based on timestamp.
+    2. QC-based normalization.
+    3. Internal standard-based normalization (to be implemented).
+"""
+
