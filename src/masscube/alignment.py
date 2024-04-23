@@ -58,10 +58,10 @@ def feature_alignment(path, parameters):
         current_table.index = range(len(current_table))
         new_feature_idx = []
 
-        mz_seq = np.array(feature_table["m/z"], dtype=float)
-        rt_seq = np.array(feature_table["RT"], dtype=float)
-        mz_to_be_matched = np.array(current_table["m/z"], dtype=float)
-        rt_to_be_matched = np.array(current_table["RT"], dtype=float)
+        mz_seq = np.array(feature_table["m/z"], dtype=np.float64)
+        rt_seq = np.array(feature_table["RT"], dtype=np.float64)
+        mz_to_be_matched = np.array(current_table["m/z"], dtype=np.float64)
+        rt_to_be_matched = np.array(current_table["RT"], dtype=np.float64)
         labeled_v = np.ones(len(feature_table), dtype=bool)
         
         # compare the m/z and RT of the features

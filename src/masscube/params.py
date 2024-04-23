@@ -180,7 +180,7 @@ class Params:
 
             sample_table_new = pd.DataFrame(columns=sample_table.columns)
             for i in range(len(sample_groups)):
-                sample_table_new = pd.concat([sample_table_new, sample_table[sample_table.iloc[:, 1].str.contains(sample_groups[i], regex=False)]])
+                sample_table_new = pd.concat([sample_table_new, sample_table[sample_table.iloc[:, 1].str.lower() == sample_groups[i]]])
             self.sample_names = list(sample_table_new.iloc[:, 0])
             self.sample_groups = sample_groups
             self.individual_sample_groups = []

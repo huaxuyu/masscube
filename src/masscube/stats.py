@@ -23,7 +23,7 @@ def statistical_analysis(feature_table, params, before_norm=False):
     """
     
     v = [params.sample_names[i] for i in range(len(params.individual_sample_groups)) if params.individual_sample_groups[i] not in ['qc', 'blank']]
-    data_array = np.array(feature_table[v], dtype=int)
+    data_array = np.array(feature_table[v], dtype=np.int64)
 
     s = len(params.sample_groups) - 2
     v = np.array([i for i in params.individual_sample_groups if i not in ['qc', 'blank']])
@@ -150,7 +150,7 @@ def pca_analysis(data_array, individual_sample_groups, scaling=True, transformat
         The output directory.
     """
 
-    X = np.array(data_array, dtype=float)
+    X = np.array(data_array, dtype=np.float64)
 
     # drop the columns with all zeros
     X = X[~np.all(X == 0, axis=1), :]

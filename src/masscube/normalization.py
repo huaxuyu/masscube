@@ -59,7 +59,7 @@ def sample_normalization_by_factors(array, v):
     # change all zeros to ones
     v[v == 0] = 1
 
-    return np.array(array / v, dtype=int)
+    return np.array(array / v, dtype=np.int64)
 
 
 def find_reference_sample(array, method='number'):
