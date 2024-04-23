@@ -90,9 +90,9 @@ def annotate_in_source_fragment(d):
 
     roi_to_label = np.ones(len(d.rois), dtype=bool)
 
-    # isotopes can't be parent or child
+    # isotopes or rois with length < 4 can't be parent or child
     for idx, r in enumerate(d.rois):
-        if r.is_isotope:
+        if r.is_isotope or len(r.scan_idx_seq) < 4:
             roi_to_label[idx] = False
     
     # find in-source fragments
@@ -138,9 +138,9 @@ def annotate_adduct(d):
     d.rois.sort(key=lambda x: x.mz)
     roi_to_label = np.ones(len(d.rois), dtype=bool)
 
-    # isotopes and in-source fragments cannot be the parent
+    # isotopes, in-source fragments, and rois with length < 4 can't be parent or child
     for idx, r in enumerate(d.rois):
-        if r.is_isotope or r.is_in_source_fragment:
+        if r.is_isotope or r.is_in_source_fragment or len(r.scan_idx_seq) < 4:
             roi_to_label[idx] = False
 
     if d.params.ion_mode.lower() == "positive":

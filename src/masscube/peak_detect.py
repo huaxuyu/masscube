@@ -96,9 +96,9 @@ def cut_roi(r, int_tol=1000):
     """
 
     r.int_seq = np.array(r.int_seq)
-    # r.noise_level = calculate_noise_level(r.int_seq)
+    r.noise_level = calculate_noise_level(r.int_seq)
 
-    if  len(r.int_seq) < 10 or r.peak_height < 3*int_tol or np.max(r.int_seq)/np.mean(r.int_seq) < 3:
+    if  len(r.int_seq) < 10 or r.peak_height < 3*int_tol or (np.max(r.int_seq)/np.mean(r.int_seq) < 3 and r.noise_level > 0.5):
         return [r]
 
     ss = gaussian_filter1d(r.int_seq, sigma=1.5)

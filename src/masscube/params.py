@@ -38,7 +38,7 @@ class Params:
         self.mz_tol_ms1 = 0.01              # m/z tolerance for MS1, default is 0.01
         self.mz_tol_ms2 = 0.015             # m/z tolerance for MS2, default is 0.015
         self.int_tol = 30000                # Intensity tolerance, default is 30000 for Orbitrap and 1000 for other instruments, integer
-        self.roi_gap = 10                   # Gap within a feature, default is 10 (i.e. 10 consecutive scans without signal), integer
+        self.roi_gap = 20                   # Gap within a feature, default is 10 (i.e. 10 consecutive scans without signal), integer
         self.min_ion_num = 10               # Minimum scan number a feature, default is 10, integer
 
         # Parameters for feature alignment
@@ -180,7 +180,7 @@ class Params:
 
             sample_table_new = pd.DataFrame(columns=sample_table.columns)
             for i in range(len(sample_groups)):
-                sample_table_new = pd.concat([sample_table_new, sample_table[sample_table.iloc[:, 1].str.contains(sample_groups[i])]])
+                sample_table_new = pd.concat([sample_table_new, sample_table[sample_table.iloc[:, 1].str.contains(sample_groups[i], regex=False)]])
             self.sample_names = list(sample_table_new.iloc[:, 0])
             self.sample_groups = sample_groups
             self.individual_sample_groups = []

@@ -52,7 +52,7 @@ def feature_alignment(path, parameters):
         
         # read feature table
         current_table = pd.read_csv(txt_file_names[i], low_memory=False, sep="\t")
-        current_table = current_table[current_table["MS2"].notna()|(current_table["peak_height"] > parameters.int_tol*3)]
+        current_table = current_table[current_table["MS2"].notna()|(current_table["length"] > 5)]
         # sort current table by peak height from high to low
         current_table = current_table.sort_values(by="peak_height", ascending=False)
         current_table.index = range(len(current_table))

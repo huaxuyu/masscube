@@ -26,7 +26,7 @@ from .feature_table_utils import calculate_fill_percentage
 # 1. Untargeted feature detection for a single file
 def feature_detection(file_name, params=None, cal_g_score=True, cal_a_score=True,
                       anno_isotope=True, anno_adduct=True, anno_in_source_fragment=True, 
-                      annotation=False, ms2_library_path=None, output_dir=None):
+                      annotation=False, ms2_library_path=None, output_dir=None, cut_roi=True):
     """
     Untargeted feature detection from a single file (.mzML or .mzXML).
 
@@ -79,7 +79,8 @@ def feature_detection(file_name, params=None, cal_g_score=True, cal_a_score=True
         d.find_rois()
 
         # cut ROIs
-        d.cut_rois()
+        if cut_roi:
+            d.cut_rois()
 
         # label short ROIs, find the best MS2, and sort ROIs by m/z
         d.summarize_roi(cal_g_score=cal_g_score, cal_a_score=cal_a_score)
