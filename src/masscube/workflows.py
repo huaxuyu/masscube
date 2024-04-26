@@ -137,8 +137,15 @@ def untargeted_metabolomics_workflow(path=None, batch_size=100):
     
     raw_file_names = os.listdir(params.sample_dir)
     raw_file_names = [f for f in raw_file_names if f.lower().endswith(".mzml") or f.lower().endswith(".mzxml")]
+    raw_file_names = [f for f in raw_file_names if not f.startswith(".")]   # for Mac OS
+    # skip the files that have been processed
+    txt_files = os.listdir(params.single_file_dir)
+    txt_files = [f.split(".")[0] for f in txt_files if f.lower().endswith(".txt")]
+    txt_files = [f for f in txt_files if not f.startswith(".")]  # for Mac OS
+    raw_file_names = [f for f in raw_file_names if f.split(".")[0] not in txt_files]
     raw_file_names = [os.path.join(params.sample_dir, f) for f in raw_file_names]
 
+    print("Total number of files to be processed: " + str(len(raw_file_names)))
     # process files by multiprocessing, each batch contains 100 files by default (tunable in batch_size)
     print("Processing files by multiprocessing...")
     workers = int(multiprocessing.cpu_count() * 0.8)
@@ -183,6 +190,10 @@ def untargeted_metabolomics_workflow(path=None, batch_size=100):
         print("Running statistical analysis...")
         feature_table_before_normalization = statistical_analysis(feature_table_before_normalization, params, before_norm=True)
         feature_table = statistical_analysis(feature_table, params)
+    
+    # output feature table
+    output_path = os.path.join(params.project_dir, "aligned_feature_table.txt")
+    output_feature_table(feature_table, output_path)
 
     # network analysis
     if params.run_network:
@@ -318,6 +329,7 @@ def batch_file_processing(path=None, params=None, cal_g_score=True, cal_a_score=
     
     all_file_names = os.listdir(wd)
     raw_file_names = [f for f in all_file_names if f.lower().endswith(".mzml") or f.lower().endswith(".mzxml")]
+    raw_file_names = [f for f in raw_file_names if not f.startswith(".")]
     txt_files = [f.split(".")[0] for f in all_file_names if f.lower().endswith(".txt")]
 
     # if the file has been processed, skip it

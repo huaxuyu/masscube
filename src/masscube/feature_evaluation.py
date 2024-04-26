@@ -105,6 +105,8 @@ def calculate_noise_level(y):
     for i in range(1, len(diff)):
         if signs[i] != signs[i-1]:
             counter += 1
+    if counter == -1:
+        return 0.0
     
     return counter / (len(y)-2)
 
@@ -135,8 +137,10 @@ def calculate_asymmetry_factor(y):
     ten_height = np.max(y) * 0.1
     idx = np.argmax(y)
 
-    if idx == 0 or idx == len(y) - 1:
-        return -1
+    if idx == 0:
+        return 99
+    if idx == len(y) - 1:
+        return 0
 
     left_idx = np.argmin(np.abs(y[:idx] - ten_height))
     right_idx = np.argmin(np.abs(y[idx:] - ten_height)) + idx
