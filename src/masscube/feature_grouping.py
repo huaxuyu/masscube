@@ -30,42 +30,57 @@ def annotate_isotope(d):
         r.isotope_int_seq = [r.peak_height]
         r.isotope_mz_seq = [r.mz]
 
-        # go to that scan and determine the isotopes
-        isotopes = r.mz + _ISOTOPE_MASS_ARRAY
-
         last_mz = r.mz
-        isotope_id_seq = []
 
-        # find roi using isotope list
-        for iso in isotopes:
-            
-            # if isotpoe is not found in two daltons, stop searching
-            if iso - last_mz > 2.2:
-                break
-
-            v = np.where(np.logical_and(np.abs(d.roi_mz_seq - iso) < 0.01, np.abs(d.roi_rt_seq - r.rt) < 0.05))[0]
-
-            if len(v) == 0:
-                continue
-
+        # check if the currect ion is double charged
+        r.charge_state = 1
+        target_mz = r.mz + 1.003355/2
+        v = np.where(np.logical_and(np.abs(d.roi_mz_seq - target_mz) < 0.015, np.abs(d.roi_rt_seq - r.rt) < 0.1))[0]
+        if len(v) > 0:
             # an isotope can't have intensity 3 fold or higher than M0 or 1% lower than the M0
             v = [v[i] for i in range(len(v)) if d.rois[v[i]].peak_height < 1.2*r.peak_height]
             v = [v[i] for i in range(len(v)) if d.rois[v[i]].peak_height > 0.01*r.peak_height]
+            if len(v) > 0:
+                r.charge_state = 2
+
+        isotope_id_seq = []
+        target_mz = r.mz + 1.003355/r.charge_state
+        total_int = r.peak_height
+
+        # find roi using isotope list
+        i = 0
+        while i < 5:   # maximum 5 isotopes
+            # if isotpoe is not found in two daltons, stop searching
+            if target_mz - last_mz > 2.2:
+                break
+
+            v = np.where(np.logical_and(np.abs(d.roi_mz_seq - target_mz) < 0.015, np.abs(d.roi_rt_seq - r.rt) < 0.1))[0]
 
             if len(v) == 0:
+                i += 1
+                continue
+
+            # an isotope can't have intensity 3 fold or higher than M0 or 1% lower than the last isotope
+            v = [v[i] for i in range(len(v)) if d.rois[v[i]].peak_height < 1.2*r.peak_height]
+            v = [v[i] for i in range(len(v)) if d.rois[v[i]].peak_height > 0.001*total_int]
+
+            if len(v) == 0:
+                i += 1
                 continue
             
             # for high-resolution data, C and N isotopes can be separated and need to be summed
             total_int = np.sum([d.rois[vi].peak_height for vi in v])
+            last_mz = np.mean([d.rois[vi].mz for vi in v])
 
-            r.isotope_mz_seq.append(iso)
+            r.isotope_mz_seq.append(last_mz)
             r.isotope_int_seq.append(total_int)
             
             for vi in v:
                 d.rois[vi].is_isotope = True
                 isotope_id_seq.append(d.rois[vi].id)
 
-            last_mz = iso
+            target_mz = last_mz + 1.003355/r.charge_state
+            i += 1
 
         r.charge_state = get_charge_state(r.isotope_mz_seq)
         r.isotope_id_seq = isotope_id_seq
@@ -249,34 +264,6 @@ def get_charge_state(mz_seq):
             return 2
 
 
-_ISOTOPIC_MASS_DIFFERENCE = {
-    'H': 1.006277,
-    'C': 1.003355,
-    'N': 0.997035,
-    'O': 2.004246,
-    'S': 1.995796,
-    'Cl': 1.99705
-}
-
-
-# adduct mass difference is calculated against the [M+H]+ ion in positive mode, and [M-H]- ion in negative mode
-_ADDUCT_MASS_DIFFERENCE_NEG = {
-    '-H': -1.007276,
-    '-H-H2O': -19.01784,
-    '+Cl': 34.969401,
-    '+CH3COO': 59.013853,
-    '+HCOO': 44.998203,
-}
-
-_ADDUCT_MASS_DIFFERENCE_POS = {
-    '+H': 1.007276,
-    '+H-H2O': -17.003289,
-    '+Na': 22.989221,
-    '+K': 38.963158,
-    '+NH4': 18.033826,
-}
-
-
 _ADDUCT_MASS_DIFFERENCE_POS_AGAINST_H = {
     '[M+H-H2O]+': -18.010565,
     '[M+Na]+': 21.981945,
@@ -290,6 +277,3 @@ _ADDUCT_MASS_DIFFERENCE_NEG_AGAINST_H = {
     '[M+CH3COO]-': 60.021129,
     '[M+HCOO]-': 46.005479,
 }
-
-
-_ISOTOPE_MASS_ARRAY = np.arange(0, 10.1, 1.003355/2)[1:]

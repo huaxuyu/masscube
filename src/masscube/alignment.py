@@ -44,7 +44,6 @@ def feature_alignment(path, parameters):
     int_seq = np.zeros(len(feature_table))
     problematic_files = []
     for i, file_name in enumerate(tqdm(parameters.sample_names)):
-
         # check if the file exists
         if not os.path.exists(txt_file_names[i]):
             problematic_files.append(file_name)
@@ -127,7 +126,7 @@ def feature_alignment(path, parameters):
 
     # STEP 4: drop the empty rows and index the feature table
     feature_table.dropna(subset=["m/z"], inplace=True)
-    feature_table['ID'] = range(1, len(feature_table)+1)
+    feature_table["ID"] = range(1, len(feature_table)+1)
     # remove the problematic files from parameters.sample_names and parameters.individual_sample_groups
     problematic_idx = [parameters.sample_names.index(f) for f in problematic_files]
     parameters.sample_names = [parameters.sample_names[i] for i in range(len(parameters.sample_names)) if i not in problematic_idx]
@@ -167,11 +166,11 @@ def gap_filling(feature_table, parameters, mode='forced_peak_picking', fill_perc
         percent = feature_table.iloc[:,-total_number:-blank_number].notna().sum(axis=1) / (total_number - blank_number)
     feature_table = feature_table[percent > fill_percetange]
     feature_table.index = range(len(feature_table))
-
     # fill the gaps by forced peak picking
     if mode == 'forced_peak_picking':
         raw_file_names = os.listdir(parameters.sample_dir)
         raw_file_names = [f for f in raw_file_names if f.lower().endswith(".mzml") or f.lower().endswith(".mzxml")]
+        raw_file_names = [f for f in raw_file_names if not f.startswith(".")]
         raw_file_names = [os.path.join(parameters.sample_dir, f) for f in raw_file_names]
 
         for file_name in tqdm(parameters.sample_names):
@@ -186,6 +185,8 @@ def gap_filling(feature_table, parameters, mode='forced_peak_picking', fill_perc
                     if pd.isna(feature_table.loc[i, file_name]):
                         _, eic_int, _, _ = d.get_eic_data(feature_table.loc[i, "m/z"], feature_table.loc[i, "RT"], parameters.align_mz_tol, 0.05)
                         feature_table.loc[i, file_name] = np.max(eic_int)
+    # reset id from 1
+    feature_table.loc[:,"ID"] = range(1, len(feature_table)+1)
     return feature_table
 
 def output_feature_table(feature_table, output_path):

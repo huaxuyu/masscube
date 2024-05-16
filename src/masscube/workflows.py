@@ -78,6 +78,8 @@ def feature_detection(file_name, params=None, cal_g_score=True, cal_a_score=True
         # detect region of interests (ROIs)
         d.find_rois()
 
+        d.summarize_roi(False, False)
+
         # cut ROIs
         if cut_roi:
             d.cut_rois()

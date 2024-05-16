@@ -38,7 +38,7 @@ class Params:
         self.mz_tol_ms1 = 0.01              # m/z tolerance for MS1, default is 0.01
         self.mz_tol_ms2 = 0.015             # m/z tolerance for MS2, default is 0.015
         self.int_tol = 30000                # Intensity tolerance, default is 30000 for Orbitrap and 1000 for other instruments, integer
-        self.roi_gap = 20                   # Gap within a feature, default is 10 (i.e. 10 consecutive scans without signal), integer
+        self.roi_gap = 30                   # Gap within a feature, default is 10 (i.e. 10 consecutive scans without signal), integer
         self.min_ion_num = 10               # Minimum scan number a feature, default is 10, integer
 
         # Parameters for feature alignment
@@ -222,6 +222,9 @@ class Params:
             if not value[0] <= getattr(self, key) <= value[1]:
                 print(f"Parameter {key} is not out of range. The value is set to the default value.")
                 setattr(self, key, PARAMETER_DEFAULT[key])
+        
+        if self.msms_library != self.msms_library:
+            self.msms_library = None
         
 
 def find_ms_info(file_name):

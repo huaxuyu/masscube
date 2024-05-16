@@ -90,22 +90,41 @@ def find_rois(d):
     return final_rois
 
 
-def cut_roi(r, int_tol=1000):
+def cut_roi(r, int_tol=1000, sigma=1.2, prominence_ratio=0.1, distance=5):
     """
     Function to cut an ROI by providing the start and end positions.
+
+    Parameters
+    ----------
+    r: Roi object
+        An ROI object to be cut.
+    int_tol: int
+        The intensity tolerance for cutting.
+    sigma: float
+        The sigma value for Gaussian filter.
+    prominence_ratio: float
+        The prominence ratio for finding peaks. prom = np.max(y)*prominence_ratio
+
+    Returns
+    -------
+    cut_rois: list
+        A list of cut ROIs.
     """
 
     r.int_seq = np.array(r.int_seq)
     r.noise_level = calculate_noise_level(r.int_seq)
 
-    # if len(r.int_seq) < 10 or r.peak_height < 3*int_tol or (np.max(r.int_seq)/np.mean(r.int_seq) < 3 and r.noise_level > 0.5):
-    if len(r.int_seq) < 10 or r.peak_height < 3*int_tol or r.noise_level > 0.5:
+    if r.peak_height < 3*int_tol or r.noise_level > 0.6:
         return [r]
+    if r.noise_level < 0.1:
+        prominence_ratio = 0.5*prominence_ratio
+    if len(r.int_seq) < 10:
+        sigma = 0.5*sigma
+        distance = 3
+    ss = gaussian_filter1d(r.int_seq, sigma=sigma)
+    peaks, _ = find_peaks(ss, prominence=np.max(ss)*prominence_ratio, distance=distance)
 
-    ss = gaussian_filter1d(r.int_seq, sigma=1.5)
-    peaks, _ = find_peaks(ss, prominence=np.max(ss)*0.05, distance=5)
-
-    peaks = peaks[r.int_seq[peaks] > 2*int_tol]
+    peaks = peaks[r.int_seq[peaks] > 3*int_tol]
 
     if len(peaks) < 2:
         return [r]

@@ -144,6 +144,8 @@ class MSData:
                 
                 self.scans.append(temp_scan)
                 idx += 1
+        
+        self.ms1_rt_seq = np.array(self.ms1_rt_seq)
 
 
     def extract_scan_mzxml(self, spectra, centroid=True):
@@ -200,6 +202,8 @@ class MSData:
                 
                 self.scans.append(temp_scan)
                 idx += 1
+
+        self.ms1_rt_seq = np.array(self.ms1_rt_seq)
 
     
     def drop_ion_by_int(self):
@@ -571,11 +575,28 @@ class MSData:
         """
 
         if rt_target is None:
-            found_roi = [r for r in self.rois if abs(r.mz - mz_target) < mz_tol]
+            tmp = np.abs(self.roi_mz_seq - mz_target) < mz_tol
+            found_roi = [self.rois[i] for i in np.where(tmp)[0]]
         else:
-            found_roi = [r for r in self.rois if abs(r.mz - mz_target) < mz_tol and abs(r.rt - rt_target) < rt_tol]
+            tmp1 = np.abs(self.roi_mz_seq - mz_target) < mz_tol
+            tmp2 = np.abs(self.roi_rt_seq - rt_target) < rt_tol
+            tmp = np.logical_and(tmp1, tmp2)
+            found_roi = [self.rois[i] for i in np.where(tmp)[0]]
             
-        return found_roi   
+        return found_roi
+    
+    def find_ms1_scan_by_rt(self, rt_target):
+        """
+        Function to find a MS1 scan by retention time.
+
+        Parameters
+        ----------------------------------------------------------
+        rt_target: float
+            Retention time.
+        """
+
+        idx = np.argmin(np.abs(self.ms1_rt_seq - rt_target))
+        return self.scans[self.ms1_idx[idx]]
 
 
     def plot_roi(self, roi_idx, mz_tol=0.005, rt_range=[0, np.inf], rt_window=None, output=False):

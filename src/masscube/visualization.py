@@ -68,6 +68,8 @@ def plot_roi(d, roi, mz_tol=0.01, rt_tol=1.0, output=False, break_scan=None):
 
     if break_scan is not None:
         idx_middle = np.where(eic_scan_idx == break_scan)[0][0]
+    
+    eic_int[idx_start:idx_end] = roi.int_seq
 
     max_int = np.max(eic_int[idx_start:idx_end])
 
@@ -235,6 +237,8 @@ def plot_ms2_matching_from_feature_table(feature_table, params=None, output_dir=
         a = re.sub(r"[^a-zA-Z0-9]", "_", annotations[i])
         a = re.sub(r"[^a-zA-Z0-9]+", "_", a)
         a = "ID" + "_" + str(id[i]) + "_" + a
+        # only keep the first 20 characters
+        a = a[:20]
         output = os.path.join(output_dir, "{}.png".format(a))
         mirror_ms2(mz[i], mz[i], peaks1, peaks2, annotations[i], score[i], output)
 

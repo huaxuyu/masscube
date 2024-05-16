@@ -51,30 +51,21 @@ def calculate_gaussian_similarity(x, y):
     if type(y) is not np.ndarray:
         y = np.array(y)
 
-    mask = y > np.max(y) * 0.05
-    x = x[mask]
-    y = y[mask]
-
     # Initial guess for the parameters
-    if len(x) < 3:
-        return 1.0
-    
-    initial_guess = [max(y), x[np.argmax(y)], 0.2]
+    if len(x) < 5:
+        return np.nan
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        try:
-            popt, _ = curve_fit(_gaussian, x, y, p0=initial_guess)
-        except:
-            popt = np.array(initial_guess)
-    
-    y_fit = _gaussian(x, *popt)
+    a = np.max(y)
+    b = x[np.argmax(y)]
+    c = np.min([x[-1]-b, b-x[0], 2]) / 4
 
-    # if all values in y_fit is zero
-    if np.all(y_fit == 0):
-        return -1
+    if c == 0:
+        c = np.max([x[-1]-b, b-x[0]]) / 4
 
-    similarity = spearmanr(y, y_fit)[0]
+    y_fit = _gaussian(x, a, b, c)
+
+    # use dot product to calculate the similarity
+    similarity = np.dot(y, y_fit) / (np.linalg.norm(y) * np.linalg.norm(y_fit))
     
     return similarity
 
@@ -94,7 +85,7 @@ def calculate_noise_level(y):
         noise level
     """
 
-    y = y[y > np.max(y) * 0.05]
+    y = y[y > np.max(y) * 0.1]
 
     if len(y) < 5:
         return 0.0
@@ -126,25 +117,25 @@ def calculate_asymmetry_factor(y):
         asymmetry factor
     """
 
-    y = y[y > np.max(y) * 0.05]
-    if len(y) < 5:
-        return 0.0
-    
-    # interpolate y to get 100 points
-    x = np.linspace(0, 1, 100)
-    y = np.interp(x, np.linspace(0, 1, len(y)), y)
-
-    ten_height = np.max(y) * 0.1
     idx = np.argmax(y)
 
     if idx == 0:
+        return 0.0
+    elif idx == len(y) - 1:
         return 99
-    if idx == len(y) - 1:
-        return 0
 
-    left_idx = np.argmin(np.abs(y[:idx] - ten_height))
-    right_idx = np.argmin(np.abs(y[idx:] - ten_height)) + idx
+    arr = y < 0.1 * y[idx]
 
-    return (right_idx - idx) / (idx - left_idx)
+    left_idx = np.where(arr[:idx])[0]
+    right_idx = np.where(arr[idx:])[0]
 
+    if len(left_idx) == 0:
+        left_idx = 0
+    else:
+        left_idx = left_idx[-1]
+    if len(right_idx) == 0:
+        right_idx = len(y) - 1
+    else:
+        right_idx = right_idx[0] + idx
 
+    return (idx - left_idx) / (right_idx - idx)
