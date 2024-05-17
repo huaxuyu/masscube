@@ -232,7 +232,11 @@ class MSData:
         """
 
         self.rois = find_rois(self)
-    
+
+        for roi in self.rois:
+            roi.sum_roi(False, False)
+        
+        self.rois.sort(key=lambda x: x.mz)
 
     def cut_rois(self):
         """
@@ -272,18 +276,25 @@ class MSData:
         self.roi_rt_seq = np.array([roi.rt for roi in self.rois])
 
         # allocate ms2 to rois
-        for i in self.ms2_idx:
-            idx = np.where(np.abs(self.roi_mz_seq - self.scans[i].precursor_mz) < self.params.mz_tol_ms2)[0]
-            for j in idx:
-                if self.rois[j].rt_seq[0] < self.scans[i].rt < self.rois[j].rt_seq[-1]:
-                    self.rois[j].ms2_seq.append(self.scans[i])
-                    break
+        self.allocate_ms2_to_rois()
 
         # find best ms2 for each roi
         for roi in self.rois:
             if len(roi.ms2_seq) > 0:
                 roi.best_ms2 = find_best_ms2(roi.ms2_seq)
-        
+    
+    def allocate_ms2_to_rois(self):
+        for i in self.ms2_idx:
+            if len(self.scans[i].peaks) == 0:
+                continue
+            idx = np.where(np.abs(self.roi_mz_seq - self.scans[i].precursor_mz) < 0.015)[0]
+            matched_rois = []
+            for j in idx:
+                if self.rois[j].rt_seq[0] < self.scans[i].rt < self.rois[j].rt_seq[-1]:
+                    matched_rois.append(self.rois[j])
+            if len(matched_rois) > 0:
+                # assign ms2 to the roi with the highest peak height
+                matched_rois[np.argmax([roi.peak_height for roi in matched_rois])].ms2_seq.append(self.scans[i])
     
     def drop_rois_without_ms2(self):
         """

@@ -58,15 +58,14 @@ def feature_detection(file_name, params=None, cal_g_score=True, cal_a_score=True
         d = MSData()
 
         # set parameters
-        # if params is None, use the default parameters
         ms_type, ion_mode, centrod = find_ms_info(file_name)
         if not centrod:
             print("File: " + file_name + " is not centroided and skipped.")
             return None
         
+        # if params is None, use the default parameters
         if params is None:
             params = Params()
-            print("MS type: " + ms_type, "Ion mode: " + ion_mode)
             params.set_default(ms_type, ion_mode)
         
         if ms2_library_path is not None:
@@ -77,8 +76,6 @@ def feature_detection(file_name, params=None, cal_g_score=True, cal_a_score=True
 
         # detect region of interests (ROIs)
         d.find_rois()
-
-        d.summarize_roi(False, False)
 
         # cut ROIs
         if cut_roi:

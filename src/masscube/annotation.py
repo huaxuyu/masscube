@@ -227,7 +227,6 @@ def annotate_rois(d):
     # load the MS/MS database
     entropy_search = load_msms_db(d.params.msms_library)
     
-
     for f in d.rois:
         f.annotation = None
         f.similarity = None

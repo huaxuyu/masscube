@@ -151,6 +151,8 @@ def gap_filling(feature_table, parameters, mode='forced_peak_picking', fill_perc
         The mode for gap filling.
         'forced_peak_picking': fill the gaps by forced peak picking.
         '0.1_min_intensity': fill the gaps by the minimum intensity * 0.1 (no available yet)
+    fill_percetange: float
+        Before filling the gaps, remove the features with less than fill_percetange of the samples.
 
     Returns
     ----------------------------------------------------------
