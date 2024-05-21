@@ -159,6 +159,7 @@ def gap_filling(feature_table, parameters, mode='forced_peak_picking', fill_perc
     feature_table: DataFrame
         The aligned feature table with filled gaps.
     """
+
     # calculate the number of na values in each row
     blank_number = len([x for x in parameters.individual_sample_groups if 'blank' in x])
     total_number = len(parameters.individual_sample_groups)
@@ -182,7 +183,7 @@ def gap_filling(feature_table, parameters, mode='forced_peak_picking', fill_perc
                 continue
             else:
                 matched_raw_file_name = matched_raw_file_name[0]
-                d = read_raw_file_to_obj(matched_raw_file_name, int_tol=parameters.int_tol)
+                d = read_raw_file_to_obj(matched_raw_file_name, int_tol=parameters.int_tol, read_ms2=False)
                 for i in range(len(feature_table)):
                     if pd.isna(feature_table.loc[i, file_name]):
                         _, eic_int, _, _ = d.get_eic_data(feature_table.loc[i, "m/z"], feature_table.loc[i, "RT"], parameters.align_mz_tol, 0.05)
@@ -190,6 +191,7 @@ def gap_filling(feature_table, parameters, mode='forced_peak_picking', fill_perc
     # reset id from 1
     feature_table.loc[:,"ID"] = range(1, len(feature_table)+1)
     return feature_table
+
 
 def output_feature_table(feature_table, output_path):
     """

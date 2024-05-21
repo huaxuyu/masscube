@@ -49,7 +49,7 @@ class MSData:
         self.start_time = None      # Start acquisition time of the raw data
 
 
-    def read_raw_data(self, file_name, params, centroid=True):
+    def read_raw_data(self, file_name, params, read_ms2=True, centroid=True):
         """
         Function to read raw data to MS1 and MS2 (if available)
         (supported by pyteomics package).
@@ -77,15 +77,15 @@ class MSData:
 
             if ext.lower() == ".mzml":
                 with mzml.MzML(file_name) as reader:
-                    self.extract_scan_mzml(reader, params.int_tol, centroid)
+                    self.extract_scan_mzml(reader, params.int_tol, read_ms2, centroid)
             elif ext.lower() == ".mzxml":
                 with mzxml.MzXML(file_name) as reader:
-                    self.extract_scan_mzxml(reader, params.int_tol, centroid)
+                    self.extract_scan_mzxml(reader, params.int_tol, read_ms2, centroid)
         else:
             print("File does not exist.")
 
 
-    def extract_scan_mzml(self, spectra, int_tol, centroid=True):
+    def extract_scan_mzml(self, spectra, int_tol, read_ms2=True, centroid=True):
         """
         Function to extract all scans and convert them to Scan objects.
 
@@ -134,7 +134,7 @@ class MSData:
                     self.bpc_int.append(np.max(int_array))
                     self.ms1_rt_seq.append(rt)
 
-                elif spec['ms level'] == 2:
+                elif spec['ms level'] == 2 and read_ms2:
                     temp_scan = Scan(level=2, scan=idx, rt=rt)
                     precursor_mz = spec['precursorList']['precursor'][0]['selectedIonList']['selectedIon'][0]['selected ion m/z']
                     peaks = np.array([spec['m/z array'], spec['intensity array']], dtype=np.float64).T
@@ -148,7 +148,7 @@ class MSData:
         self.ms1_rt_seq = np.array(self.ms1_rt_seq)
 
 
-    def extract_scan_mzxml(self, spectra, centroid=True):
+    def extract_scan_mzxml(self, spectra, int_tol, read_ms2=True, centroid=True):
         """
         Function to extract all scans and convert them to Scan objects.
 
@@ -179,8 +179,8 @@ class MSData:
                     mz_array = np.array(spec['m/z array'], dtype=np.float64)
                     int_array = np.array(spec['intensity array'], dtype=np.int64)
 
-                    mz_array = mz_array[int_array > self.params.int_tol]
-                    int_array = int_array[int_array > self.params.int_tol]
+                    mz_array = mz_array[int_array > int_tol]
+                    int_array = int_array[int_array > int_tol]
 
                     if centroid:
                         mz_array, int_array = _centroid(mz_array, int_array)
@@ -192,7 +192,7 @@ class MSData:
                     self.bpc_int.append(np.max(int_array))
                     self.ms1_rt_seq.append(rt)
 
-                elif spec['msLevel'] == 2:
+                elif spec['msLevel'] == 2 and read_ms2:
                     temp_scan = Scan(level=2, scan=idx, rt=rt)
                     precursor_mz = spec['precursorMz'][0]['precursorMz']
                     peaks = np.array([spec['m/z array'], spec['intensity array']], dtype=np.float64).T
@@ -776,16 +776,28 @@ class Scan:
             y = y[np.logical_and(x > mz_range[0], x < mz_range[1])]
             x = x[np.logical_and(x > mz_range[0], x < mz_range[1])]
 
+        max_int = np.max(y)
+        x_left = x[0] - 20
+        x_right = x[-1] + 20
         plt.figure(figsize=(10, 3))
         plt.rcParams['font.size'] = 14
         plt.rcParams['font.family'] = 'Arial'
-        # plt.scatter(eic_rt, eic_int, color="black")
+        plt.ylim(0, max_int*1.2)
+        plt.xlim(x_left, x_right)
         plt.vlines(x = x, ymin = 0, ymax = y, color="black", linewidth=1.5)
         plt.hlines(y = 0, xmin = mz_range[0], xmax = mz_range[1], color="black", linewidth=1.5)
         plt.xlabel("m/z, Dalton", fontsize=18, fontname='Arial')
         plt.ylabel("Intensity", fontsize=18, fontname='Arial')
         plt.xticks(fontsize=14, fontname='Arial')
         plt.yticks(fontsize=14, fontname='Arial')
+
+        if self.level == 1:
+            plt.text(x_left+10, max_int*1.1, "m/z = {:.4f}".format(self.mz), fontsize=11, fontname='Arial')
+        elif self.level == 2:
+            plt.text(x_left+10, max_int*1.1, "Precursor m/z = {:.4f}".format(self.precursor_mz), fontsize=11, fontname='Arial')
+        
+        plt.text(x_left+10+(x_right-x_left)*0.3, max_int*1.1, "RT = {:.3f} min".format(self.rt), fontsize=11, fontname='Arial')
+
         plt.show()
 
         if return_data:
@@ -836,7 +848,7 @@ def _centroid(mz_seq, int_seq, mz_tol=0.005):
     return np.array(mz_seq), int_seq
 
 
-def read_raw_file_to_obj(file_name, params=None, int_tol=1000, centroid=True, print_summary=False):
+def read_raw_file_to_obj(file_name, params=None, int_tol=1000, centroid=True, read_ms2=True, print_summary=False):
     """
     Read a raw file to a MSData object.
     It's a useful function for data visualization or brief data analysis.
@@ -870,7 +882,7 @@ def read_raw_file_to_obj(file_name, params=None, int_tol=1000, centroid=True, pr
         params = Params()
         params.int_tol = int_tol
     
-    d.read_raw_data(file_name, params, centroid)
+    d.read_raw_data(file_name, params, read_ms2, centroid)
     
     if print_summary:
         print("Number of MS1 scans: " + str(len(d.ms1_idx)), "Number of MS2 scans: " + str(len(d.ms2_idx)))

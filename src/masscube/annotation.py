@@ -329,6 +329,48 @@ def index_feature_list(feature_list, return_db=False):
         return entropy_search
 
 
+def output_ms2_to_msp(feature_table, output_path=None):
+    """
+    A function to output MS2 spectra to MSP format.
+
+    Parameters
+    ----------
+    feature_table : pandas.DataFrame
+        A DataFrame containing MS2 spectra.
+    """
+
+    if output_path is None:
+        output_path = "ms2.msp"
+    
+    # check the output path to make sure it is a .msp file and it esists
+    if not output_path.lower().endswith(".msp"):
+        raise ValueError("The output path must be a .msp file.")
+
+    with open(output_path, "w") as f:
+        for i in range(len(feature_table)):
+            if feature_table['MS2'][i] != feature_table['MS2'][i]:
+                continue
+
+            if feature_table['annotation'][i] != feature_table['annotation'][i]:
+                name = "Unknown"
+            else:
+                name = str(feature_table['annotation'][i])
+
+            peaks = re.findall(r"\d+\.\d+", feature_table['MS2'][i])
+            f.write("NAME: " + name + "\n")
+            f.write("PRECURSORMZ: " + str(feature_table['m/z'][i]) + "\n")
+            f.write("PRECURSORTYPE: " + str(feature_table['adduct'][i]) + "\n")
+            f.write("RETENTIONTIME: " + str(feature_table['RT'][i]) + "\n")
+            f.write("SEARCHMODE: " + str(feature_table['search_mode'][i]) + "\n")
+            f.write("FORMULA: " + str(feature_table['formula'][i]) + "\n")
+            f.write("INCHIKEY: " + str(feature_table['InChIKey'][i]) + "\n")
+            f.write("SMILES: " + str(feature_table['SMILES'][i]) + "\n")
+            f.write("Num Peaks: " + str(int(len(peaks)/2)) + "\n")
+            for j in range(len(peaks)//2):
+                f.write(str(peaks[2*j]) + "\t" + str(peaks[2*j+1]) + "\n")
+            f.write("\n")
+            
+
 def _correct_db(db):
     """
     Correct the MS/MS database by changing the key names.

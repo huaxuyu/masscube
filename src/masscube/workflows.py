@@ -15,7 +15,7 @@ from .raw_data_utils import MSData, get_start_time
 from .params import Params, find_ms_info
 from .feature_grouping import annotate_isotope, annotate_adduct, annotate_in_source_fragment
 from .alignment import feature_alignment, gap_filling, output_feature_table
-from .annotation import feature_annotation, annotate_rois
+from .annotation import feature_annotation, annotate_rois, output_ms2_to_msp
 from .normalization import sample_normalization
 from .visualization import plot_ms2_matching_from_feature_table
 from .network import network_analysis
@@ -175,6 +175,9 @@ def untargeted_metabolomics_workflow(path=None, batch_size=100):
         feature_annotation(feature_table, params)
     else:
         print("No MS2 library is found. Skipping annotation...")
+    
+    output_path = os.path.join(params.project_dir, "ms2.msp")
+    output_ms2_to_msp(feature_table, output_path)
 
     # normalization
     if params.run_normalization:
