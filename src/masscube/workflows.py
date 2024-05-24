@@ -10,7 +10,6 @@ from copy import deepcopy
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
-from time import time
 
 from .raw_data_utils import MSData, get_start_time
 from .params import Params, find_ms_info
@@ -72,28 +71,18 @@ def feature_detection(file_name, params=None, cal_g_score=True, cal_a_score=True
         if ms2_library_path is not None:
             params.msms_library = ms2_library_path
 
-        t = time()
         # read raw data
         d.read_raw_data(file_name, params)
-        t1 = time()-t
 
-        t = time()
         # detect region of interests (ROIs)
         d.find_rois()
-        t2 = time()-t
 
-        t = time()
         # cut ROIs
         if cut_roi:
             d.cut_rois()
-        t3 = time()-t
 
-        t = time()
         # label short ROIs, find the best MS2, and sort ROIs by m/z
         d.summarize_roi(cal_g_score=cal_g_score, cal_a_score=cal_a_score)
-        t4 = time()-t
-
-        print(t1, t2, t3, t4)
 
         # # annotate isotopes, adducts, and in-source fragments
         if anno_isotope:
