@@ -7,6 +7,7 @@ import numpy as np
 from scipy.signal import find_peaks
 from scipy.ndimage import gaussian_filter1d
 from copy import deepcopy
+import bisect
 from .feature_evaluation import calculate_noise_level
 
 from .feature_evaluation import calculate_gaussian_similarity, calculate_asymmetry_factor
@@ -47,15 +48,12 @@ def find_rois(d):
         # Loop over all current rois
         for i, roi in enumerate(rois):
             
-            mz_diff = np.abs(roi.mz_seq[-1] - s.mz_seq)
-            min_idx = np.argmin(mz_diff)
-
-            if mz_diff[min_idx] < d.params.mz_tol_ms1:
-                if min_idx not in visited_idx:
-                    roi.extend_roi(scan_idx=ms1_idx, rt=s.rt, mz=s.mz_seq[min_idx], intensity=s.int_seq[min_idx])
-                    roi.gap_counter = 0
-                    visited_idx.append(min_idx)
-                    visited_rois_idx.append(i)
+            min_idx = find_closest_index_ordered(s.mz_seq, roi.mz_seq[-1], d.params.mz_tol_ms1)
+            if min_idx is not None and min_idx not in visited_idx:
+                roi.extend_roi(scan_idx=ms1_idx, rt=s.rt, mz=s.mz_seq[min_idx], intensity=s.int_seq[min_idx])
+                roi.gap_counter = 0
+                visited_idx.append(min_idx)
+                visited_rois_idx.append(i)
             
         to_be_moved = []
 
@@ -363,3 +361,32 @@ class Roi:
                 ms2_seq.append(ms2)
         
         self.ms2_seq = ms2_seq
+
+
+def find_closest_index_ordered(array, target, tol=0.01):
+    """
+    Function to find the index of the closest value in an ordered array.
+    """
+
+    idx = bisect.bisect_left(array, target)
+    
+    if idx == 0:
+        if array[idx] - target < tol:
+            return 0
+        else:
+            return None
+    if idx == len(array):
+        if target - array[idx - 1] < tol:
+            return len(array) - 1
+        else:
+            return None
+    
+    before = array[idx - 1]
+    after = array[idx]
+    
+    if after - target < target - before and after - target < tol:
+        return idx
+    elif after - target > target - before and target - before < tol:
+        return idx - 1
+    else:
+        return None
