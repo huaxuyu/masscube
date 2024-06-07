@@ -54,7 +54,7 @@ def calculate_isotope_distribution(formula, mass_resolution=10000, intensity_thr
     abundance = abundance[order]
 
     mass_diffrence = mass[0] / mass_resolution
-    # merge mass with difference lower than 0.01
+    # merge mass with difference lower than mass_diffrence
     groups = []
     group = [0]
     for i in range(1, len(mass)):
@@ -64,7 +64,6 @@ def calculate_isotope_distribution(formula, mass_resolution=10000, intensity_thr
             groups.append(group)
             group = [i]
     groups.append(group)
-    groups
 
     mass = [np.mean(mass[i]) for i in groups]
     abundance = [np.sum(abundance[i]) for i in groups]

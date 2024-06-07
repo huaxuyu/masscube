@@ -113,7 +113,7 @@ def feature_detection(file_name, params=None, cal_g_score=True, cal_a_score=True
 
 
 # 2. Untargeted metabolomics workflow
-def untargeted_metabolomics_workflow(path=None, batch_size=100):
+def untargeted_metabolomics_workflow(path=None, batch_size=100, cpu_ratio=0.8):
     """
     The untargeted metabolomics workflow. See the documentation for details.
 
@@ -121,6 +121,10 @@ def untargeted_metabolomics_workflow(path=None, batch_size=100):
     ----------
     path : str
         The working directory. If None, the current working directory is used.
+    batch_size : int
+        The number of files to be processed in each batch.
+    cpu_ratio : float
+        The ratio of CPU cores to be used.
     """
 
     params = Params()
@@ -147,7 +151,7 @@ def untargeted_metabolomics_workflow(path=None, batch_size=100):
     print("Total number of files to be processed: " + str(len(raw_file_names)))
     # process files by multiprocessing, each batch contains 100 files by default (tunable in batch_size)
     print("Processing files by multiprocessing...")
-    workers = int(multiprocessing.cpu_count() * 0.8)
+    workers = int(multiprocessing.cpu_count() * cpu_ratio)
     for i in range(0, len(raw_file_names), batch_size):
         if len(raw_file_names) - i < batch_size:
             print("Processing files from " + str(i) + " to " + str(len(raw_file_names)))
@@ -292,7 +296,7 @@ def run_evaluation(path):
 # 5. Targeted metabolomics workflow
 def targeted_metabolomics_workflow(path=None):
     """
-    The targeted metabolomics workflow. See the documentation for details.
+    The targeted metabolomics workflow. The function is under development.
 
     Parameters
     ----------
@@ -304,54 +308,52 @@ def targeted_metabolomics_workflow(path=None):
 
 
 # 6. Single-file peak picking (batch mode)
-def batch_file_processing(path=None, params=None, cal_g_score=True, cal_a_score=True,
-                          anno_isotope=True, anno_adduct=True, anno_in_source_fragment=True, 
-                          annotation=False, ms2_library_path=None):
+def batch_file_processing(path=None, batch_size=100, cpu_ratio=0.8):
     """
-    Single MS data processing for multiple files in batch mode.
+    The untargeted metabolomics workflow. See the documentation for details.
 
     Parameters
     ----------
     path : str
-        Path to the mzML or mzXML files.
-    params : Params object
-        Parameters for feature detection.
+        The working directory. If None, the current working directory is used.
+    batch_size : int
+        The number of files to be processed in each batch.
+    cpu_ratio : float
+        The ratio of CPU cores to be used.
     """
-    
+
+    params = Params()
     # obtain the working directory
     if path is not None:
-        wd = path
+        params.project_dir = path
     else:
-        wd = os.getcwd()
-    
-    if os.path.exists(os.path.join(wd, "parameters.csv")):
-        params = Params()
-        params.read_parameters_from_csv(os.path.join(wd, "parameters.csv"))
+        params.project_dir = os.getcwd()
+    params._untargeted_metabolomics_workflow_preparation()
 
+    with open(os.path.join(params.project_dir, "project.mc"), "wb") as f:
+        pickle.dump(params, f)
     
-    all_file_names = os.listdir(wd)
-    raw_file_names = [f for f in all_file_names if f.lower().endswith(".mzml") or f.lower().endswith(".mzxml")]
-    raw_file_names = [f for f in raw_file_names if not f.startswith(".")]
-    txt_files = [f.split(".")[0] for f in all_file_names if f.lower().endswith(".txt")]
-
-    # if the file has been processed, skip it
-    raw_file_names = [f for f in raw_file_names if f.split(".")[0]+"_feature_table" not in txt_files]
+    raw_file_names = os.listdir(params.sample_dir)
+    raw_file_names = [f for f in raw_file_names if f.lower().endswith(".mzml") or f.lower().endswith(".mzxml")]
+    raw_file_names = [f for f in raw_file_names if not f.startswith(".")]   # for Mac OS
+    # skip the files that have been processed
+    txt_files = os.listdir(params.single_file_dir)
+    txt_files = [f.split(".")[0] for f in txt_files if f.lower().endswith(".txt")]
+    txt_files = [f for f in txt_files if not f.startswith(".")]  # for Mac OS
     raw_file_names = [f for f in raw_file_names if f.split(".")[0] not in txt_files]
-    raw_file_names = [os.path.join(wd, f) for f in raw_file_names]
+    raw_file_names = [os.path.join(params.sample_dir, f) for f in raw_file_names]
 
     print("Total number of files to be processed: " + str(len(raw_file_names)))
-
-    # process files by multiprocessing, each batch contains 50 files
+    # process files by multiprocessing, each batch contains 100 files by default (tunable in batch_size)
     print("Processing files by multiprocessing...")
-    workers = int(multiprocessing.cpu_count() * 0.8)
-    for i in range(0, len(raw_file_names), 50):
-        if len(raw_file_names) - i < 50:
+    workers = int(multiprocessing.cpu_count() * cpu_ratio)
+    for i in range(0, len(raw_file_names), batch_size):
+        if len(raw_file_names) - i < batch_size:
             print("Processing files from " + str(i) + " to " + str(len(raw_file_names)))
         else:
-            print("Processing files from " + str(i) + " to " + str(i+50))
+            print("Processing files from " + str(i) + " to " + str(i+batch_size))
         p = multiprocessing.Pool(workers)
-        p.starmap(feature_detection, [(f, params, cal_g_score, cal_a_score, anno_isotope, anno_adduct, anno_in_source_fragment, 
-                                       annotation, ms2_library_path, wd) for f in raw_file_names[i:i+50]])
+        p.starmap(feature_detection, [(f, params) for f in raw_file_names[i:i+batch_size]])
         p.close()
         p.join()
 

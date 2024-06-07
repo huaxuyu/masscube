@@ -35,6 +35,8 @@ dependencies = [
 [project.scripts]
 untargeted-metabolomics = "masscube:untargeted_metabolomics_workflow"
 generate-sample-table = "masscube:generate_sample_table"
+process-files = "masscube:batch_file_processing"
+find-outliers = "masscube:run_evaluation"
 
 [project.urls]
 "Homepage" = "https://github.com/huaxuyu/masscube"
