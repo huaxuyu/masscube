@@ -5,6 +5,8 @@
 # import modules
 import pandas as pd
 import os
+import json
+from importlib.metadata import version
 
 # Define a class to store the parameters
 class Params:
@@ -225,6 +227,33 @@ class Params:
         
         if self.msms_library != self.msms_library:
             self.msms_library = None
+    
+
+    def output_parameters(self, path, format="json"):
+        """
+        Output the parameters to a file.
+        ---------------------------------
+
+        Parameters
+        ----------
+        path : str
+            The path to the output file.
+        format : str
+            The format of the output file. "json" is only supported for now. 
+        """
+
+        if format == "json":
+            parameters = {}
+            # obtain the version of the package
+            parameters["MassCube_version"] = version("masscube")
+
+            for key, value in self.__dict__.items():
+                if key != "project_dir":
+                    parameters[key] = value
+            with open(path, 'w') as f:
+                json.dump(parameters, f)
+        else:
+            raise ValueError("The output format is not supported.")
         
 
 def find_ms_info(file_name):

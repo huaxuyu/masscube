@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 from .annotation import _extract_peaks_from_string
 
-def plot_bpcs(data_list=None, output=None, autocolor=False):
+def plot_bpcs(data_list=None, output=None, autocolor=False, show_legend=True):
     """
     A function to plot the base peak chromatograms (overlapped) of a list of data.
     
@@ -34,12 +34,14 @@ def plot_bpcs(data_list=None, output=None, autocolor=False):
 
         for i, d in enumerate(data_list):
             plt.plot(d.ms1_rt_seq, d.bpc_int, color=color_list[i], linewidth=0.5)
-            plt.fill_between(d.ms1_rt_seq, d.bpc_int, color=color_list[i], alpha=0.05)
             plt.xlabel("Retention Time (min)", fontsize=18, fontname='Arial')
             plt.ylabel("Intensity", fontsize=18, fontname='Arial')
             plt.xticks(fontsize=14, fontname='Arial')
             plt.yticks(fontsize=14, fontname='Arial')
-
+        
+        if show_legend:
+            plt.legend([d.file_name for d in data_list], fontsize=10)
+        
         if output:
             plt.savefig(output, dpi=600, bbox_inches="tight")
             plt.close()

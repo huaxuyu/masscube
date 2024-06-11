@@ -1,3 +1,5 @@
 [console_scripts]
+find-outliers = masscube:run_evaluation
 generate-sample-table = masscube:generate_sample_table
+process-files = masscube:batch_file_processing
 untargeted-metabolomics = masscube:untargeted_metabolomics_workflow

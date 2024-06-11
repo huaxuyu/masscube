@@ -214,6 +214,9 @@ def untargeted_metabolomics_workflow(path=None, batch_size=100, cpu_ratio=0.8):
     # output feature table
     output_path = os.path.join(params.project_dir, "aligned_feature_table.txt")
     output_feature_table(feature_table, output_path)
+
+    # output parameters and metadata
+    params.output_parameters(os.path.join(params.project_dir, "data_processing_metadata.json"))
     print("The workflow is completed.")
 
 
