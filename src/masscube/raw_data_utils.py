@@ -777,8 +777,8 @@ class Scan:
             x = x[np.logical_and(x > mz_range[0], x < mz_range[1])]
 
         max_int = np.max(y)
-        x_left = x[0] - 20
-        x_right = x[-1] + 20
+        x_left = x[0] - 1
+        x_right = x[-1] + 1
         plt.figure(figsize=(10, 3))
         plt.rcParams['font.size'] = 14
         plt.rcParams['font.family'] = 'Arial'
@@ -791,12 +791,10 @@ class Scan:
         plt.xticks(fontsize=14, fontname='Arial')
         plt.yticks(fontsize=14, fontname='Arial')
 
-        if self.level == 1:
-            plt.text(x_left+10, max_int*1.1, "m/z = {:.4f}".format(self.mz), fontsize=11, fontname='Arial')
-        elif self.level == 2:
-            plt.text(x_left+10, max_int*1.1, "Precursor m/z = {:.4f}".format(self.precursor_mz), fontsize=11, fontname='Arial')
+        if self.level == 2:
+            plt.text(x_left+1, max_int*1.1, "Precursor m/z = {:.4f}".format(self.precursor_mz), fontsize=11, fontname='Arial')
         
-        plt.text(x_left+10+(x_right-x_left)*0.3, max_int*1.1, "RT = {:.3f} min".format(self.rt), fontsize=11, fontname='Arial')
+        plt.text(x_left+1+(x_right-x_left)*0.3, max_int*1.1, "RT = {:.3f} min".format(self.rt), fontsize=11, fontname='Arial')
 
         plt.show()
 

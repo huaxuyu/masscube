@@ -182,6 +182,6 @@ def pca_analysis(data_array, individual_sample_groups, scaling=True, transformat
         else:
             output_dir = os.path.join(output_dir, "PCA.png")
 
-    plot_pca(vecPC1, vecPC2, var_PC1, var_PC2, individual_sample_groups, output_dir)
+    plot_pca(vecPC1, vecPC2, var_PC1, var_PC2, individual_sample_groups, output_dir=output_dir)
 
     return vecPC1, vecPC2, var_PC1, var_PC2

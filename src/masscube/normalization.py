@@ -37,11 +37,15 @@ def find_normalization_factors(array, method='pqn'):
 
     # find the reference sample
     ref_idx = find_reference_sample(array)
+    ref_arr = array[:, ref_idx]
 
+    factors = []
     if method == 'pqn':
-        array = array[array[:, ref_idx] != 0, :]
-        # calculate the normalization factor
-        return np.median(array / array[:, ref_idx][:, None], axis=0)
+        for i in range(array.shape[1]):
+            a = array[:, i]
+            common = np.logical_and(a > 0, ref_arr > 0)
+            factors.append(np.median(a[common] / ref_arr[common]))
+    return np.array(factors)
     
 
 def sample_normalization_by_factors(array, v):
@@ -62,7 +66,7 @@ def sample_normalization_by_factors(array, v):
     return np.array(array / v, dtype=np.int64)
 
 
-def find_reference_sample(array, method='number'):
+def find_reference_sample(array, method='median_intensity'):
     """
     A function to find the reference sample for normalization.
     Note, samples are in columns and features are in rows.

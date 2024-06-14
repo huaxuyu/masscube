@@ -60,7 +60,7 @@ def annotate_isotope(d):
                 i += 1
                 continue
 
-            # an isotope can't have intensity 3 fold or higher than M0 or 1% lower than the last isotope
+            # an isotope can't have intensity 1.2 fold or higher than M0 or 0.1% lower than the M0
             v = [v[i] for i in range(len(v)) if d.rois[v[i]].peak_height < 1.2*r.peak_height]
             v = [v[i] for i in range(len(v)) if d.rois[v[i]].peak_height > 0.001*total_int]
 
@@ -123,6 +123,9 @@ def annotate_in_source_fragment(d):
 
             v = np.logical_and(np.abs(d.roi_mz_seq - m) < 0.01, np.abs(d.roi_rt_seq - r.rt) < 0.05)
             v = np.where(np.logical_and(v, roi_to_label))[0]
+
+            # an in-source fragment can't have intensity 3 fold or higher than the parent
+            v = [v[i] for i in range(len(v)) if d.rois[v[i]].peak_height < 3*r.peak_height]
 
             if len(v) == 0:
                 continue

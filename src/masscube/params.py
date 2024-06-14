@@ -22,7 +22,7 @@ class Params:
 
         # The project
         self.project_dir = None             # Project directory, character string
-        self.file_names = None              # Absolute paths to the raw files, without extension, list of character strings
+        self.sample_names = None            # Absolute paths to the raw files, without extension, list of character strings
         self.sample_groups = None           # Sample groups, list of character strings
         self.sample_group_num = None        # Number of sample groups, integer
         self.sample_dir = None              # Directory for the sample information, character string

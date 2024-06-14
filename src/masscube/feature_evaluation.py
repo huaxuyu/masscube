@@ -31,7 +31,7 @@ def _gaussian(x, a, b, c):
 
 def calculate_gaussian_similarity(x, y):
     """
-    calculate the R-squared value of a Gaussian fit to the peak shape
+    calculate the gaussian similarity using dot product
 
     Parameters
     ----------
@@ -43,7 +43,7 @@ def calculate_gaussian_similarity(x, y):
     Returns
     -------
     float
-        R-squared value
+        similarity score
     """
 
     if type(x) is not np.ndarray:
@@ -51,16 +51,34 @@ def calculate_gaussian_similarity(x, y):
     if type(y) is not np.ndarray:
         y = np.array(y)
 
-    # Initial guess for the parameters
+    # if the length of the peak is less than 5, return nan
     if len(x) < 5:
         return np.nan
 
+    # Estimate the parameters of the Gaussian function
+    # a: amplitude, b: mean, c: standard deviation
     a = np.max(y)
-    b = x[np.argmax(y)]
-    c = np.min([x[-1]-b, b-x[0], 2]) / 4
+    idx = np.argmax(y)
+    b = x[idx]
 
-    if c == 0:
-        c = np.max([x[-1]-b, b-x[0]]) / 4
+    c1 = x[-1] - b
+    c2 = b - x[0]
+
+    if idx == len(y) - 1:
+        c1 = 0
+    else:
+        for i in range(idx, len(y)):
+            if y[i] < a / 2:
+                c1 = x[i] - b
+                break
+    if idx == 0:
+        c2 = 0
+    else:
+        for i in range(idx, 0, -1):
+            if y[i] < a / 2:
+                c2 = b - x[i]
+                break
+    c = (c1 + c2) / 2.355
 
     y_fit = _gaussian(x, a, b, c)
 

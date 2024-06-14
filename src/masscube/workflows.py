@@ -162,26 +162,29 @@ def untargeted_metabolomics_workflow(path=None, batch_size=100, cpu_ratio=0.8):
         p.close()
         p.join()
 
-    # feature alignment
-    print("Aligning features...")
-    feature_table = feature_alignment(params.single_file_dir, params)
+    if not os.path.exists(os.path.join(params.project_dir, "aligned_feature_table_before_normalization.txt")):
+        # feature alignment
+        print("Aligning features...")
+        feature_table = feature_alignment(params.single_file_dir, params)
 
-    # gap filling
-    print("Filling gaps...")
-    feature_table = gap_filling(feature_table, params)
-    
-    # calculate fill percentage
-    feature_table = calculate_fill_percentage(feature_table, params.individual_sample_groups)
+        # gap filling
+        print("Filling gaps...")
+        feature_table = gap_filling(feature_table, params)
+        
+        # calculate fill percentage
+        feature_table = calculate_fill_percentage(feature_table, params.individual_sample_groups)
 
-    # annotation
-    print("Annotating features...")
-    if params.msms_library is not None and os.path.exists(params.msms_library):
-        feature_annotation(feature_table, params)
+        # annotation
+        print("Annotating features...")
+        if params.msms_library is not None and os.path.exists(params.msms_library):
+            feature_annotation(feature_table, params)
+        else:
+            print("No MS2 library is found. Skipping annotation...")
+        
+        output_path = os.path.join(params.project_dir, "ms2.msp")
+        output_ms2_to_msp(feature_table, output_path)
     else:
-        print("No MS2 library is found. Skipping annotation...")
-    
-    output_path = os.path.join(params.project_dir, "ms2.msp")
-    output_ms2_to_msp(feature_table, output_path)
+        feature_table = pd.read_csv(os.path.join(params.project_dir, "aligned_feature_table_before_normalization.txt"), sep="\t")
 
     # normalization
     if params.run_normalization:
@@ -220,8 +223,8 @@ def untargeted_metabolomics_workflow(path=None, batch_size=100, cpu_ratio=0.8):
     print("The workflow is completed.")
 
 
-# 3. Get analytical metadata from mzML files
-def get_analytical_metadata(path):
+# 3. Get analytical metadata from mzML or mzXML files
+def get_analytical_metadata(path, output=False):
     """
     Get metadata from mzML or mzXML files.
 
@@ -246,8 +249,12 @@ def get_analytical_metadata(path):
 
     # output to a txt file using pandas
     df = pd.DataFrame(file_times, columns=["file_name", "aquisition_time"])
-    output_path = os.path.join(path, "analytical_metadata.txt")
-    df.to_csv(output_path, sep="\t", index=False)
+    if output:
+        output_path = os.path.join(path, "analytical_metadata.txt")
+        df.to_csv(output_path, sep="\t", index=False)
+    else:
+        return df
+
 
 
 # 4. Evaluate the data quality of the raw files

@@ -245,11 +245,12 @@ def plot_ms2_matching_from_feature_table(feature_table, params=None, output_dir=
         mirror_ms2(mz[i], mz[i], peaks1, peaks2, annotations[i], score[i], output)
 
 
-def plot_pca(vecPC1, vecPC2, var_PC1, var_PC2, group_names, output_dir=None):
+def plot_pca(vecPC1, vecPC2, var_PC1, var_PC2, group_names, colors=None, output_dir=None):
     
     fig, ax = plt.subplots(figsize=(10,10))
     groups = np.unique(np.array(group_names))
-    colors = COLORS[:len(groups)]
+    if colors is None:
+        colors = COLORS[:len(groups)]
     for group, color in zip(groups, colors):
         idxs = np.where(np.array(group_names) == group)
         # No legend will be generated if we don't pass label=species
