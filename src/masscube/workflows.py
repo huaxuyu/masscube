@@ -21,7 +21,7 @@ from .alignment import feature_alignment, gap_filling, output_feature_table
 from .annotation import feature_annotation, annotate_rois, output_ms2_to_msp, feature_annotation_mzrt
 from .normalization import sample_normalization
 from .visualization import plot_ms2_matching_from_feature_table
-from .network import network_analysis
+# from .network import network_analysis
 from .stats import statistical_analysis
 from .feature_table_utils import calculate_fill_percentage
 

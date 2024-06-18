@@ -4,12 +4,12 @@
 
 # Import modules
 import os
-from ms_entropy import read_one_spectrum, FlashEntropySearch
 import pickle
 import numpy as np
 import json
 import pandas as pd
 import re
+from ms_entropy import read_one_spectrum, FlashEntropySearch
 
 def load_msms_db(path):
     """
