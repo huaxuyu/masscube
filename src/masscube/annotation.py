@@ -108,6 +108,55 @@ def feature_annotation(feature_table: pd.DataFrame, parameters):
     return feature_table
 
 
+def feature_annotation_mzrt(feature_table: pd.DataFrame, path: str, default_adduct="[M+H]+", mz_tol=0.01, rt_tol=0.3):
+    """
+    A function to annotate features based on a mzrt file (only .csv is supported now).
+
+    parameters
+    ----------
+    feature_table : pandas.DataFrame
+        A DataFrame containing features.
+    path : str
+        The path to the mzrt file in csv format.
+    default_adduct : str
+        The default adduct for annotation.
+    mz_tol : float
+        The m/z tolerance for matching.
+    rt_tol : float
+        The RT tolerance for matching.
+
+    returns
+    ----------
+    feature_table : pandas.DataFrame
+        A DataFrame containing features with annotations.
+    """
+
+    # load the mzrt file
+    istd_df = pd.read_csv(path)
+
+    # match and annotate features
+    feature_mz = feature_table["m/z"].values
+    feature_rt = feature_table["RT"].values
+
+    for i in range(len(istd_df)):
+        mz = istd_df.iloc[i,1]
+        rt = istd_df.iloc[i,2]
+        matched_v = np.where(np.logical_and(np.abs(feature_mz - mz) < mz_tol, np.abs(feature_rt - rt) < rt_tol))[0]
+        if len(matched_v) > 0:
+            matched_idx = matched_v[0]
+            feature_table.loc[matched_idx, "adduct"] = default_adduct
+            feature_table.loc[matched_idx, "annotation"] = istd_df.iloc[i,0]
+            feature_table.loc[matched_idx, "search_mode"] = "mzrt_match"
+            feature_table.loc[matched_idx, "matched_MS2"] = None
+            feature_table.loc[matched_idx, "formula"] = None
+            feature_table.loc[matched_idx, "similarity"] = None
+            feature_table.loc[matched_idx, "matched_peak_number"] = None
+            feature_table.loc[matched_idx, "SMILES"] = None
+            feature_table.loc[matched_idx, "InChIKey"] = None
+
+    return feature_table
+
+
 def annotate_feature_table(feature_list, params):
     """
     A function to annotate features based on their MS/MS spectra and a MS/MS database.

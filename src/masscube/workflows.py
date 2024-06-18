@@ -15,7 +15,7 @@ from .raw_data_utils import MSData, get_start_time
 from .params import Params, find_ms_info
 from .feature_grouping import annotate_isotope, annotate_adduct, annotate_in_source_fragment
 from .alignment import feature_alignment, gap_filling, output_feature_table
-from .annotation import feature_annotation, annotate_rois, output_ms2_to_msp
+from .annotation import feature_annotation, annotate_rois, output_ms2_to_msp, feature_annotation_mzrt
 from .normalization import sample_normalization
 from .visualization import plot_ms2_matching_from_feature_table
 from .network import network_analysis
@@ -174,12 +174,17 @@ def untargeted_metabolomics_workflow(path=None, batch_size=100, cpu_ratio=0.8):
         # calculate fill percentage
         feature_table = calculate_fill_percentage(feature_table, params.individual_sample_groups)
 
-        # annotation
+        # annotation (using MS2 library)
         print("Annotating features...")
         if params.msms_library is not None and os.path.exists(params.msms_library):
             feature_annotation(feature_table, params)
         else:
             print("No MS2 library is found. Skipping annotation...")
+        
+        # annotation (using mzrt list)
+        if os.path.exists(os.path.join(params.project_dir, "mzrt_list.csv")):
+            default_adduct = "[M+H]+" if params.ion_mode == "positive" else "[M-H]-"
+            feature_annotation_mzrt(feature_table, os.path.join(params.project_dir, "mzrt_list.csv"), default_adduct, params.align_mz_tol, params.align_rt_tol)
         
         output_path = os.path.join(params.project_dir, "ms2.msp")
         output_ms2_to_msp(feature_table, output_path)

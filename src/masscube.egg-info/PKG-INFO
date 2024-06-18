@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: masscube
-Version: 1.0.1
+Version: 1.0.2
 Summary: Accurate and fast data processing for metabolomics
 Author-email: Huaxu Yu <yhxchem@outlook.com>
 Maintainer-email: Huaxu Yu <yhxchem@outlook.com>
@@ -11,16 +11,16 @@ Classifier: Operating System :: OS Independent
 Requires-Python: >=3.8
 Description-Content-Type: text/markdown
 License-File: LICENSE
-Requires-Dist: numpy>=1.24
-Requires-Dist: pandas>=2.0
-Requires-Dist: pyteomics>=4.6
-Requires-Dist: scipy>=1.10.1
-Requires-Dist: tqdm>=4.65.0
-Requires-Dist: lxml>=4.9.2
-Requires-Dist: matplotlib
-Requires-Dist: ms_entropy>=1.1.1
-Requires-Dist: networkx
-Requires-Dist: scikit-learn
+Requires-Dist: numpy==1.24
+Requires-Dist: pandas==2.2.1
+Requires-Dist: pyteomics==4.6.3
+Requires-Dist: scipy==1.10.1
+Requires-Dist: tqdm==4.66.1
+Requires-Dist: lxml==4.9.3
+Requires-Dist: matplotlib==3.8.2
+Requires-Dist: ms_entropy==1.1.1
+Requires-Dist: networkx==3.2.1
+Requires-Dist: scikit-learn==1.3.2
 
 # MassCube
 
