@@ -389,7 +389,7 @@ def output_ms2_to_msp(feature_table, output_path=None):
     """
 
     if output_path is None:
-        output_path = "ms2.msp"
+        output_path = "feature_ms2.msp"
     
     # check the output path to make sure it is a .msp file and it esists
     if not output_path.lower().endswith(".msp"):
