@@ -8,9 +8,8 @@ from scipy.signal import find_peaks
 from scipy.ndimage import gaussian_filter1d
 from copy import deepcopy
 import bisect
-from .feature_evaluation import calculate_noise_level
 
-from .feature_evaluation import calculate_gaussian_similarity, calculate_asymmetry_factor
+from .feature_evaluation import calculate_noise_level, calculate_gaussian_similarity, calculate_asymmetry_factor
 
 def find_rois(d):
     """

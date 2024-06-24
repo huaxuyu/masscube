@@ -23,7 +23,7 @@ from .normalization import sample_normalization
 from .visualization import plot_ms2_matching_from_feature_table
 # from .network import network_analysis
 from .stats import statistical_analysis
-from .feature_table_utils import calculate_fill_percentage
+from .feature_table_utils import convert_features_to_df
 
 
 # 1. Untargeted feature detection for a single file
@@ -214,10 +214,10 @@ def untargeted_metabolomics_workflow(path=None, batch_size=100, cpu_ratio=0.8):
     print("\tIndividual file processing is completed.")
     print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 
-    if not os.path.exists(os.path.join(params.project_dir, "aligned_feature_table_before_normalization.txt")):
+    if not os.path.exists(os.path.join(params.project_dir, "aligned_feature_table_before_normalization.txt")) and not os.path.exists(os.path.join(params.project_dir, "aligned_feature_table.txt")):
         # feature alignment
         print("Step 3: Aligning features...")
-        feature_table = feature_alignment(params.single_file_dir, params)
+        features = feature_alignment(params.single_file_dir, params)
         medadata.append({
             "name": "feature_alignment",
             "layer": 3,
@@ -228,9 +228,7 @@ def untargeted_metabolomics_workflow(path=None, batch_size=100, cpu_ratio=0.8):
 
         # gap filling
         print("Step 4: Filling gaps...")
-        feature_table = gap_filling(feature_table, params)
-        # calculate fill percentage
-        feature_table = calculate_fill_percentage(feature_table, params.individual_sample_groups)
+        features = gap_filling(features, params)
         medadata.append({
             "name": "gap_filling",
             "layer": 4,
@@ -244,7 +242,7 @@ def untargeted_metabolomics_workflow(path=None, batch_size=100, cpu_ratio=0.8):
         ms2_anno = False
         mzrt_anno = False
         if params.msms_library is not None and os.path.exists(params.msms_library):
-            feature_annotation(feature_table, params)
+            features = feature_annotation(features, params)
             print("\tMS2 annotation is completed.")
             ms2_anno = True
         else:
@@ -255,7 +253,7 @@ def untargeted_metabolomics_workflow(path=None, batch_size=100, cpu_ratio=0.8):
             print("\tAnnotating features using the extra mzrt list...")
             mzrt_anno = True
             default_adduct = "[M+H]+" if params.ion_mode == "positive" else "[M-H]-"
-            feature_annotation_mzrt(feature_table, os.path.join(params.project_dir, "mzrt_list.csv"), default_adduct, params.align_mz_tol, params.align_rt_tol)
+            features = feature_annotation_mzrt(features, os.path.join(params.project_dir, "mzrt_list.csv"), default_adduct, params.align_mz_tol, params.align_rt_tol)
             print("\tmz/rt annotation is completed.")
         medadata.append({
             "name": "feature_annotation",
@@ -264,12 +262,18 @@ def untargeted_metabolomics_workflow(path=None, batch_size=100, cpu_ratio=0.8):
             "ms2_annotation": "applied" if ms2_anno else "skipped",
             "mzrt_annotation": "applied" if mzrt_anno else "skipped"
         })
+
+        feature_table = convert_features_to_df(features, params.sample_names)
+        # output the acquired MS2 spectra to a MSP file (designed for MassWiki)
         output_path = os.path.join(params.project_dir, "ms2.msp")
         output_ms2_to_msp(feature_table, output_path)
         print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
     else:
         print("The aligned feature table is found. Step 3 (feature alignment), Step 4 (gap filling), and Step 5 (annotation) are skipped.")
-        feature_table = pd.read_csv(os.path.join(params.project_dir, "aligned_feature_table_before_normalization.txt"), sep="\t")
+        if os.path.exists(os.path.join(params.project_dir, "aligned_feature_table.txt")):
+            feature_table = convert_features_to_df(os.path.join(params.project_dir, "aligned_feature_table.txt"))
+        elif os.path.exists(os.path.join(params.project_dir, "aligned_feature_table_before_normalization.txt")):
+            feature_table = pd.read_csv(os.path.join(params.project_dir, "aligned_feature_table_before_normalization.txt"), sep="\t")
         medadata.append({
             "name": "feature_alignment",
             "layer": 3,

@@ -48,74 +48,85 @@ def load_msms_db(path):
         return entropy_search
 
 
-def feature_annotation(feature_table: pd.DataFrame, parameters):
+def feature_annotation(features, parameters, num=5):
     """
     A function to annotate features based on their MS/MS spectra and a MS/MS database. 
-    Input: feature_table, parameters
     
+    Parameters
+    ----------
+    features : list
+        A list of features.
+    parameters : Params object
+        The parameters for the workflow.
+    num : int
+        The number of top MS/MS spectra to search.
     """
-    
+
     entropy_search = load_msms_db(parameters.msms_library)
 
-    # set the value type in annotation, search_mode, InChIKey, SMILES, matched_MS2 to string
-    feature_table['annotation'] = None
-    feature_table['search_mode'] = None
-    feature_table['InChIKey'] = None
-    feature_table['matched_MS2'] = None
-    feature_table['SMILES'] = None
-    feature_table['formula'] = None
-
-    for i in range(len(feature_table)):
-        ms2 = feature_table.loc[i, 'MS2']
-        # check if ms2 is nan
-        if ms2 != ms2:
+    for f in features:
+        if len(f.ms2_seq) == 0:
             continue
-        
-        precursor_mz = feature_table.loc[i, 'm/z']
-        peaks = _extract_peaks_from_string(ms2)
+        parsed_ms2 = []
+        for ms2 in f.ms2_seq:
+            peaks = _extract_peaks_from_string(ms2)
+            peaks = entropy_search.clean_spectrum_for_search(f.mz, peaks, precursor_ions_removal_da=-1)
+            parsed_ms2.append(peaks)
+        # sort parsed ms2 by summed intensity
+        parsed_ms2 = sorted(parsed_ms2, key=lambda x: np.sum(x[:,1]), reverse=True)
+        parsed_ms2 = parsed_ms2[:num]
+        matched = None
+        highest_similarity = 0
+        f.best_ms2 = _convert_peaks_to_string(parsed_ms2[0])
+        best_ms2 = parsed_ms2[0]
+        for peaks in parsed_ms2:
+            entropy_similarity, matched_peaks_number = entropy_search.identity_search(precursor_mz=f.mz, peaks=peaks, ms1_tolerance_in_da=parameters.mz_tol_ms1, 
+                                                                                    ms2_tolerance_in_da=parameters.mz_tol_ms2, output_matched_peak_number=True)
+            idx = np.argmax(entropy_similarity)
+            if entropy_similarity[idx] > parameters.ms2_sim_tol and entropy_similarity[idx] > highest_similarity:
+                matched = entropy_search[np.argmax(entropy_similarity)]
+                matched = {k.lower():v for k,v in matched.items()}
+                best_ms2 = peaks
 
-        peaks = entropy_search.clean_spectrum_for_search(precursor_mz, peaks, precursor_ions_removal_da=-1)
-        entropy_similarity, matched_peaks_number = entropy_search.identity_search(precursor_mz=precursor_mz, peaks=peaks, ms1_tolerance_in_da=parameters.mz_tol_ms1, 
-                                                                                  ms2_tolerance_in_da=parameters.mz_tol_ms2, output_matched_peak_number=True)
-        idx = np.argmax(entropy_similarity)
-        if entropy_similarity[idx] > parameters.ms2_sim_tol:
-            matched = entropy_search[np.argmax(entropy_similarity)]
-            matched = {k.lower():v for k,v in matched.items()}
-            feature_table.loc[i, 'annotation'] = matched['name']
-            feature_table.loc[i, 'search_mode'] = 'identity_search'
-            feature_table.loc[i, 'similarity'] = entropy_similarity[idx]
-            feature_table.loc[i, 'matched_peak_number'] = matched_peaks_number[idx]
-            feature_table.loc[i, 'SMILES'] = matched['smiles'] if 'smiles' in matched else None
-            feature_table.loc[i, 'InChIKey'] = matched['inchikey'] if 'inchikey' in matched else None
-            feature_table.loc[i, 'matched_MS2'] = _convert_peaks_to_string(matched['peaks'])
-            feature_table.loc[i, 'formula'] = matched['formula'] if 'formula' in matched else None
-            feature_table.loc[i, 'adduct'] = matched['precursor_type']
+        if matched is not None:
+            f.annotation = matched['name']
+            f.search_mode = 'identity_search'
+            f.similarity = entropy_similarity[idx]
+            f.matched_peak_number = matched_peaks_number[idx]
+            f.smiles = matched['smiles'] if 'smiles' in matched else None
+            f.inchikey = matched['inchikey'] if 'inchikey' in matched else None
+            f.matched_ms2 = _convert_peaks_to_string(matched['peaks'])
+            f.formula = matched['formula'] if 'formula' in matched else None
+            f.adduct_type = matched['precursor_type']
+            f.best_ms2 = _convert_peaks_to_string(best_ms2)
+
         else:
-            entropy_similarity = entropy_search.hybrid_search(precursor_mz=precursor_mz, peaks=peaks, ms1_tolerance_in_da=parameters.mz_tol_ms1, 
-                                                              ms2_tolerance_in_da=parameters.mz_tol_ms2)
+            peaks = parsed_ms2[0]
+            entropy_similarity = entropy_search.hybrid_search(precursor_mz=f.mz, peaks=peaks, ms1_tolerance_in_da=parameters.mz_tol_ms1, 
+                                                            ms2_tolerance_in_da=parameters.mz_tol_ms2)
             idx = np.argmax(entropy_similarity)
             if entropy_similarity[idx] > parameters.ms2_sim_tol:
                 matched = entropy_search[np.argmax(entropy_similarity)]
                 matched = {k.lower():v for k,v in matched.items()}
-                feature_table.loc[i, 'annotation'] = matched['name']
-                feature_table.loc[i, 'search_mode'] = 'hybrid_search'
-                feature_table.loc[i, 'similarity'] = entropy_similarity[idx]
-                feature_table.loc[i, 'SMILES'] = matched['smiles'] if 'smiles' in matched else None
-                feature_table.loc[i, 'InChIKey'] = matched['inchikey'] if 'inchikey' in matched else None
-                feature_table.loc[i, 'matched_MS2'] = _convert_peaks_to_string(matched['peaks'])
-                feature_table.loc[i, 'formula'] = matched['formula'] if 'formula' in matched else None
-    
-    return feature_table
+                f.annotation = matched['name']
+                f.search_mode = 'hybrid_search'
+                f.similarity = entropy_similarity[idx]
+                f.smiles = matched['smiles'] if 'smiles' in matched else None
+                f.inchikey = matched['inchikey'] if 'inchikey' in matched else None
+                f.matched_ms2 = _convert_peaks_to_string(matched['peaks'])
+                f.formula = matched['formula'] if 'formula' in matched else None
+
+    return features
 
 
-def feature_annotation_mzrt(feature_table: pd.DataFrame, path: str, default_adduct="[M+H]+", mz_tol=0.01, rt_tol=0.3):
+def feature_annotation_mzrt(features, path, default_adduct="[M+H]+", mz_tol=0.01, rt_tol=0.3):
     """
     A function to annotate features based on a mzrt file (only .csv is supported now).
 
     parameters
     ----------
-    feature_table : pandas.DataFrame
-        A DataFrame containing features.
+    features : list
+        A list of features.
     path : str
         The path to the mzrt file in csv format.
     default_adduct : str
@@ -135,8 +146,8 @@ def feature_annotation_mzrt(feature_table: pd.DataFrame, path: str, default_addu
     istd_df = pd.read_csv(path)
 
     # match and annotate features
-    feature_mz = feature_table["m/z"].values
-    feature_rt = feature_table["RT"].values
+    feature_mz = np.array([f.mz for f in features])
+    feature_rt = np.array([f.rt for f in features])
 
     for i in range(len(istd_df)):
         mz = istd_df.iloc[i,1]
@@ -144,123 +155,17 @@ def feature_annotation_mzrt(feature_table: pd.DataFrame, path: str, default_addu
         matched_v = np.where(np.logical_and(np.abs(feature_mz - mz) < mz_tol, np.abs(feature_rt - rt) < rt_tol))[0]
         if len(matched_v) > 0:
             matched_idx = matched_v[0]
-            feature_table.loc[matched_idx, "adduct"] = default_adduct
-            feature_table.loc[matched_idx, "annotation"] = istd_df.iloc[i,0]
-            feature_table.loc[matched_idx, "search_mode"] = "mzrt_match"
-            feature_table.loc[matched_idx, "matched_MS2"] = None
-            feature_table.loc[matched_idx, "formula"] = None
-            feature_table.loc[matched_idx, "similarity"] = None
-            feature_table.loc[matched_idx, "matched_peak_number"] = None
-            feature_table.loc[matched_idx, "SMILES"] = None
-            feature_table.loc[matched_idx, "InChIKey"] = None
+            features[matched_idx].adduct = default_adduct
+            features[matched_idx].annotation = istd_df.iloc[i,0]
+            features[matched_idx].search_mode = "mzrt_match"
+            features[matched_idx].matched_ms2 = None
+            features[matched_idx].formula = None
+            features[matched_idx].similarity = None
+            features[matched_idx].matched_peak_number = None
+            features[matched_idx].smiles = None
+            features[matched_idx].inchikey = None
 
-    return feature_table
-
-
-def annotate_feature_table(feature_list, params):
-    """
-    A function to annotate features based on their MS/MS spectra and a MS/MS database.
-
-    Parameters
-    ----------
-    feature_list : list
-        A list of features.
-    params : Params object
-        The parameters for the workflow.
-    """
-
-    # load the MS/MS database
-    entropy_search = load_msms_db(params.msms_library)
-
-    for f in feature_list:
-        
-        if f.best_ms2 is not None:
-            peaks = entropy_search.clean_spectrum_for_search(f.mz, f.best_ms2.peaks, precursor_ions_removal_da=-1)
-            entropy_similarity, matched_peaks_number = entropy_search.identity_search(precursor_mz=f.mz, peaks=peaks, ms1_tolerance_in_da=params.mz_tol_ms1, 
-                                                                                      ms2_tolerance_in_da=params.mz_tol_ms2, output_matched_peak_number=True)
-            
-            idx = np.argmax(entropy_similarity)
-            if entropy_similarity[idx] > params.ms2_sim_tol:
-                matched = entropy_search[np.argmax(entropy_similarity)]
-                matched = {k.lower():v for k,v in matched.items()}
-                f.annotation = matched['name']
-                f.similarity = entropy_similarity[idx]
-                f.matched_peak_number = matched_peaks_number[idx]
-                f.smiles = matched['smiles'] if 'smiles' in matched else None
-                f.inchikey = matched['inchikey'] if 'inchikey' in matched else None
-                f.matched_precursor_mz = matched['precursor_mz']
-                f.matched_peaks = matched['peaks']
-                f.formula = matched['formula'] if 'formula' in matched else None
-                f.annotation_mode = 'identity_search'
-            else:
-                entropy_similarity = entropy_search.hybrid_search(precursor_mz=f.mz, peaks=peaks, ms1_tolerance_in_da=params.mz_tol_ms1, 
-                                                                  ms2_tolerance_in_da=params.mz_tol_ms2)
-                idx = np.argmax(entropy_similarity)
-                if entropy_similarity[idx] > params.ms2_sim_tol:
-                    matched = entropy_search[np.argmax(entropy_similarity)]
-                    matched = {k.lower():v for k,v in matched.items()}
-                    f.annotation = matched['name']
-                    f.similarity = entropy_similarity[idx]
-                    f.smiles = matched['smiles'] if 'smiles' in matched else None
-                    f.inchikey = matched['inchikey'] if 'inchikey' in matched else None
-                    f.matched_precursor_mz = matched['precursor_mz']
-                    f.matched_peaks = matched['peaks']
-                    f.formula = matched['formula'] if 'formula' in matched else None
-                    f.annotation_mode = 'hybrid_search'
-
-
-def annotate_features_all_mode_search(feature_list, params, mode='hybrid'):
-    """
-    A function to annotate features based on their MS/MS spectra and a MS/MS database.
-    Four modes are supported: identity search, open search, neutral loss search, and hybrid search.
-    See https://www.nature.com/articles/s41592-023-02012-9 Figure 1 for more details.
-
-    Parameters
-    ----------
-    feature_list : list
-        A list of features.
-    params : Params object
-        The parameters for the workflow.
-    mode : str
-        The mode for MS/MS search.
-        'identity': identity search
-        'hybrid': hybrid search
-        'open': open search
-        'neutral_loss': neutral loss search
-    """
-
-    # load the MS/MS database
-    entropy_search = load_msms_db(params.msms_library)
-
-    for f in feature_list:
-
-        if f.annotation is not None:
-            continue
-        
-        if f.best_ms2 is not None:
-            peaks = entropy_search.clean_spectrum_for_search(f.mz, f.best_ms2.peaks, precursor_ions_removal_da=-1)
-            if mode == 'hybrid':
-                entropy_similarity = entropy_search.hybrid_search(precursor_mz=f.mz, peaks=peaks, ms1_tolerance_in_da=params.mz_tol_ms1,
-                                                                                        ms2_tolerance_in_da=params.mz_tol_ms2, output_matched_peak_number=True)
-            elif mode == 'open':
-                entropy_similarity = entropy_search.open_search(precursor_mz=f.mz, peaks=peaks, ms1_tolerance_in_da=params.mz_tol_ms1,
-                                                                                        ms2_tolerance_in_da=params.mz_tol_ms2, output_matched_peak_number=True)
-            elif mode == 'neutral_loss':
-                entropy_similarity = entropy_search.neutral_loss_search(precursor_mz=f.mz, peaks=peaks, ms1_tolerance_in_da=params.mz_tol_ms1,
-                                                                                            ms2_tolerance_in_da=params.mz_tol_ms2, output_matched_peak_number=True)
-            
-            idx = np.argmax(entropy_similarity)
-            if entropy_similarity[idx] > params.ms2_sim_tol:
-                matched = entropy_search[np.argmax(entropy_similarity)]
-                matched = {k.lower():v for k,v in matched.items()}
-                f.annotation = matched['name']
-                f.similarity = entropy_similarity[idx]
-                f.smiles = matched['smiles'] if 'smiles' in matched else None
-                f.inchikey = matched['inchikey'] if 'inchikey' in matched else None
-                f.matched_precursor_mz = matched['precursor_mz']
-                f.matched_peaks = matched['peaks']
-                f.formula = matched['formula'] if 'formula' in matched else None
-                f.annotation_mode = mode + '_search'
+    return features
 
 
 def annotate_rois(d):
@@ -303,17 +208,7 @@ def annotate_rois(d):
                 f.matched_precursor_mz = matched['precursor_mz']
                 f.matched_peaks = matched['peaks']
                 f.formula = matched['formula'] if 'formula' in matched else None
-
-
-def has_chlorine(iso):
-    # to be constructed
-    pass
-
-
-def has_bromine(iso):
-    # to be constructed
-    pass
-
+                
 
 def feature_to_feature_search(feature_list, sim_tol=0.8):
     """
@@ -378,7 +273,7 @@ def index_feature_list(feature_list, return_db=False):
         return entropy_search
 
 
-def output_ms2_to_msp(feature_table, output_path=None):
+def output_ms2_to_msp(feature_table, output_path):
     """
     A function to output MS2 spectra to MSP format.
 
@@ -386,10 +281,9 @@ def output_ms2_to_msp(feature_table, output_path=None):
     ----------
     feature_table : pandas.DataFrame
         A DataFrame containing MS2 spectra.
+    output_path : str
+        The path to the output MSP file.
     """
-
-    if output_path is None:
-        output_path = "feature_ms2.msp"
     
     # check the output path to make sure it is a .msp file and it esists
     if not output_path.lower().endswith(".msp"):
@@ -397,10 +291,10 @@ def output_ms2_to_msp(feature_table, output_path=None):
 
     with open(output_path, "w") as f:
         for i in range(len(feature_table)):
-            if feature_table['MS2'][i] != feature_table['MS2'][i]:
+            if feature_table['MS2'][i] is None:
                 continue
 
-            if feature_table['annotation'][i] != feature_table['annotation'][i]:
+            if feature_table['annotation'][i] is None:
                 name = "Unknown"
             else:
                 name = str(feature_table['annotation'][i])
