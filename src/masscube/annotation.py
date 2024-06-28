@@ -164,6 +164,8 @@ def feature_annotation_mzrt(features, path, default_adduct="[M+H]+", mz_tol=0.01
             features[matched_idx].matched_peak_number = None
             features[matched_idx].smiles = None
             features[matched_idx].inchikey = None
+            features[matched_idx].is_isotope = False
+            features[matched_idx].is_in_source_fragment = False
 
     return features
 
@@ -208,6 +210,39 @@ def annotate_rois(d):
                 f.matched_precursor_mz = matched['precursor_mz']
                 f.matched_peaks = matched['peaks']
                 f.formula = matched['formula'] if 'formula' in matched else None
+
+
+def annotate_ms2(ms2_seq, path):
+    """
+    A function to annotate MS/MS spectra based on a MS/MS database.
+
+    Parameters
+    ----------
+    ms2_seq : list
+        A list of MS/MS spectra. Each MS/MS spectrum can be Scan object.
+    path : str
+        The path to the MS/MS database (.pkl, .msp, or .json).
+    
+    Returns
+    ----------
+    annotations : list
+        A list of annotations.
+    """
+
+    entropy_search = load_msms_db(path)
+    annotations = []
+    for ms2 in ms2_seq:
+        peaks = entropy_search.clean_spectrum_for_search(ms2.precursor_mz, ms2.peaks, precursor_ions_removal_da=2.0)
+        entropy_similarity, matched_peaks_number = entropy_search.identity_search(precursor_mz=ms2.precursor_mz, peaks=peaks, ms1_tolerance_in_da=0.01, 
+                                                                                  ms2_tolerance_in_da=0.01, output_matched_peak_number=True)
+        idx = np.argmax(entropy_similarity)
+        annotations.append({
+            'matched_ms2': entropy_search[idx],
+            'similarity': entropy_similarity[idx],
+            'matched_peak_number': matched_peaks_number[idx]
+        })
+    
+    return annotations
                 
 
 def feature_to_feature_search(feature_list, sim_tol=0.8):

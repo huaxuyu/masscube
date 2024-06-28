@@ -1,31 +1,53 @@
 # Utility functions for feature table manipulation
 import pandas as pd
+import re
 
-def calculate_fill_percentage(feature_table, individual_sample_groups):
+def output_feature_to_msp(feature_table, output_path):
     """
-    calculate fill percentage for each feature
+    A function to output MS2 spectra to MSP format.
 
     Parameters
     ----------
-    feature_table : pd.DataFrame
-        feature table
-    individual_sample_groups : list
-        list of individual sample groups
-
-    Returns
-    -------
-    feature_table : pd.DataFrame
-        feature table with fill percentage
+    feature_table : pandas.DataFrame
+        A DataFrame containing MS2 spectra.
+    output_path : str
+        The path to the output MSP file.
     """
+    
+    # check the output path to make sure it is a .msp file and it esists
+    if not output_path.lower().endswith(".msp"):
+        raise ValueError("The output path must be a .msp file.")
 
-    # blank samples are not included in fill percentage calculation
-    blank_number = len([x for x in individual_sample_groups if 'blank' in x])
-    total_number = len(individual_sample_groups)
-    if blank_number == 0:
-        feature_table['fill_percentage'] = (feature_table.iloc[:, -total_number:] > 0).sum(axis=1)/total_number * 100
-    else:
-        feature_table['fill_percentage'] = (feature_table.iloc[:, -total_number:-blank_number] > 0).sum(axis=1)/(total_number - blank_number) * 100
-    return feature_table
+    with open(output_path, "w") as f:
+        for i in range(len(feature_table)):
+            if feature_table['MS2'][i] is None:
+                f.write("NAME: Unknown\n")
+                f.write("PRECURSORMZ: " + str(feature_table['m/z'][i]) + "\n")
+                f.write("PRECURSORTYPE: " + str(feature_table['adduct'][i]) + "\n")
+                f.write("RETENTIONTIME: " + str(feature_table['RT'][i]) + "\n")
+                f.write("Num Peaks: " + "0\n")
+                f.write("\n")
+                continue
+
+            if feature_table['annotation'][i] is None:
+                name = "Unknown"
+            else:
+                name = str(feature_table['annotation'][i])
+
+            peaks = re.findall(r"\d+\.\d+", feature_table['MS2'][i])
+            f.write("NAME: " + name + "\n")
+            f.write("PRECURSORMZ: " + str(feature_table['m/z'][i]) + "\n")
+            f.write("PRECURSORTYPE: " + str(feature_table['adduct'][i]) + "\n")
+            f.write("RETENTIONTIME: " + str(feature_table['RT'][i]) + "\n")
+            f.write("SEARCHMODE: " + str(feature_table['search_mode'][i]) + "\n")
+            f.write("FORMULA: " + str(feature_table['formula'][i]) + "\n")
+            f.write("INCHIKEY: " + str(feature_table['InChIKey'][i]) + "\n")
+            f.write("SMILES: " + str(feature_table['SMILES'][i]) + "\n")
+            f.write("Num Peaks: " + str(int(len(peaks)/2)) + "\n")
+            for j in range(len(peaks)//2):
+                f.write(str(peaks[2*j]) + "\t" + str(peaks[2*j+1]) + "\n")
+            f.write("\n")
+
 
 def convert_features_to_df(features, sample_names):
     """

@@ -174,7 +174,8 @@ def gap_filling(features, parameters, mode='forced_peak_picking'):
                 for f in features:
                     if not f.detected_seq[i]:
                         _, eic_int, _, _ = d.get_eic_data(f.mz, f.rt, parameters.align_mz_tol, 0.05)
-                        f.peak_height_seq[i] = np.max(eic_int)
+                        if len(eic_int) > 0:
+                            f.peak_height_seq[i] = np.max(eic_int)
     
     # calculate the fill percentage after gap filling (blank samples are not included)
     blank_num = len([x for x in parameters.individual_sample_groups if 'blank' in x])

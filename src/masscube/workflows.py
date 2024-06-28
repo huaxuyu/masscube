@@ -18,12 +18,12 @@ from .raw_data_utils import MSData, get_start_time
 from .params import Params, find_ms_info
 from .feature_grouping import annotate_isotope, annotate_adduct, annotate_in_source_fragment
 from .alignment import feature_alignment, gap_filling, output_feature_table
-from .annotation import feature_annotation, annotate_rois, output_ms2_to_msp, feature_annotation_mzrt
+from .annotation import feature_annotation, annotate_rois, feature_annotation_mzrt
 from .normalization import sample_normalization
 from .visualization import plot_ms2_matching_from_feature_table
 # from .network import network_analysis
 from .stats import statistical_analysis
-from .feature_table_utils import convert_features_to_df
+from .feature_table_utils import convert_features_to_df, output_feature_to_msp
 
 
 # 1. Untargeted feature detection for a single file
@@ -265,13 +265,13 @@ def untargeted_metabolomics_workflow(path=None, batch_size=100, cpu_ratio=0.8):
 
         feature_table = convert_features_to_df(features, params.sample_names)
         # output the acquired MS2 spectra to a MSP file (designed for MassWiki)
-        output_path = os.path.join(params.project_dir, "ms2.msp")
-        output_ms2_to_msp(feature_table, output_path)
+        output_path = os.path.join(params.project_dir, "MassWiki_input.msp")
+        output_feature_to_msp(feature_table, output_path)
         print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
     else:
         print("The aligned feature table is found. Step 3 (feature alignment), Step 4 (gap filling), and Step 5 (annotation) are skipped.")
         if os.path.exists(os.path.join(params.project_dir, "aligned_feature_table.txt")):
-            feature_table = convert_features_to_df(os.path.join(params.project_dir, "aligned_feature_table.txt"))
+            feature_table = pd.read_csv(os.path.join(params.project_dir, "aligned_feature_table.txt"), sep="\t")
         elif os.path.exists(os.path.join(params.project_dir, "aligned_feature_table_before_normalization.txt")):
             feature_table = pd.read_csv(os.path.join(params.project_dir, "aligned_feature_table_before_normalization.txt"), sep="\t")
         medadata.append({
