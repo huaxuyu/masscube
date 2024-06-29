@@ -87,11 +87,12 @@ def feature_annotation(features, parameters, num=5):
                 matched = entropy_search[np.argmax(entropy_similarity)]
                 matched = {k.lower():v for k,v in matched.items()}
                 best_ms2 = peaks
+                highest_similarity = entropy_similarity[idx]
 
         if matched is not None:
             f.annotation = matched['name']
             f.search_mode = 'identity_search'
-            f.similarity = entropy_similarity[idx]
+            f.similarity = highest_similarity
             f.matched_peak_number = matched_peaks_number[idx]
             f.smiles = matched['smiles'] if 'smiles' in matched else None
             f.inchikey = matched['inchikey'] if 'inchikey' in matched else None
