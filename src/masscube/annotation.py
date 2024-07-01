@@ -407,3 +407,7 @@ def _convert_peaks_to_string(peaks):
     ms2 = ms2[:-1]
     
     return ms2
+
+
+POS_ADDUCTS = ["[M+H]+", "[Cat]+", "[M+H-H2O]+", "[M+NH4]+", "[M+Na]+", "[M+K]+", "[M+2H]2+", "[2M+H]+", "[3M+H]+"]
+NEG_ADDUCTS = ["[M-H]-", "[M-H-H2O]-", "[M+Cl]-", "[M+Br]-", "[M+C2H3O2]-", "[M+CHO2]-", "[2M-H]-", "[3M-H]-"]
