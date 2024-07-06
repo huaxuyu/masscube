@@ -37,7 +37,7 @@ def annotate_isotope(d):
         target_mz = r.mz + 1.003355/2
         v = np.where(np.logical_and(np.abs(d.roi_mz_seq - target_mz) < 0.015, np.abs(d.roi_rt_seq - r.rt) < 0.1))[0]
         if len(v) > 0:
-            # an isotope can't have intensity 3 fold or higher than M0 or 1% lower than the M0
+            # an isotope can't have intensity 1.2 fold or higher than M0 or 1% lower than the M0
             v = [v[i] for i in range(len(v)) if d.rois[v[i]].peak_height < 1.2*r.peak_height]
             v = [v[i] for i in range(len(v)) if d.rois[v[i]].peak_height > 0.01*r.peak_height]
             if len(v) > 0:
@@ -267,6 +267,7 @@ def get_charge_state(mz_seq):
             return 2
 
 
+# could include more adducts
 _ADDUCT_MASS_DIFFERENCE_POS_AGAINST_H = {
     '[M+H-H2O]+': -18.010565,
     '[M+Na]+': 21.981945,

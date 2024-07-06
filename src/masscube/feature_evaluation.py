@@ -88,7 +88,7 @@ def calculate_gaussian_similarity(x, y):
     return similarity
 
 
-def calculate_noise_level(y):
+def calculate_noise_level(y, intensity_threshold=0.1):
     """
     Calculate the noise level of the peak shape
 
@@ -103,7 +103,7 @@ def calculate_noise_level(y):
         noise level
     """
 
-    y = y[y > np.max(y) * 0.1]
+    y = y[y > np.max(y) * intensity_threshold]
 
     if len(y) < 5:
         return 0.0

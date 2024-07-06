@@ -42,6 +42,7 @@ class Params:
         self.int_tol = 30000                # Intensity tolerance, default is 30000 for Orbitrap and 1000 for other instruments, integer
         self.roi_gap = 30                   # Gap within a feature, default is 10 (i.e. 10 consecutive scans without signal), integer
         self.min_ion_num = 10               # Minimum scan number a feature, default is 10, integer
+        self.ppr = 0.7                      # Peak peak correlation threshold for feature grouping, default is 0.7
 
         # Parameters for feature alignment
         self.align_mz_tol = 0.01            # m/z tolerance for MS1, default is 0.01
@@ -49,7 +50,6 @@ class Params:
 
         # Parameters for feature annotation
         self.msms_library = None            # Path to the MS/MS library (.msp or .pickle), character string
-        self.ppr = 0.7                      # Peak peak correlation threshold for feature grouping, default is 0.7
         self.ms2_sim_tol = 0.7              # MS2 similarity tolerance, default is 0.7
 
         # Parameters for normalization

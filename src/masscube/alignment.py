@@ -249,6 +249,7 @@ class Feature:
         self.peak_area_seq = np.zeros(file_number)  # peak area from individual files 
         self.ms2_seq = []                           # best MS2 from individual files
         self.detected_seq = np.zeros(file_number, dtype=bool)   # whether the feature is detected in individual files
+        self.roi_id_seq = np.zeros(file_number)     # ROI ID from individual files
 
         # statistical analysis
         self.fold_change = None             # fold change
