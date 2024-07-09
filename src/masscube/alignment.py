@@ -60,7 +60,7 @@ def feature_alignment(path, parameters):
         current_table.index = range(len(current_table))
         avail_roi = np.ones(len(current_table), dtype=bool)
         # retention time correction
-        if parameters.rt_correction:
+        if parameters.rt_correction and parameters.individual_sample_groups[i] != 'blank':
             rt_arr = current_table["RT"].values
             rt_arr = retention_time_correction(mz_ref, rt_ref, current_table["m/z"].values, rt_arr)
             current_table["RT"] = rt_arr
@@ -261,6 +261,9 @@ def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, mode='linear_inter
             rt_matched.append(rt_arr[v[0]])
             idx_matched.append(i)
     rt_ref = rt_ref[idx_matched]
+
+    if len(idx_matched) < 0.8*len(mz_ref):
+        return rt_arr
     
     # remove outliers
     v = np.abs(rt_ref - rt_matched)
