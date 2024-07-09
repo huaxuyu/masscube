@@ -281,3 +281,51 @@ _ADDUCT_MASS_DIFFERENCE_NEG_AGAINST_H = {
     '[M+CH3COO]-': 60.021129,
     '[M+HCOO]-': 46.005479,
 }
+
+"""
+_adduct_pos = [
+    {'name': '[M+H]+', 'm': 1, 'charge': 1, 'mass': 1.00727645223},
+    {'name': '[M+Na]+', 'm': 1, 'charge': 1, 'mass': 22.989220702},
+    {'name': '[M+K]+', 'm': 1, 'charge': 1, 'mass': 38.9631579064},
+    {'name': '[M+NH4]+', 'm': 1, 'charge': 1, 'mass': 18.03382555335},
+    {'name': '[M-H+2Na]+', 'm': 1, 'charge': 1, 'mass': 44.97116495177},
+    {'name': '[M+H-H2O]+', 'm': 1, 'charge': 1, 'mass': -17.0032882318},
+    {'name': '[M+H-2H2O]+', 'm': 1, 'charge': 1, 'mass': -35.01385291583},
+    {'name': '[M+H-3H2O]+', 'm': 1, 'charge': 1, 'mass': -53.02441759986},
+
+    {'name': '[2M+H]+', 'm': 2, 'charge': 1, 'mass': 1.00727645223},
+    {'name': '[2M+Na]+', 'm': 2, 'charge': 1, 'mass': 22.989220702},
+    {'name': '[2M+K]+', 'm': 2, 'charge': 1, 'mass': 38.9631579064},
+    {'name': '[2M+NH4]+', 'm': 2, 'charge': 1, 'mass': 18.03382555335},
+    {'name': '[2M-H+2Na]+', 'm': 2, 'charge': 1, 'mass': 44.97116495177},
+    {'name': '[2M+H-H2O]+', 'm': 2, 'charge': 1, 'mass': -17.0032882318},
+    {'name': '[2M+H-2H2O]+', 'm': 2, 'charge': 1, 'mass': -35.01385291583},
+    {'name': '[2M+H-3H2O]+', 'm': 2, 'charge': 1, 'mass': -53.02441759986},
+
+    {'name': '[M+2H]2+', 'm': 1, 'charge': 2, 'mass': 2.01455290446},
+    {'name': '[M+H+Na]2+', 'm': 1, 'charge': 2, 'mass': 23.99649715423},
+    {'name': '[M+H+NH4]2+', 'm': 1, 'charge': 2, 'mass': 19.04110200558},
+    {'name': '[M+Ca]2+', 'm': 1, 'charge': 2, 'mass': 39.961493703},
+    {'name': '[M+Fe]2+', 'm': 1, 'charge': 2, 'mass': 55.93383917}
+]
+
+_adduct_neg = {
+    {'name': '[M-H]-', 'm': 1, 'charge': 1, 'mass': -1.00727645223},
+    {'name': '[M+Cl]-', 'm': 1, 'charge': 1, 'mass': 34.968304102},
+    {'name': '[M+Br]-', 'm': 1, 'charge': 1, 'mass': 78.91778902},
+    {'name': '[M+FA]-', 'm': 1, 'charge': 1, 'mass': 44.99710569137},
+    {'name': '[M+Ac]-', 'm': 1, 'charge': 1, 'mass': 59.01275575583},
+    {'name': '[M-H-H2O]-', 'm': 1, 'charge': 1, 'mass': -19.01784113626},
+
+    {'name': '[2M-H]-', 'm': 2, 'charge': 1, 'mass': -1.00727645223},
+    {'name': '[2M+Cl]-', 'm': 2, 'charge': 1, 'mass': 34.968304102},
+    {'name': '[2M+Br]-', 'm': 2, 'charge': 1, 'mass': 78.91778902},
+    {'name': '[2M+FA]-', 'm': 2, 'charge': 1, 'mass': 44.99710569137},
+    {'name': '[2M+Ac]-', 'm': 2, 'charge': 1, 'mass': 59.01275575583},
+    {'name': '[2M-H-H2O]-', 'm': 2, 'charge': 1, 'mass': -19.01784113626},
+
+    {'name': '[M-2H]2-', 'm': 1, 'charge': 2, 'mass': -2.01455290446},
+    {'name': '[M-H+Cl]2-', 'm': 1, 'charge': 2, 'mass': 33.96157622977},
+    {'name': '[M-H+Br]2-', 'm': 1, 'charge': 2, 'mass': 77.91106114777},
+}
+"""
