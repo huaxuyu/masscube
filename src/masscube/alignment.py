@@ -42,7 +42,7 @@ def feature_alignment(path, parameters, drop_by_fill_pct_ratio=0.1):
     rt_tol = parameters.align_rt_tol
     file_quality_arr = np.ones(len(parameters.sample_names), dtype=bool)
     # select anchors for retention time correction
-    if parameters.rt_correction:
+    if parameters.run_rt_correction:
         mz_ref, rt_ref = rt_anchor_selection(txt_file_names[:20])
     
     # STEP 3: read individual feature tables and align features
@@ -54,13 +54,13 @@ def feature_alignment(path, parameters, drop_by_fill_pct_ratio=0.1):
 
         # read feature table
         current_table = pd.read_csv(txt_file_names[i], low_memory=False, sep="\t")
-        current_table = current_table[current_table["MS2"].notna()|(current_table["length"] > 5)]
+        current_table = current_table[current_table["MS2"].notna()|(current_table["length"]>=parameters.min_scan_num_for_alignment)]
         # sort current table by peak height from high to low
         current_table = current_table.sort_values(by="peak_height", ascending=False)
         current_table.index = range(len(current_table))
         avail_roi = np.ones(len(current_table), dtype=bool)
         # retention time correction
-        if parameters.rt_correction and parameters.individual_sample_groups[i] != 'blank':
+        if parameters.run_rt_correction and parameters.individual_sample_groups[i] != 'blank':
             rt_arr = current_table["RT"].values
             rt_arr = retention_time_correction(mz_ref, rt_ref, current_table["m/z"].values, rt_arr)
             current_table["RT"] = rt_arr
@@ -279,6 +279,9 @@ def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, mode='linear_inter
         rt_matched = np.delete(rt_matched, outliers)
 
     if mode == 'linear_interpolation':
+        # add zero to the beginning of rt_matched and rt_ref
+        rt_matched = np.insert(rt_matched, 0, 0)
+        rt_ref = np.insert(rt_ref, 0, 0)
         f = interp1d(rt_matched, rt_ref, fill_value='extrapolate')
         return f(rt_arr)
 
