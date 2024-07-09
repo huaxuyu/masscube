@@ -29,7 +29,7 @@ class Params:
         self.single_file_dir = None         # Directory for the single file output, character string
         self.annotation_dir = None          # Directory for the annotation output, character string
         self.chromatogram_dir = None        # Directory for the chromatogram output, character string
-        self.network_dir = None             # DirectoTry for the network output, character string
+        # self.network_dir = None             # DirectoTry for the network output, character string
         self.statistics_dir = None          # Directory for the statistical analysis output, character string
 
         # MS data acquisition
@@ -64,8 +64,8 @@ class Params:
         # Statistical analysis
         self.run_statistics = False         # Whether to perform statistical analysis
 
-        # Network analysis
-        self.run_network = False            # Whether to perform network analysis
+        # # Network analysis
+        # self.run_network = False            # Whether to perform network analysis
 
         # Visualization
         self.plot_bpc = False               # Whether to plot base peak chromatogram
@@ -116,7 +116,7 @@ class Params:
         self.single_file_dir = os.path.join(self.project_dir, "single_files")
         self.ms2_matching_dir = os.path.join(self.project_dir, "ms2_matching")
         self.bpc_dir = os.path.join(self.project_dir, "chromatogram")
-        self.network_dir = os.path.join(self.project_dir, "network")
+        # self.network_dir = os.path.join(self.project_dir, "network")
         self.statistics_dir = os.path.join(self.project_dir, "statistics")
         
         # STEP 2: check if the required files are prepared
@@ -136,8 +136,8 @@ class Params:
             os.makedirs(self.ms2_matching_dir)
         if not os.path.exists(self.bpc_dir):
             os.makedirs(self.bpc_dir)
-        if not os.path.exists(self.network_dir):
-            os.makedirs(self.network_dir)
+        # if not os.path.exists(self.network_dir):
+        #     os.makedirs(self.network_dir)
         if not os.path.exists(self.statistics_dir):
             os.makedirs(self.statistics_dir)
         
