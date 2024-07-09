@@ -47,6 +47,7 @@ class Params:
         # Parameters for feature alignment
         self.align_mz_tol = 0.01            # m/z tolerance for MS1, default is 0.01
         self.align_rt_tol = 0.2             # RT tolerance, default is 0.2
+        self.rt_correction = True           # Whether to perform RT correction, default is True
 
         # Parameters for feature annotation
         self.msms_library = None            # Path to the MS/MS library (.msp or .pickle), character string

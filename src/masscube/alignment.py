@@ -8,8 +8,11 @@ import numpy as np
 import pandas as pd
 import os
 from tqdm import tqdm
+from scipy.interpolate import interp1d
+from scipy.stats import zscore
+
 from .raw_data_utils import read_raw_file_to_obj
-from time import time
+
 
 def feature_alignment(path, parameters):
     """
@@ -38,6 +41,9 @@ def feature_alignment(path, parameters):
     mz_tol = parameters.align_mz_tol
     rt_tol = parameters.align_rt_tol
     file_quality_arr = np.ones(len(parameters.sample_names), dtype=bool)
+    # select anchors for retention time correction
+    if parameters.rt_correction:
+        mz_ref, rt_ref = rt_anchor_selection(txt_file_names[:20])
     
     # STEP 3: read individual feature tables and align features
     for i, file_name in enumerate(tqdm(parameters.sample_names)):
@@ -53,6 +59,11 @@ def feature_alignment(path, parameters):
         current_table = current_table.sort_values(by="peak_height", ascending=False)
         current_table.index = range(len(current_table))
         avail_roi = np.ones(len(current_table), dtype=bool)
+        # retention time correction
+        if parameters.rt_correction:
+            rt_arr = current_table["RT"].values
+            rt_arr = retention_time_correction(mz_ref, rt_ref, current_table["m/z"].values, rt_arr)
+            current_table["RT"] = rt_arr
 
         if len(features) > 0:
             for f in features:
@@ -205,6 +216,151 @@ def output_feature_table(feature_table, output_path):
     feature_table.to_csv(output_path, index=False, sep="\t")
 
 
+def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, mode='linear_interpolation', mz_tol=0.01, rt_tol=2.0):
+    """
+    To correct retention times for feature alignment.
+
+    There are three steps:
+    1. Find the selected anchors in the given data.
+    2. Create a model to correct retention times.
+    3. Correct retention times.
+    
+    Parameters
+    ----------
+    mz_ref: np.array
+        The m/z values of the reference features.
+    rt_ref: np.array
+        The retention times of the reference features.
+    mz_arr: np.array
+        The m/z values of the features to be corrected.
+    rt_arr: np.array
+        The retention times of the features to be corrected.
+    mode: str
+        The mode for retention time correction.
+        'linear_interpolation': linear interpolation for retention time correction.
+    mz_tol: float
+        The m/z tolerance for selecting anchors.
+    rt_tol: float
+        The retention time tolerance for selecting anchors.
+    
+    Returns
+    -------
+    rt_corr: np.array
+        The corrected retention times.
+    """
+
+    mz_matched = []
+    rt_matched = []
+    idx_matched = []
+
+    for i in range(len(mz_ref)):
+        v = np.logical_and(np.abs(mz_arr - mz_ref[i]) < mz_tol, np.abs(rt_arr - rt_ref[i]) < rt_tol)
+        v = np.where(v)[0]
+        if len(v) > 0:
+            mz_matched.append(mz_arr[v[0]])
+            rt_matched.append(rt_arr[v[0]])
+            idx_matched.append(i)
+    rt_ref = rt_ref[idx_matched]
+    
+    # remove outliers
+    v = np.abs(rt_ref - rt_matched)
+    z = zscore(v)
+    outliers = np.where(np.logical_and(np.abs(z) > 1, v > 0.1))[0]
+    if len(outliers) > 0:
+        rt_ref = np.delete(rt_ref, outliers)
+        rt_matched = np.delete(rt_matched, outliers)
+
+    if mode == 'linear_interpolation':
+        f = interp1d(rt_matched, rt_ref, fill_value='extrapolate')
+        return f(rt_arr)
+
+
+def rt_anchor_selection(data_list, num=50, noise_tol=0.3):
+    """
+    To select anchors for retention time correction. The anchors are commonly detected in the provided
+    data, of high intensity, with good peak shape, and equally distributed in the analysis time.
+
+    The number of anchors
+
+    Parameters
+    ----------
+    data_list: list
+        A list of MSData objects or file names of the ouput .txt files.
+    num: int
+        The number of anchors to be selected.
+    noise_tol: float
+        The noise level for the anchors. Suggestions: 0.3 or lower.
+
+    Returns
+    -------
+    anchors: list
+        A list of anchors (dict) for retention time correction.
+    """
+
+    if isinstance(data_list[0], str):
+        # check files and choose the one with the highest total intensity as reference files
+        total_int = []
+        for file in data_list:
+            table = pd.read_csv(file, sep="\t", low_memory=False)
+            total_int.append(np.sum(table["peak_height"]))
+        ref_idx = np.argmax(total_int)
+
+        table = pd.read_csv(data_list[ref_idx], sep="\t", low_memory=False)
+        table = table.sort_values(by="m/z")
+        mzs = table["m/z"].values
+        n_scores = table["noise_level"].values
+        v = [False]
+        mz_tol = 0.01
+        for i in range(1, len(mzs)-1):
+            if mzs[i]-mzs[i-1] > mz_tol and mzs[i+1] - mzs[i] > mz_tol and n_scores[i] < noise_tol:
+                v.append(True)
+            else:
+                v.append(False)
+        v.append(False)
+        valid_mzs = mzs[v]
+        valid_rts = table["RT"].values[v]
+        valid_ints = table["peak_height"].values[v]
+        valid_mzs = valid_mzs[np.argsort(valid_ints)[-num:]]
+        valid_rts = valid_rts[np.argsort(valid_ints)[-num:]]
+        # sort the results by retention time
+        valid_mzs = valid_mzs[np.argsort(valid_rts)]
+        valid_rts = valid_rts[np.argsort(valid_rts)]
+
+        train_idx, _ = _split_to_train_test(valid_rts)
+
+        return valid_mzs[train_idx], valid_rts[train_idx]
+
+
+def _split_to_train_test(array, interval=0.3):
+    """
+    To split the selected anchors into training and testing sets.
+
+    Parameters
+    ----------
+    array: numpy.ndarray
+        The retention times of the selected anchors.
+    interval: float
+        The time interval for splitting the anchors.
+
+    Returns
+    -------
+    train_idx: list
+        The indices of the training set.
+    test_idx: list
+        The indices of the testing set.
+    """
+
+    train_idx = [0]
+    test_idx = []
+    for i in range(1, len(array)):
+        if array[i] - array[train_idx[-1]] < interval:
+            test_idx.append(i)
+        else:
+            train_idx.append(i)
+
+    return train_idx, test_idx
+
+
 class Feature:
     """
     A class to model a feature in mass spectrometry data. Generally, a feature is defined as 
@@ -263,15 +419,3 @@ class Feature:
 
         self.mz = np.mean(self.mz_seq[self.detected_seq])
         self.rt = np.mean(self.rt_seq[self.detected_seq])
-
-
-# generate an empty feature table with 100000 rows
-def _init_feature_table(rows=5000, sample_names=[]):
-    tmp = pd.DataFrame(
-        columns=["ID", "m/z", "RT", "adduct", "is_isotope", "is_in_source_fragment", "Gaussian_similarity", "noise_level", "asymmetry_factor",
-                 "charge", "isotopes", "MS2", 
-                "matched_MS2", "search_mode", "annotation", "formula", "similarity", "matched_peak_number", "SMILES", "InChIKey", 
-                "fill_percentage", "alignment_reference"] + sample_names,
-        index=range(rows)
-    )
-    return tmp
