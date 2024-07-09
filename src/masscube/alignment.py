@@ -14,7 +14,7 @@ from scipy.stats import zscore
 from .raw_data_utils import read_raw_file_to_obj
 
 
-def feature_alignment(path, parameters):
+def feature_alignment(path, parameters, drop_by_fill_pct_ratio=0.1):
     """
     A function to align the features from individual files (.txt).
 
@@ -80,6 +80,7 @@ def feature_alignment(path, parameters):
                     f.peak_area_seq[i] = current_table.loc[v, "peak_area"]
                     f.ms2_seq.append(current_table.loc[v, "MS2"])
                     f.detected_seq[i] = True
+                    f.roi_id_seq[i] = current_table.loc[v, "ID"]
                     avail_roi[v] = False
                     # check if this file can be the reference file
                     if current_table.loc[v, "peak_height"] > f.highest_intensity:
@@ -107,6 +108,7 @@ def feature_alignment(path, parameters):
                 f.peak_area_seq[i] = current_table.loc[j, "peak_area"]
                 f.ms2_seq.append(current_table.loc[j, "MS2"])
                 f.detected_seq[i] = True
+                f.roi_id_seq[i] = current_table.loc[j, "ID"]
                 f.highest_intensity = current_table.loc[j, "peak_height"]
                 f.gaussian_similarity = current_table.loc[j, "Gaussian_similarity"]
                 f.noise_level = current_table.loc[j, "noise_level"]
@@ -139,7 +141,10 @@ def feature_alignment(path, parameters):
     
     # STEP 5: calculate the fill percentage and remove the features with fill percentage less than 0.1
     blank_num = len([x for x in parameters.individual_sample_groups if 'blank' in x])
-    features = [f for f in features if (np.sum(f.detected_seq)-blank_num) > 0.1*(len(parameters.sample_names)-blank_num)]
+    if blank_num > 0:
+        features = [f for f in features if np.sum(f.detected_seq[:-blank_num]) > drop_by_fill_pct_ratio*(len(parameters.sample_names)-blank_num)]
+    else:
+        features = [f for f in features if np.sum(f.detected_seq) > drop_by_fill_pct_ratio*len(parameters.sample_names)]
 
     for i in range(len(features)):
         features[i].id = i
