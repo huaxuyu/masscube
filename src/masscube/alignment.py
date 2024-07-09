@@ -410,13 +410,13 @@ class Feature:
         self.matched_ms2 = None                     # matched MS2
 
         # individual files
-        self.mz_seq = np.zeros(file_number)         # m/z values from individual files
-        self.rt_seq = np.zeros(file_number)         # retention time values from individual files
-        self.peak_height_seq = np.zeros(file_number)    # peak height from individual files
-        self.peak_area_seq = np.zeros(file_number)  # peak area from individual files 
-        self.ms2_seq = []                           # best MS2 from individual files
+        self.mz_seq = np.zeros(file_number)                     # m/z values from individual files
+        self.rt_seq = np.zeros(file_number)                     # retention time values from individual files
+        self.peak_height_seq = np.zeros(file_number)            # peak height from individual files
+        self.peak_area_seq = np.zeros(file_number)              # peak area from individual files 
+        self.ms2_seq = []                                       # best MS2 from individual files
         self.detected_seq = np.zeros(file_number, dtype=bool)   # whether the feature is detected in individual files
-        self.roi_id_seq = np.zeros(file_number)     # ROI ID from individual files
+        self.roi_id_seq = -np.ones(file_number, dtype=int)      # ROI ID from individual files (-1 if not detected or gap filled)
 
         # statistical analysis
         self.fold_change = None             # fold change

@@ -47,7 +47,7 @@ class Params:
         self.align_mz_tol = 0.01            # m/z tolerance for MS1, default is 0.01
         self.align_rt_tol = 0.2             # RT tolerance, default is 0.2
         self.run_rt_correction = True       # Whether to perform RT correction, default is True
-        self.min_scan_num_for_alignment = 5    # Minimum scan number a feature to be aligned, default is 5
+        self.min_scan_num_for_alignment = 6    # Minimum scan number a feature to be aligned, default is 6
 
         # Parameters for feature annotation
         self.msms_library = None            # Path to the MS/MS library (.msp or .pickle), character string
