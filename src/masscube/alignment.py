@@ -244,8 +244,8 @@ def output_feature_table(feature_table, output_path):
     feature_table.to_csv(output_path, index=False, sep="\t")
 
 
-def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, mode='linear_interpolation', mz_tol=0.01, 
-                              rt_tol=2.0, return_model=False):
+def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, mode='linear_interpolation', mz_tol=0.012, 
+                              rt_tol=2.0, found_marker_ratio=0.4, return_model=False):
     """
     To correct retention times for feature alignment.
 
@@ -291,7 +291,7 @@ def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, mode='linear_inter
             idx_matched.append(i)
     rt_ref = rt_ref[idx_matched]
 
-    if len(idx_matched) < 0.5*len(mz_ref):
+    if len(idx_matched) < found_marker_ratio*len(mz_ref):
         if return_model:
             return rt_arr, None
         else:

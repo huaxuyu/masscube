@@ -221,7 +221,7 @@ class Params:
         ------------------------------------
         """
 
-        for key, value in PARAMETER_RAGEES.items():
+        for key, value in PARAMETER_RAGES.items():
             if not value[0] <= getattr(self, key) <= value[1]:
                 print(f"Parameter {key} is not out of range. The value is set to the default value.")
                 setattr(self, key, PARAMETER_DEFAULT[key])
@@ -292,11 +292,11 @@ def find_ms_info(file_name):
     return ms_type, ion_mode, centroid
 
 
-PARAMETER_RAGEES = {
+PARAMETER_RAGES = {
     "rt_start": [0.0, 1000.0],
     "rt_end": [0.0, 1000.0],
-    "mz_tol_ms1": [0.0, 0.015],
-    "mz_tol_ms2": [0.0, 0.015],
+    "mz_tol_ms1": [0.0, 0.02],
+    "mz_tol_ms2": [0.0, 0.02],
     "int_tol": [0, 1e10],
     "roi_gap": [0, 50],
     "min_scan_num_for_alignment": [0, 50],

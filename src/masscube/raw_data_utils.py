@@ -140,7 +140,7 @@ class MSData:
                     peaks = np.array([spec['m/z array'], spec['intensity array']], dtype=np.float64).T
                     temp_scan.add_info_by_level(precursor_mz=precursor_mz, peaks=peaks)
                     if clean_ms2:
-                        clean_ms2(temp_scan)
+                        _clean_ms2(temp_scan)
                     self.ms2_idx.append(idx)
                 
                 self.scans.append(temp_scan)
@@ -199,7 +199,7 @@ class MSData:
                     peaks = np.array([spec['m/z array'], spec['intensity array']], dtype=np.float64).T
                     temp_scan.add_info_by_level(precursor_mz=precursor_mz, peaks=peaks)
                     if clean_ms2:
-                        clean_ms2(temp_scan)
+                        _clean_ms2(temp_scan)
                     self.ms2_idx.append(idx)
                 
                 self.scans.append(temp_scan)
@@ -820,7 +820,7 @@ class Scan:
             return x, y
 
 
-def clean_ms2(ms2, offset=2, int_drop_ratio=0.01):
+def _clean_ms2(ms2, offset=2, int_drop_ratio=0.01):
     """
     A function to clean MS/MS by
     1. Drop ions with m/z > (precursor_mz - offset)   
