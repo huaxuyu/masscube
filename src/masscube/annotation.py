@@ -70,7 +70,7 @@ def feature_annotation(features, parameters, num=5):
         parsed_ms2 = []
         for ms2 in f.ms2_seq:
             peaks = _extract_peaks_from_string(ms2)
-            peaks = entropy_search.clean_spectrum_for_search(f.mz, peaks, precursor_ions_removal_da=-1)
+            peaks = entropy_search.clean_spectrum_for_search(f.mz, peaks, precursor_ions_removal_da=2.0)
             parsed_ms2.append(peaks)
         # sort parsed ms2 by summed intensity
         parsed_ms2 = sorted(parsed_ms2, key=lambda x: np.sum(x[:,1]), reverse=True)
@@ -195,7 +195,7 @@ def annotate_rois(d):
         f.formula = None
 
         if f.best_ms2 is not None:
-            peaks = entropy_search.clean_spectrum_for_search(f.mz, f.best_ms2.peaks)
+            peaks = entropy_search.clean_spectrum_for_search(f.mz, f.best_ms2.peaks, precursor_ions_removal_da=2.0)
             entropy_similarity, matched_peaks_number = entropy_search.identity_search(precursor_mz=f.mz, peaks=peaks, ms1_tolerance_in_da=d.params.mz_tol_ms1, 
                                                                                       ms2_tolerance_in_da=d.params.mz_tol_ms2, output_matched_peak_number=True)
             
