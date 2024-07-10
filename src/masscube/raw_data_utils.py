@@ -85,7 +85,7 @@ class MSData:
             print("File does not exist.")
 
 
-    def extract_scan_mzml(self, spectra, int_tol, read_ms2=True, centroid=True):
+    def extract_scan_mzml(self, spectra, int_tol, read_ms2=True, clean_ms2=False, centroid=True):
         """
         Function to extract all scans and convert them to Scan objects.
 
@@ -139,6 +139,8 @@ class MSData:
                     precursor_mz = spec['precursorList']['precursor'][0]['selectedIonList']['selectedIon'][0]['selected ion m/z']
                     peaks = np.array([spec['m/z array'], spec['intensity array']], dtype=np.float64).T
                     temp_scan.add_info_by_level(precursor_mz=precursor_mz, peaks=peaks)
+                    if clean_ms2:
+                        clean_ms2(temp_scan)
                     self.ms2_idx.append(idx)
                 
                 self.scans.append(temp_scan)
@@ -147,7 +149,7 @@ class MSData:
         self.ms1_rt_seq = np.array(self.ms1_rt_seq)
 
 
-    def extract_scan_mzxml(self, spectra, int_tol, read_ms2=True, centroid=True):
+    def extract_scan_mzxml(self, spectra, int_tol, read_ms2=True, clean_ms2=False, centroid=True):
         """
         Function to extract all scans and convert them to Scan objects.
 
@@ -196,6 +198,8 @@ class MSData:
                     precursor_mz = spec['precursorMz'][0]['precursorMz']
                     peaks = np.array([spec['m/z array'], spec['intensity array']], dtype=np.float64).T
                     temp_scan.add_info_by_level(precursor_mz=precursor_mz, peaks=peaks)
+                    if clean_ms2:
+                        clean_ms2(temp_scan)
                     self.ms2_idx.append(idx)
                 
                 self.scans.append(temp_scan)
@@ -606,6 +610,22 @@ class MSData:
 
         idx = np.argmin(np.abs(self.ms1_rt_seq - rt_target))
         return self.scans[self.ms1_idx[idx]]
+    
+    
+    def correct_retention_time(self, f):
+        """
+        Function to correct retention time.
+
+        Parameters
+        ----------------------------------------------------------
+        f: interp1d object
+            A function to correct retention time.
+        """
+
+        all_rts = np.array([s.rt for s in self.scans])
+        all_rts = f(all_rts)
+        for i in range(len(self.scans)):
+            self.scans[i].rt = all_rts[i]
 
 
     def plot_roi(self, roi_idx, mz_tol=0.005, rt_range=[0, np.inf], rt_window=None, output=False):

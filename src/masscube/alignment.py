@@ -10,6 +10,7 @@ import os
 from tqdm import tqdm
 from scipy.interpolate import interp1d
 from scipy.stats import zscore
+import pickle
 
 from .raw_data_utils import read_raw_file_to_obj
 
@@ -44,6 +45,7 @@ def feature_alignment(path, parameters, drop_by_fill_pct_ratio=0.1):
     # select anchors for retention time correction
     if parameters.run_rt_correction:
         mz_ref, rt_ref = rt_anchor_selection(txt_file_names[:20])
+        rt_cor_functions = []
     
     # STEP 3: read individual feature tables and align features
     for i, file_name in enumerate(tqdm(parameters.sample_names)):
@@ -62,8 +64,9 @@ def feature_alignment(path, parameters, drop_by_fill_pct_ratio=0.1):
         # retention time correction
         if parameters.run_rt_correction and parameters.individual_sample_groups[i] != 'blank':
             rt_arr = current_table["RT"].values
-            rt_arr = retention_time_correction(mz_ref, rt_ref, current_table["m/z"].values, rt_arr)
+            rt_arr, model = retention_time_correction(mz_ref, rt_ref, current_table["m/z"].values, rt_arr, return_model=True)
             current_table["RT"] = rt_arr
+            rt_cor_functions.append({"file_name": file_name, "model": model})
 
         if len(features) > 0:
             for f in features:
@@ -148,6 +151,11 @@ def feature_alignment(path, parameters, drop_by_fill_pct_ratio=0.1):
 
     for i in range(len(features)):
         features[i].id = i
+    
+    # output the models to pickle files
+    if parameters.run_rt_correction:
+        with open(os.path.join(parameters.project_dir, "rt_correction_models.pkl"), "wb") as f:
+            pickle.dump(rt_cor_functions, f)
 
     return features
 
@@ -180,6 +188,13 @@ def gap_filling(features, parameters, mode='forced_peak_picking'):
         raw_file_names = [f for f in raw_file_names if not f.startswith(".")]
         raw_file_names = [os.path.join(parameters.sample_dir, f) for f in raw_file_names]
 
+        # if retention time correction is applied, read the model
+        if parameters.run_rt_correction and os.path.exists(os.path.join(parameters.project_dir, "rt_correction_models.pkl")):
+            with open(os.path.join(parameters.project_dir, "rt_correction_models.pkl"), "rb") as f:
+                rt_cor_functions = pickle.load(f)
+        else:
+            rt_cor_functions = None
+
         for i, file_name in enumerate(tqdm(parameters.sample_names)):
             matched_raw_file_name = [f for f in raw_file_names if file_name in f]
             if len(matched_raw_file_name) == 0:
@@ -187,6 +202,13 @@ def gap_filling(features, parameters, mode='forced_peak_picking'):
             else:
                 matched_raw_file_name = matched_raw_file_name[0]
                 d = read_raw_file_to_obj(matched_raw_file_name, int_tol=parameters.int_tol, read_ms2=False)
+                
+                # correct retention time if model is available
+                if rt_cor_functions is not None:
+                    f = rt_cor_functions[file_name]
+                    if f is not None:
+                        d.correct_retention_time(f)
+
                 for f in features:
                     if not f.detected_seq[i]:
                         _, eic_int, _, _ = d.get_eic_data(f.mz, f.rt, parameters.align_mz_tol, 0.05)
@@ -222,7 +244,8 @@ def output_feature_table(feature_table, output_path):
     feature_table.to_csv(output_path, index=False, sep="\t")
 
 
-def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, mode='linear_interpolation', mz_tol=0.01, rt_tol=2.0):
+def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, mode='linear_interpolation', mz_tol=0.01, 
+                              rt_tol=2.0, return_model=False):
     """
     To correct retention times for feature alignment.
 
@@ -269,7 +292,10 @@ def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, mode='linear_inter
     rt_ref = rt_ref[idx_matched]
 
     if len(idx_matched) < 0.8*len(mz_ref):
-        return rt_arr
+        if return_model:
+            return rt_arr, None
+        else:
+            return rt_arr
     
     # remove outliers
     v = np.abs(rt_ref - rt_matched)
@@ -284,7 +310,11 @@ def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, mode='linear_inter
         rt_matched = np.insert(rt_matched, 0, 0)
         rt_ref = np.insert(rt_ref, 0, 0)
         f = interp1d(rt_matched, rt_ref, fill_value='extrapolate')
-        return f(rt_arr)
+        
+        if return_model:
+            return f(rt_arr), f
+        else:
+            return f(rt_arr)
 
 
 def rt_anchor_selection(data_list, num=50, noise_tol=0.3):
