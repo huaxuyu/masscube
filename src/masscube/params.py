@@ -29,7 +29,7 @@ class Params:
         self.single_file_dir = None         # Directory for the single file output, character string
         self.annotation_dir = None          # Directory for the annotation output, character string
         self.chromatogram_dir = None        # Directory for the chromatogram output, character string
-        # self.network_dir = None             # DirectoTry for the network output, character string
+        # self.network_dir = None             # Directory for the network output, character string
         self.statistics_dir = None          # Directory for the statistical analysis output, character string
 
         # MS data acquisition

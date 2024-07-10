@@ -61,8 +61,8 @@ def feature_detection(file_name, params=None, cal_g_score=True, cal_a_score=True
         d = MSData()
 
         # set parameters
-        ms_type, ion_mode, centrod = find_ms_info(file_name)
-        if not centrod:
+        ms_type, ion_mode, centroid = find_ms_info(file_name)
+        if not centroid:
             print("File: " + file_name + " is not centroided and skipped.")
             return None
         
