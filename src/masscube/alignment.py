@@ -216,6 +216,7 @@ def output_feature_table(feature_table, output_path):
     feature_table["m/z"] = feature_table["m/z"].apply(lambda x: round(x, 4))
     feature_table["RT"] = feature_table["RT"].apply(lambda x: round(x, 3))
     feature_table['fill_percentage'] = feature_table['fill_percentage'].apply(lambda x: round(x, 2))
+    feature_table['similarity'] = feature_table['similarity'].astype(float)
     feature_table['similarity'] = feature_table['similarity'].apply(lambda x: round(x, 4))
 
     feature_table.to_csv(output_path, index=False, sep="\t")

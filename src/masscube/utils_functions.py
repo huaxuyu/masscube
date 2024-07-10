@@ -36,7 +36,6 @@ def cal_ion_mass(formula, adduct, charge):
     return ion_mass
 
 _ELECTRON_MASS = 0.00054858
-    
 
 
 def calculate_isotope_distribution(formula, mass_resolution=10000, intensity_threshold=0.001):

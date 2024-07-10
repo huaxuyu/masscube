@@ -9,7 +9,7 @@
 import numpy as np
 
 
-def annotate_isotope(d):
+def annotate_isotope(d, mz_tol=0.015, rt_tol=0.1, valid_intensity_ratio_range=[0.001, 1.2]):
     """
     Function to annotate isotopes in a MS data.
     
@@ -35,10 +35,10 @@ def annotate_isotope(d):
         # check if the currect ion is double charged
         r.charge_state = 1
         target_mz = r.mz + 1.003355/2
-        v = np.where(np.logical_and(np.abs(d.roi_mz_seq - target_mz) < 0.015, np.abs(d.roi_rt_seq - r.rt) < 0.1))[0]
+        v = np.where(np.logical_and(np.abs(d.roi_mz_seq - target_mz) < mz_tol, np.abs(d.roi_rt_seq - r.rt) < rt_tol))[0]
         if len(v) > 0:
             # an isotope can't have intensity 1.2 fold or higher than M0 or 1% lower than the M0
-            v = [v[i] for i in range(len(v)) if d.rois[v[i]].peak_height < 1.2*r.peak_height]
+            v = [v[i] for i in range(len(v)) if d.rois[v[i]].peak_height < valid_intensity_ratio_range[1]*r.peak_height]
             v = [v[i] for i in range(len(v)) if d.rois[v[i]].peak_height > 0.01*r.peak_height]
             if len(v) > 0:
                 r.charge_state = 2
@@ -54,15 +54,15 @@ def annotate_isotope(d):
             if target_mz - last_mz > 2.2:
                 break
 
-            v = np.where(np.logical_and(np.abs(d.roi_mz_seq - target_mz) < 0.015, np.abs(d.roi_rt_seq - r.rt) < 0.1))[0]
+            v = np.where(np.logical_and(np.abs(d.roi_mz_seq - target_mz) < mz_tol, np.abs(d.roi_rt_seq - r.rt) < rt_tol))[0]
 
             if len(v) == 0:
                 i += 1
                 continue
 
             # an isotope can't have intensity 1.2 fold or higher than M0 or 0.1% lower than the M0
-            v = [v[i] for i in range(len(v)) if d.rois[v[i]].peak_height < 1.2*r.peak_height]
-            v = [v[i] for i in range(len(v)) if d.rois[v[i]].peak_height > 0.001*total_int]
+            v = [v[i] for i in range(len(v)) if d.rois[v[i]].peak_height < valid_intensity_ratio_range[1]*r.peak_height]
+            v = [v[i] for i in range(len(v)) if d.rois[v[i]].peak_height > valid_intensity_ratio_range[0]*total_int]
 
             if len(v) == 0:
                 i += 1
@@ -86,7 +86,7 @@ def annotate_isotope(d):
         r.isotope_id_seq = isotope_id_seq
 
 
-def annotate_in_source_fragment(d):
+def annotate_in_source_fragment(d, mz_tol=0.01, rt_tol=0.05):
     """
     Function to annotate in-source fragments in the MS data.
     Only [M+O] (roi.is_isotope==True) will be considered in this function.
@@ -121,7 +121,7 @@ def annotate_in_source_fragment(d):
 
         for m in r.best_ms2.peaks[:, 0]:
 
-            v = np.logical_and(np.abs(d.roi_mz_seq - m) < 0.01, np.abs(d.roi_rt_seq - r.rt) < 0.05)
+            v = np.logical_and(np.abs(d.roi_mz_seq - m) < mz_tol, np.abs(d.roi_rt_seq - r.rt) < rt_tol)
             v = np.where(np.logical_and(v, roi_to_label))[0]
 
             # an in-source fragment can't have intensity 3 fold or higher than the parent
@@ -143,7 +143,7 @@ def annotate_in_source_fragment(d):
                 r.isf_child_roi_id.append(d.rois[v].id)
 
 
-def annotate_adduct(d):
+def annotate_adduct(d, mz_tol=0.01, rt_tol=0.05):
     """
     A function to annotate adducts from the same compound.
 
@@ -191,7 +191,7 @@ def annotate_adduct(d):
         
         for adduct in adduct_mass_diffence.keys():
             m = r.mz + adduct_mass_diffence[adduct]
-            v = np.logical_and(np.abs(d.roi_mz_seq - m) < 0.01, np.abs(d.roi_rt_seq - r.rt) < 0.05)
+            v = np.logical_and(np.abs(d.roi_mz_seq - m) < mz_tol, np.abs(d.roi_rt_seq - r.rt) < rt_tol)
             v = np.where(np.logical_and(v, roi_to_label))[0]
 
             if len(v) == 0:
