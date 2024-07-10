@@ -45,7 +45,7 @@ def feature_alignment(path, parameters, drop_by_fill_pct_ratio=0.1):
     # select anchors for retention time correction
     if parameters.run_rt_correction:
         mz_ref, rt_ref = rt_anchor_selection(txt_file_names[:20])
-        rt_cor_functions = []
+        rt_cor_functions = {}
     
     # STEP 3: read individual feature tables and align features
     for i, file_name in enumerate(tqdm(parameters.sample_names)):
@@ -66,7 +66,7 @@ def feature_alignment(path, parameters, drop_by_fill_pct_ratio=0.1):
             rt_arr = current_table["RT"].values
             rt_arr, model = retention_time_correction(mz_ref, rt_ref, current_table["m/z"].values, rt_arr, return_model=True)
             current_table["RT"] = rt_arr
-            rt_cor_functions.append({"file_name": file_name, "model": model})
+            rt_cor_functions[file_name] = model
 
         if len(features) > 0:
             for f in features:
@@ -204,7 +204,7 @@ def gap_filling(features, parameters, mode='forced_peak_picking'):
                 d = read_raw_file_to_obj(matched_raw_file_name, int_tol=parameters.int_tol, read_ms2=False)
                 
                 # correct retention time if model is available
-                if rt_cor_functions is not None:
+                if rt_cor_functions is not None and file_name in rt_cor_functions.keys():
                     f = rt_cor_functions[file_name]
                     if f is not None:
                         d.correct_retention_time(f)
@@ -291,7 +291,7 @@ def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, mode='linear_inter
             idx_matched.append(i)
     rt_ref = rt_ref[idx_matched]
 
-    if len(idx_matched) < 0.8*len(mz_ref):
+    if len(idx_matched) < 0.5*len(mz_ref):
         if return_model:
             return rt_arr, None
         else:
@@ -304,6 +304,12 @@ def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, mode='linear_inter
     if len(outliers) > 0:
         rt_ref = np.delete(rt_ref, outliers)
         rt_matched = np.delete(rt_matched, outliers)
+    
+    if len(rt_matched) < 3:
+        if return_model:
+            return rt_arr, None
+        else:
+            return rt_arr
 
     if mode == 'linear_interpolation':
         # add zero to the beginning of rt_matched and rt_ref
@@ -317,7 +323,7 @@ def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, mode='linear_inter
             return f(rt_arr)
 
 
-def rt_anchor_selection(data_list, num=50, noise_tol=0.3):
+def rt_anchor_selection(data_list, num=50, noise_tol=0.3, mz_tol=0.01):
     """
     To select anchors for retention time correction. The anchors are commonly detected in the provided
     data, of high intensity, with good peak shape, and equally distributed in the analysis time.
@@ -352,7 +358,6 @@ def rt_anchor_selection(data_list, num=50, noise_tol=0.3):
         mzs = table["m/z"].values
         n_scores = table["noise_level"].values
         v = [False]
-        mz_tol = 0.01
         for i in range(1, len(mzs)-1):
             if mzs[i]-mzs[i-1] > mz_tol and mzs[i+1] - mzs[i] > mz_tol and n_scores[i] < noise_tol:
                 v.append(True)
