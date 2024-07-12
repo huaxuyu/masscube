@@ -284,7 +284,7 @@ def find_ms_info(file_name):
                 ms_type = 'orbitrap'
             if 'negative' in line.lower():
                 ion_mode = 'negative'
-            if "centroid spectrum" in line.lower():
+            if "centroid spectrum" in line.lower() or 'centroided="1"' in line.lower():
                 centroid = True
             if i > 200:
                 break

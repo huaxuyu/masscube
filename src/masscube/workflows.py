@@ -100,7 +100,7 @@ def feature_detection(file_name, params=None, cal_g_score=True, cal_a_score=True
             annotate_rois(d)
 
         if params.plot_bpc:
-            d.plot_bpc(label_name=True, output=os.path.join(params.bpc_dir, d.file_name + "_bpc.png"))
+            d.plot_bpc(label_name=True, output_dir=os.path.join(params.bpc_dir, d.file_name + "_bpc.png"))
 
         # output single file to a txt file
         if d.params.output_single_file:

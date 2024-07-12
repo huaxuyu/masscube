@@ -163,7 +163,8 @@ class MSData:
         self.ms1_idx = []   # MS1 scan index
         self.ms2_idx = []   # MS2 scan index
 
-        rt_unit = spectra[0]['scanList']['scan'][0]['scan start time'].unit_info
+        rt_unit = spectra[0]["retentionTime"].unit_info
+        print(rt_unit)
 
         # Iterate over all scans
         for spec in spectra:
@@ -325,14 +326,19 @@ class MSData:
             self.rois[idx].id = idx
     
 
-    def plot_bpc(self, rt_range=None, label_name=False, output=False):
+    def plot_bpc(self, rt_range=None, label_name=False, output_dir=None):
         """
         Function to plot base peak chromatogram.
 
         Parameters
         ----------------------------------------------------------
-        output: str
-            Output file name. If not specified, the plot will be shown.
+        rt_range: list
+            Retention time range [start, end]. The unit is minute.
+        label_name: bool
+            True: show the file name on the plot.
+        output_dir: str
+            Output directory of the plot. If specified, the plot will be saved to the directory.
+            If None, the plot will be shown.
         """
 
         if rt_range is not None:
@@ -354,8 +360,8 @@ class MSData:
         if label_name:
             plt.text(self.ms1_rt_seq[0], np.max(self.bpc_int)*0.9, self.file_name, fontsize=12, fontname='Arial', color="gray")
 
-        if output:
-            plt.savefig(output, dpi=300, bbox_inches="tight")
+        if output_dir is not None:
+            plt.savefig(output_dir, dpi=300, bbox_inches="tight")
             plt.close()
         else:
             plt.show()
@@ -480,7 +486,8 @@ class MSData:
         return eic_rt, eic_int, eic_mz, eic_scan_idx    
     
 
-    def plot_eic(self, target_mz, target_rt=None, mz_tol=0.005, rt_tol=0.3, output=False, return_eic_data=False):
+    def plot_eic(self, target_mz, target_rt=None, mz_tol=0.005, rt_tol=0.3, 
+                 output=False, show_rt_line=True, return_eic_data=False):
         """
         Function to plot EIC of a target m/z.
 
@@ -496,6 +503,9 @@ class MSData:
             Retention time tolerance.
         output: str
             Output file name. If not specified, the plot will be shown.
+        show_rt_line: bool
+            True: show the target retention time.
+            False: do not show the target retention time.
         return_eic_data: bool   
             True: return the EIC data.
             False: do not return the EIC data.
@@ -512,7 +522,7 @@ class MSData:
         plt.ylabel("Intensity", fontsize=18, fontname='Arial')
         plt.xticks(fontsize=14, fontname='Arial')
         plt.yticks(fontsize=14, fontname='Arial')
-        if target_rt is not None:
+        if target_rt is not None and show_rt_line:
             plt.axvline(x = target_rt, color = 'b', linestyle = '--', linewidth=1)
 
         if output:
