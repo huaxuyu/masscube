@@ -164,7 +164,6 @@ class MSData:
         self.ms2_idx = []   # MS2 scan index
 
         rt_unit = spectra[0]["retentionTime"].unit_info
-        print(rt_unit)
 
         # Iterate over all scans
         for spec in spectra:

@@ -160,7 +160,9 @@ class Params:
         # STEP 5: read the sample table and allocate the sample groups
         #         reorder the samples by qc, sample, and blank
         if not os.path.exists(os.path.join(self.project_dir, "sample_table.csv")):
-            self.sample_names = [f.split(".")[0] for f in os.listdir(self.sample_dir)]
+            self.sample_names = [f for f in os.listdir(self.sample_dir) if not f.startswith(".")] # for macOS
+            self.sample_names = [f for f in self.sample_names if f.lower().endswith(".mzml") or f.lower().endswith(".mzxml")]
+            self.sample_names = [f.split(".")[0] for f in self.sample_names]
             self.sample_groups = ["sample"] * len(self.sample_names)
             self.individual_sample_groups = ["sample"] * len(self.sample_names)
             self.sample_group_num = 1
