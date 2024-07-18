@@ -137,7 +137,7 @@ def pca_analysis(data_array, individual_sample_groups, scaling=True, transformat
     Parameters
     ----------
     data_array : numpy array
-        The feature intensities.
+        The feature intensities. Features are in rows and samples are in columns.
     individual_sample_groups : list
         A list of groups of individual samples.
     scaling : bool

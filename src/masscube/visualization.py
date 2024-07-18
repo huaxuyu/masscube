@@ -245,12 +245,19 @@ def plot_ms2_matching_from_feature_table(feature_table, params=None, output_dir=
         mirror_ms2(mz[i], mz[i], peaks1, peaks2, annotations[i], score[i], output)
 
 
-def plot_pca(vecPC1, vecPC2, var_PC1, var_PC2, group_names, colors=None, output_dir=None):
+def plot_pca(vecPC1, vecPC2, var_PC1, var_PC2, group_names, colors=None, plot_order=None, output_dir=None):
     
     fig, ax = plt.subplots(figsize=(10,10))
+    # set font to arial
+    plt.rcParams['font.family'] = 'Arial'
     groups = np.unique(np.array(group_names))
     if colors is None:
         colors = COLORS[:len(groups)]
+    
+    if plot_order is not None:
+        groups = [groups[i] for i in plot_order]
+        colors = [colors[i] for i in plot_order]
+
     for group, color in zip(groups, colors):
         idxs = np.where(np.array(group_names) == group)
         # No legend will be generated if we don't pass label=species
@@ -267,6 +274,8 @@ def plot_pca(vecPC1, vecPC2, var_PC1, var_PC2, group_names, colors=None, output_
     plt.ylabel("PC 2 ({:.1f} %)".format(var_PC2*100), fontname='Arial', fontsize=30, labelpad=25)
     plt.xticks(fontname='Arial', fontsize=24)
     plt.yticks(fontname='Arial', fontsize=24)
+    plt.xlim(np.min(vecPC1)*1.1, np.max(vecPC1)*1.1)
+    plt.ylim(np.min(vecPC2)*1.1, np.max(vecPC2)*1.1)
     plt.grid(linestyle=':')
     plt.legend(fontsize=20, loc='upper right', frameon=False)
     plt.rcParams.update({'font.size': 24})

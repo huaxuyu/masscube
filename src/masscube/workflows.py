@@ -370,12 +370,14 @@ def get_analytical_metadata(path, output=False):
 
     file_names = os.listdir(path)
     file_names = [f for f in file_names if f.lower().endswith(".mzml") or f.lower().endswith(".mzxml")]
-    file_names = [f for f in file_names if not f.startswith(".")]
+    file_names = [f for f in file_names if not f.startswith(".")]   # for Mac OS
 
     times = []
     for f in file_names:
         tmp = os.path.join(path, f)
         times.append(get_start_time(tmp))
+    
+    file_names = [f.split(".")[0] for f in file_names]
     
     # sort the files by time
     file_times = list(zip(file_names, times))

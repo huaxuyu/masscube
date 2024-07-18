@@ -304,7 +304,7 @@ class MSData:
         """
 
         self.rois = [roi for roi in self.rois if len(roi.ms2_seq) > 0]
-    
+
 
     def drop_rois_by_length(self, length=5):
         """
@@ -312,7 +312,7 @@ class MSData:
         """
 
         self.rois = [roi for roi in self.rois if roi.length >= length]
-    
+
 
     def _discard_isotopes(self):
         """

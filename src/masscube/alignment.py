@@ -64,7 +64,8 @@ def feature_alignment(path, parameters, drop_by_fill_pct_ratio=0.1):
         # retention time correction
         if parameters.run_rt_correction and parameters.individual_sample_groups[i] != 'blank':
             rt_arr = current_table["RT"].values
-            rt_arr, model = retention_time_correction(mz_ref, rt_ref, current_table["m/z"].values, rt_arr, return_model=True)
+            rt_max = np.max(rt_arr)
+            rt_arr, model = retention_time_correction(mz_ref, rt_ref, current_table["m/z"].values, rt_arr, rt_max=rt_max, return_model=True)
             current_table["RT"] = rt_arr
             rt_cor_functions[file_name] = model
 
@@ -214,7 +215,7 @@ def gap_filling(features, parameters, mode='forced_peak_picking'):
                         _, eic_int, _, _ = d.get_eic_data(f.mz, f.rt, parameters.align_mz_tol, 0.05)
                         if len(eic_int) > 0:
                             f.peak_height_seq[i] = np.max(eic_int)
-    
+
     # calculate the fill percentage after gap filling (blank samples are not included)
     blank_num = len([x for x in parameters.individual_sample_groups if 'blank' in x])
     for f in features:
@@ -244,7 +245,7 @@ def output_feature_table(feature_table, output_path):
     feature_table.to_csv(output_path, index=False, sep="\t")
 
 
-def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, mode='linear_interpolation', mz_tol=0.012, 
+def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, rt_max=50, mode='linear_interpolation', mz_tol=0.015, 
                               rt_tol=2.0, found_marker_ratio=0.4, return_model=False):
     """
     To correct retention times for feature alignment.
@@ -290,6 +291,7 @@ def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, mode='linear_inter
             rt_matched.append(rt_arr[v[0]])
             idx_matched.append(i)
     rt_ref = rt_ref[idx_matched]
+    print(rt_ref)
 
     if len(idx_matched) < found_marker_ratio*len(mz_ref):
         if return_model:
@@ -298,13 +300,14 @@ def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, mode='linear_inter
             return rt_arr
     
     # remove outliers
-    v = np.abs(rt_ref - rt_matched)
+    v = rt_ref - np.array(rt_matched)
     z = zscore(v)
-    outliers = np.where(np.logical_and(np.abs(z) > 1, v > 0.1))[0]
+    outliers = np.where(np.logical_and(np.abs(z) > 1, np.abs(v) > 0.1))[0]
     if len(outliers) > 0:
         rt_ref = np.delete(rt_ref, outliers)
         rt_matched = np.delete(rt_matched, outliers)
-    
+    print(rt_ref)
+
     if len(rt_matched) < 3:
         if return_model:
             return rt_arr, None
@@ -312,11 +315,10 @@ def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, mode='linear_inter
             return rt_arr
 
     if mode == 'linear_interpolation':
-        # add zero to the beginning of rt_matched and rt_ref
-        rt_matched = np.insert(rt_matched, 0, 0)
-        rt_ref = np.insert(rt_ref, 0, 0)
+        # add zero and rt_max to the beginning and the end
+        rt_matched = np.concatenate(([0], rt_matched, [rt_max+rt_matched[-1]-rt_ref[-1]]))
+        rt_ref = np.concatenate(([0], rt_ref, [rt_max]))
         f = interp1d(rt_matched, rt_ref, fill_value='extrapolate')
-        
         if return_model:
             return f(rt_arr), f
         else:
