@@ -49,7 +49,7 @@ class MSData:
         self.start_time = None      # Start acquisition time of the raw data
 
 
-    def read_raw_data(self, file_name, params, read_ms2=True, centroid=True):
+    def read_raw_data(self, file_name, params, read_ms2=True, clean_ms2=False, centroid=True):
         """
         Function to read raw data to MS1 and MS2 (if available)
         (supported by pyteomics package).
@@ -77,15 +77,17 @@ class MSData:
 
             if ext.lower() == ".mzml":
                 with mzml.MzML(file_name) as reader:
-                    self.extract_scan_mzml(reader, params.int_tol, read_ms2, centroid)
+                    self.extract_scan_mzml(reader, int_tol=params.int_tol, read_ms2=read_ms2, 
+                                           clean_ms2=clean_ms2, centroid=centroid)
             elif ext.lower() == ".mzxml":
                 with mzxml.MzXML(file_name) as reader:
-                    self.extract_scan_mzxml(reader, params.int_tol, read_ms2, centroid)
+                    self.extract_scan_mzxml(reader, int_tol=params.int_tol, read_ms2=read_ms2, 
+                                            clean_ms2=clean_ms2, centroid=centroid)
         else:
             print("File does not exist.")
 
 
-    def extract_scan_mzml(self, spectra, int_tol, read_ms2=True, clean_ms2=False, centroid=True):
+    def extract_scan_mzml(self, spectra, int_tol=0, read_ms2=True, clean_ms2=False, centroid=True):
         """
         Function to extract all scans and convert them to Scan objects.
 
@@ -880,7 +882,8 @@ def _centroid(mz_seq, int_seq, mz_tol=0.005):
     return np.array(mz_seq), int_seq
 
 
-def read_raw_file_to_obj(file_name, params=None, int_tol=1000, centroid=True, read_ms2=True, print_summary=False):
+def read_raw_file_to_obj(file_name, params=None, int_tol=1000, centroid=True, read_ms2=True, 
+                         clean_ms2=False, print_summary=False):
     """
     Read a raw file to a MSData object.
     It's a useful function for data visualization or brief data analysis.
@@ -914,7 +917,7 @@ def read_raw_file_to_obj(file_name, params=None, int_tol=1000, centroid=True, re
         params = Params()
         params.int_tol = int_tol
     
-    d.read_raw_data(file_name, params, read_ms2, centroid)
+    d.read_raw_data(file_name, params=params, read_ms2=read_ms2, clean_ms2=clean_ms2, centroid=centroid)
     
     if print_summary:
         print("Number of MS1 scans: " + str(len(d.ms1_idx)), "Number of MS2 scans: " + str(len(d.ms2_idx)))

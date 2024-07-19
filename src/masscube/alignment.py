@@ -291,8 +291,7 @@ def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, rt_max=50, mode='l
             rt_matched.append(rt_arr[v[0]])
             idx_matched.append(i)
     rt_ref = rt_ref[idx_matched]
-    print(rt_ref)
-
+    
     if len(idx_matched) < found_marker_ratio*len(mz_ref):
         if return_model:
             return rt_arr, None
@@ -306,7 +305,6 @@ def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, rt_max=50, mode='l
     if len(outliers) > 0:
         rt_ref = np.delete(rt_ref, outliers)
         rt_matched = np.delete(rt_matched, outliers)
-    print(rt_ref)
 
     if len(rt_matched) < 3:
         if return_model:

@@ -75,7 +75,7 @@ def feature_detection(file_name, params=None, cal_g_score=True, cal_a_score=True
             params.msms_library = ms2_library_path
 
         # read raw data
-        d.read_raw_data(file_name, params)
+        d.read_raw_data(file_name, params, clean_ms2=True)
 
         # detect region of interests (ROIs)
         d.find_rois()
