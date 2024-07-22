@@ -76,6 +76,7 @@ def feature_annotation(features, parameters, num=5):
         parsed_ms2 = sorted(parsed_ms2, key=lambda x: np.sum(x[:,1]), reverse=True)
         parsed_ms2 = parsed_ms2[:num]
         matched = None
+        matched_peaks_number_final = None
         highest_similarity = 0
         f.best_ms2 = _convert_peaks_to_string(parsed_ms2[0])
         best_ms2 = parsed_ms2[0]
@@ -88,12 +89,13 @@ def feature_annotation(features, parameters, num=5):
                 matched = {k.lower():v for k,v in matched.items()}
                 best_ms2 = peaks
                 highest_similarity = entropy_similarity[idx]
+                matched_peaks_number_final = matched_peaks_number[idx]
 
         if matched is not None:
             f.annotation = matched['name']
             f.search_mode = 'identity_search'
             f.similarity = highest_similarity
-            f.matched_peak_number = matched_peaks_number[idx]
+            f.matched_peak_number = matched_peaks_number_final
             f.smiles = matched['smiles'] if 'smiles' in matched else None
             f.inchikey = matched['inchikey'] if 'inchikey' in matched else None
             f.matched_ms2 = _convert_peaks_to_string(matched['peaks'])

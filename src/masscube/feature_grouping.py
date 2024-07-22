@@ -9,7 +9,7 @@
 import numpy as np
 
 
-def annotate_isotope(d, mz_tol=0.015, rt_tol=0.1, valid_intensity_ratio_range=[0.001, 1.2]):
+def annotate_isotope(d, mz_tol=0.015, rt_tol=0.1, valid_intensity_ratio_range=[0.001, 1.2], charge_state_range=[1,2]):
     """
     Function to annotate isotopes in a MS data.
     
@@ -17,6 +17,14 @@ def annotate_isotope(d, mz_tol=0.015, rt_tol=0.1, valid_intensity_ratio_range=[0
     ----------------------------------------------------------
     d: MSData object
         An MSData object.
+    mz_tol: float
+        The m/z tolerance to find isotopes.
+    rt_tol: float
+        The RT tolerance to find isotopes.
+    valid_intensity_ratio_range: list
+        The valid intensity ratio range between isotopes.
+    charge_state_range: list
+        The charge state range of the isotopes. [lower, upper]
     """
 
     # rank the rois (d.rois) in each file by m/z
