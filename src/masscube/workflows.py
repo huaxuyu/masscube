@@ -11,6 +11,7 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 from importlib.metadata import version
+from scipy.stats import zscore
 import time
 import json
 
@@ -358,7 +359,7 @@ def untargeted_metabolomics_workflow(path=None, batch_size=100, cpu_ratio=0.8):
 
 
 # 3. Get analytical metadata from mzML or mzXML files
-def get_analytical_metadata(path, output=False):
+def get_analytical_order(path, output=False):
     """
     Get metadata from mzML or mzXML files.
 
@@ -368,6 +369,7 @@ def get_analytical_metadata(path, output=False):
         Path to the mzML or mzXML file.
     """
 
+    path = os.path.join(path, "data")
     file_names = os.listdir(path)
     file_names = [f for f in file_names if f.lower().endswith(".mzml") or f.lower().endswith(".mzxml")]
     file_names = [f for f in file_names if not f.startswith(".")]   # for Mac OS
@@ -400,42 +402,46 @@ def run_evaluation(path):
     Parameters
     ----------
     path : str
-        Path to the mzML or mzXML files.
+        Path to the project directory.
     """
 
-    file_names = os.listdir(path)
-    file_names = [f for f in file_names if f.lower().endswith(".mzml") or f.lower().endswith(".mzxml")]
-    file_names = [f for f in file_names if not f.startswith(".")]
-    file_names = [f for f in file_names if "blank" not in f.lower() and "mb" not in f.lower()]
-
-    feature_num = []
-    for f in tqdm(file_names):
-        d = feature_detection(os.path.join(path, f), params=None, cal_gss=False, anno_isotope=False,  
-                              anno_adduct=False, anno_in_source_fragment=False, annotation=False)
-        feature_num.append(len(d.rois))
-
-    # find outliers
-    problematic_files = []
-    mean = np.mean(feature_num)
-    std = np.std(feature_num)
-
-    outliers = np.where(np.abs(feature_num - mean) > 3 * std)[0]
-
-    print(outliers)
-    for i in outliers[::-1]:
-        problematic_files.append(file_names[i])
-
-    if len(problematic_files) == 0:
-        print("No problematic files are found.")
+    # check if sample table exists
+    if os.path.exists(os.path.join(path, "sample_table.csv")):
+        sample_table = pd.read_csv(os.path.join(path, "sample_table.csv"))
+        blank_samples = sample_table.iloc[:,0].values[sample_table.iloc[:,1] == 'blank'].tolist()
     else:
-        print("Problematic files:")
+        print("Sample table is not found. Problematic files may include blank samples.")
+        blank_samples = []
+
+    # get all .txt files
+    txt_path = os.path.join(path, "single_files")
+    txt_files = [f for f in os.listdir(txt_path) if f.lower().endswith('.txt')]
+    txt_files = [f for f in txt_files if not f.startswith(".")]
+    int_array = np.zeros(len(txt_files))
+    for i in range(len(txt_files)):
+        df = pd.read_csv(os.path.join(txt_path, txt_files[i]), sep="\t", low_memory=False)
+        int_array[i] = np.sum(df['peak_height'].values)
+        
+    z = zscore(int_array)
+    idx = np.where(z < -2)[0]
+
+    problematic_files = []
+    for i in idx:
+        problematic_files.append(txt_files[i].split(".")[0])
+
+    problematic_files = [f for f in problematic_files if f not in blank_samples]
+    
+    # output the names of problematic files
+    if len(problematic_files) > 0:
+        print("The following files are problematic:")
         for f in problematic_files:
             print(f)
-        
         # output to a txt file
-        with open(os.path.join(path, "problematic_files.txt"), "w") as f:
-            for file in problematic_files:
-                f.write(file + "\n")
+        df = pd.DataFrame(problematic_files, columns=["file_name"])
+        output_path = os.path.join(path, "problematic_files.txt")
+        df.to_csv(output_path, sep="\t", index=False)
+    else:
+        print("No problematic files are found.")
 
 
 # 5. Targeted metabolomics workflow

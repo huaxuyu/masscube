@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from datetime import datetime
 from time import time
+import matplotlib.ticker as ticker
 
 from .params import Params
 from .peak_detect import find_rois, cut_roi
@@ -488,7 +489,7 @@ class MSData:
     
 
     def plot_eic(self, target_mz, target_rt=None, mz_tol=0.005, rt_tol=0.3, 
-                 output=False, show_rt_line=True, return_eic_data=False):
+                 output=False, show_rt_line=True, ylim=None, return_eic_data=False):
         """
         Function to plot EIC of a target m/z.
 
@@ -523,6 +524,8 @@ class MSData:
         plt.ylabel("Intensity", fontsize=18, fontname='Arial')
         plt.xticks(fontsize=14, fontname='Arial')
         plt.yticks(fontsize=14, fontname='Arial')
+        if ylim is not None:
+            plt.ylim(ylim[0], ylim[1])
         if target_rt is not None and show_rt_line:
             plt.axvline(x = target_rt, color = 'b', linestyle = '--', linewidth=1)
 

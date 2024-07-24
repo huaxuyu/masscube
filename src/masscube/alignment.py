@@ -323,7 +323,7 @@ def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, rt_max=50, mode='l
             return f(rt_arr)
 
 
-def rt_anchor_selection(data_list, num=50, noise_tol=0.3, mz_tol=0.01):
+def rt_anchor_selection(data_list, num=50, noise_tol=0.3, mz_tol=0.01, return_all_anchor=False):
     """
     To select anchors for retention time correction. The anchors are commonly detected in the provided
     data, of high intensity, with good peak shape, and equally distributed in the analysis time.
@@ -373,9 +373,12 @@ def rt_anchor_selection(data_list, num=50, noise_tol=0.3, mz_tol=0.01):
         valid_mzs = valid_mzs[np.argsort(valid_rts)]
         valid_rts = valid_rts[np.argsort(valid_rts)]
 
-        train_idx, _ = _split_to_train_test(valid_rts)
 
-        return valid_mzs[train_idx], valid_rts[train_idx]
+        train_idx, test_idx = _split_to_train_test(valid_rts)
+        if return_all_anchor:
+            return valid_mzs, valid_rts, train_idx, test_idx
+        else:
+            return valid_mzs[train_idx], valid_rts[train_idx]
 
 
 def _split_to_train_test(array, interval=0.3):
