@@ -274,8 +274,6 @@ def plot_pca(vecPC1, vecPC2, var_PC1, var_PC2, group_names, colors=None, plot_or
     plt.ylabel("PC 2 ({:.1f} %)".format(var_PC2*100), fontname='Arial', fontsize=30, labelpad=25)
     plt.xticks(fontname='Arial', fontsize=24)
     plt.yticks(fontname='Arial', fontsize=24)
-    plt.xlim(np.min(vecPC1)*1.1, np.max(vecPC1)*1.1)
-    plt.ylim(np.min(vecPC2)*1.1, np.max(vecPC2)*1.1)
     plt.grid(linestyle=':')
     plt.legend(fontsize=20, loc='upper right', frameon=False)
     plt.rcParams.update({'font.size': 24})

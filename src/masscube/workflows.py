@@ -369,14 +369,14 @@ def get_analytical_order(path, output=False):
         Path to the mzML or mzXML file.
     """
 
-    path = os.path.join(path, "data")
+    path_tmp = os.path.join(path, "data")
     file_names = os.listdir(path)
     file_names = [f for f in file_names if f.lower().endswith(".mzml") or f.lower().endswith(".mzxml")]
     file_names = [f for f in file_names if not f.startswith(".")]   # for Mac OS
 
     times = []
     for f in file_names:
-        tmp = os.path.join(path, f)
+        tmp = os.path.join(path_tmp, f)
         times.append(get_start_time(tmp))
     
     file_names = [f.split(".")[0] for f in file_names]
