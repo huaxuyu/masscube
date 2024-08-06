@@ -356,43 +356,7 @@ def untargeted_metabolomics_workflow(path=None, batch_size=100, cpu_ratio=0.8):
         print("\tMS2 plotting is completed.")
 
     print("The workflow is completed.")
-
-
-# 3. Get analytical metadata from mzML or mzXML files
-def get_analytical_order(path, output=False):
-    """
-    Get metadata from mzML or mzXML files.
-
-    Parameters
-    ----------
-    path : str
-        Path to the mzML or mzXML file.
-    """
-
-    path_tmp = os.path.join(path, "data")
-    file_names = os.listdir(path)
-    file_names = [f for f in file_names if f.lower().endswith(".mzml") or f.lower().endswith(".mzxml")]
-    file_names = [f for f in file_names if not f.startswith(".")]   # for Mac OS
-
-    times = []
-    for f in file_names:
-        tmp = os.path.join(path_tmp, f)
-        times.append(get_start_time(tmp))
     
-    file_names = [f.split(".")[0] for f in file_names]
-    
-    # sort the files by time
-    file_times = list(zip(file_names, times))
-    file_times = sorted(file_times, key=lambda x: x[1])
-
-    # output to a txt file using pandas
-    df = pd.DataFrame(file_times, columns=["file_name", "aquisition_time"])
-    if output:
-        output_path = os.path.join(path, "analytical_metadata.txt")
-        df.to_csv(output_path, sep="\t", index=False)
-    else:
-        return df
-
 
 # 4. Evaluate the data quality of the raw files
 def run_evaluation(path):

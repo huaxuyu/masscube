@@ -6,6 +6,7 @@
 # 2. Signal normalization - to address the signal drifts in the mass spectrometry data.
 
 import numpy as np
+from statsmodels.nonparametric.smoothers_lowess import lowess
 
 """
 Sample normalization
@@ -145,7 +146,48 @@ Signal normalization
 
 Provides
     1. Feature-wise normalization based on timestamp.
-    2. QC-based normalization.
-    3. Internal standard-based normalization (to be implemented).
+    2. Standard-free QC-based normalization.
 """
 
+
+def qc_normalization(array, order, qc_idx, batch_idx=None, method='lowess'):
+    """
+    A function to normalize samples using quality control samples.
+
+    Parameters
+    ----------
+    array : numpy array
+        The data to be normalized. Samples are in columns and features are in rows.
+    order : list
+        The order of the samples. It should have the same length as the number of samples.
+    qc_idx : list
+        The index of the quality control samples.
+    batch_idx : list
+        The index of the batches. It should have the same length as the number of samples. Not used now.
+    method : str
+        The method to find the normalization factors.
+        'lowess': locally weighted scatterplot smoothing.
+
+    Returns
+    -------
+    numpy array
+        Normalized data.
+    """
+
+    array = array[:, np.argsort(order)]
+    qc_idx = np.array(qc_idx)
+
+    data_corr = []
+    for i, int_arr in enumerate(array):
+        # build loess model using qc samples
+        qc_arr = int_arr[qc_idx]
+        model = lowess(qc_arr, qc_idx, frac=0.09, it=0)
+        x_new = np.arange(len(int_arr))
+        y_new = np.interp(x_new, model[:, 0], model[:, 1])
+        y_new[y_new < 0] = np.min(y_new[y_new > 0])
+
+        int_arr_corr = int_arr / y_new * np.min(y_new)
+        data_corr.append(int_arr_corr)
+    data_corr = np.array(data_corr)
+    # sort the data back to the original order
+    data_corr = data_corr[:, order]

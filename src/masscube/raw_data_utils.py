@@ -489,7 +489,7 @@ class MSData:
     
 
     def plot_eic(self, target_mz, target_rt=None, mz_tol=0.005, rt_tol=0.3, 
-                 output=False, show_rt_line=True, ylim=None, return_eic_data=False):
+                 output=None, show_rt_line=True, ylim=None, return_eic_data=False):
         """
         Function to plot EIC of a target m/z.
 
@@ -529,9 +529,12 @@ class MSData:
         if target_rt is not None and show_rt_line:
             plt.axvline(x = target_rt, color = 'b', linestyle = '--', linewidth=1)
 
-        if output:
-            plt.savefig(output, dpi=300, bbox_inches="tight")
-            plt.close()
+        if output is not None:
+            try:
+                plt.savefig(output, dpi=300, bbox_inches="tight")
+                plt.close()
+            except:
+                print("Invalid output path.")
         else:
             plt.show()
 
