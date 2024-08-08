@@ -10,8 +10,6 @@ import os
 import matplotlib.pyplot as plt
 import pandas as pd
 from datetime import datetime
-from time import time
-import matplotlib.ticker as ticker
 
 from .params import Params
 from .peak_detect import find_rois, cut_roi

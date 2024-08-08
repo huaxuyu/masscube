@@ -51,7 +51,7 @@ def feature_selection(X, y, k=None):
     if k is None:
         k = int(np.ceil(X.shape[0]/10))
 
-    selector = SelectKBest(score_func=chi2, k=k)
+    selector = SelectKBest(k=k)
 
     X_new = selector.fit_transform(X, y)
     selected_features = selector.get_support(indices=True)
@@ -156,8 +156,8 @@ def evaluate_model(predictions, y_test):
     return accuracy
 
 
-def build_classifier(path=None, feature_selection_k=None, gaussian_cutoff=0.6, fill_percentage_cutoff=0.9, fill_ratio=0.5,
-                     cross_validation_k=5):
+def build_classifier(path=None, feature_num=None, gaussian_cutoff=0.6, fill_percentage_cutoff=0.9, fill_ratio=0.5,
+                     cross_validation_k=5, data_processed=False):
     """
     To build classifier from raw data.
 
@@ -165,7 +165,7 @@ def build_classifier(path=None, feature_selection_k=None, gaussian_cutoff=0.6, f
     ----------
     path : str
         Path to the project file.
-    feature_selection_k : int
+    feature_num : int
         The number of features to select for building the model.
     gaussian_cutoff : float
         The Gaussian similarity cutoff. Default is 0.6.
@@ -178,7 +178,8 @@ def build_classifier(path=None, feature_selection_k=None, gaussian_cutoff=0.6, f
     """
 
     # process the raw data
-    untargeted_metabolomics_workflow(path)
+    if not data_processed:
+        untargeted_metabolomics_workflow(path)
 
     # load the processed data
     df = pd.read_csv(os.path.join(path, 'aligned_feature_table.txt'), sep='\t', low_memory=False)
@@ -202,14 +203,18 @@ def build_classifier(path=None, feature_selection_k=None, gaussian_cutoff=0.6, f
     df = df[keep_columns]
     df['fill_percentage'] = df.iloc[:, 22:].astype(bool).sum(axis=1)/len(sample_names)
     df = df[df['fill_percentage'] > fill_percentage_cutoff]
-    X = df.iloc[:, 22:].values.T
+    X = df.iloc[:, 22:].values
     for i in X:
         i[i == 0] = np.min(i[i != 0]) * fill_ratio
+    X = X.T
+    # standardize the data X
+    scaler = StandardScaler()
+    X = scaler.fit_transform(X)
     # factorize y
     y = sample_groups
     y, fac_id = np.array(pd.factorize(y)[0]), np.array(pd.factorize(y)[1])
 
-    X_new, selected_features = feature_selection(X, y, k=feature_selection_k)
+    X_new, selected_features = feature_selection(X, y, k=feature_num)
 
     # Train model
     model = train_rdf_model(X_new, y)
@@ -230,6 +235,8 @@ def build_classifier(path=None, feature_selection_k=None, gaussian_cutoff=0.6, f
         os.mkdir(new_path)
     with open(os.path.join(new_path, 'model.pkl'), 'wb') as f:
         pickle.dump(model, f)
+    with open(os.path.join(new_path, 'scaler.pkl'), 'wb') as f:
+        pickle.dump(scaler, f)
     df_cross_val = pd.DataFrame(cv_scores, columns=['accuracy'])
     df_cross_val.to_csv(os.path.join(new_path, 'cross_validation_scores.csv'), index=False)
     df_selected_for_model = df.iloc[selected_features, :]
@@ -240,7 +247,7 @@ def build_classifier(path=None, feature_selection_k=None, gaussian_cutoff=0.6, f
     df_factorize.to_csv(os.path.join(new_path, 'factorize.csv'), index=False)
 
     # print the results
-    print('Cross-validation scores:', cv_scores)
+    print('Cross-validation scores:', np.mean(cv_scores).round(3), '+/-', np.std(cv_scores).round(3))
     print('Selected features:', selected_features)
     print('ROC AUC:', roc_auc)
 
@@ -302,10 +309,14 @@ def predict_samples(path, mz_tol=0.01, rt_tol=0.3):
         if len(matched_v) > 0:
             matched_idx[i] = matched_v[0]
     
-    X = df.iloc[matched_idx.astype(int), 22:].values.T
+    X = df.iloc[matched_idx.astype(int), 22:].values
     for i in X:
         i[i == 0] = np.min(i[i != 0]) * 0.5
-
+    X = X.T
+    # standardize the data X
+    with open(os.path.join(path, 'classifier', 'scaler.pkl'), 'rb') as f:
+        scaler = pickle.load(f)
+    X = scaler.transform(X)
     # predict
     predictions = predict(model, X)
     df_factorize = pd.read_csv(os.path.join(path, 'classifier', 'factorize.csv'))
