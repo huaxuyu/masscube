@@ -275,7 +275,7 @@ def plot_pca(vecPC1, vecPC2, var_PC1, var_PC2, group_names, colors=None, plot_or
     plt.xticks(fontname='Arial', fontsize=24)
     plt.yticks(fontname='Arial', fontsize=24)
     plt.grid(linestyle=':')
-    plt.legend(fontsize=20, loc='upper right', frameon=False)
+    plt.legend(fontsize=20, loc='upper right', frameon=True)
     plt.rcParams.update({'font.size': 24})
 
     if output_dir is not None:

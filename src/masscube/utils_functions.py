@@ -115,12 +115,13 @@ def get_timestamps(path, output=True):
     file_times = sorted(file_times, key=lambda x: x[1])
 
     # output to a txt file using pandas
+
+    df = pd.DataFrame(file_times, columns=["file_name", "aquisition_time"])
     if output:
-        df = pd.DataFrame(file_times, columns=["file_name", "aquisition_time"])
         output_path = os.path.join(path, "timestamps.txt")
         df.to_csv(output_path, sep="\t", index=False)
     else:
-        return file_times
+        return df
 
 
 # Note: this function is not used in the current version of the package

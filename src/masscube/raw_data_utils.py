@@ -486,6 +486,60 @@ class MSData:
         return eic_rt, eic_int, eic_mz, eic_scan_idx    
     
 
+    def plot_eics(self, target_mz_seq, target_rt=None, mz_tol=0.005, rt_tol=0.3, 
+                 output=None, show_rt_line=True, ylim=None, return_eic_data=False):
+        """
+        Function to plot EIC of a target m/z.
+
+        Parameters
+        ----------
+        target_mz: float
+            Target m/z.
+        target_rt: float
+            Target retention time.
+        mz_tol: float
+            m/z tolerance.
+        rt_tol: float
+            Retention time tolerance.
+        output: str
+            Output file name. If not specified, the plot will be shown.
+        show_rt_line: bool
+            True: show the target retention time.
+            False: do not show the target retention time.
+        return_eic_data: bool   
+            True: return the EIC data.
+            False: do not return the EIC data.
+        """
+
+        plt.figure(figsize=(10, 3))
+        plt.rcParams['font.size'] = 14
+        plt.rcParams['font.family'] = 'Arial'
+
+        for target_mz in target_mz_seq:
+        # get the eic data
+            eic_rt, eic_int, _, _ = self.get_eic_data(target_mz, target_rt, mz_tol, rt_tol)
+            plt.plot(eic_rt, eic_int, linewidth=1)
+        plt.xlabel("Retention Time (min)", fontsize=18, fontname='Arial')
+        plt.ylabel("Intensity", fontsize=18, fontname='Arial')
+        plt.xticks(fontsize=14, fontname='Arial')
+        plt.yticks(fontsize=14, fontname='Arial')
+        if ylim is not None:
+            plt.ylim(ylim[0], ylim[1])
+        if target_rt is not None and show_rt_line:
+            plt.axvline(x = target_rt, color = 'b', linestyle = '--', linewidth=1)
+
+        if output is not None:
+            try:
+                plt.savefig(output, dpi=300, bbox_inches="tight")
+                plt.close()
+            except:
+                print("Invalid output path.")
+        else:
+            plt.show()
+
+        if return_eic_data:
+            return eic_rt, eic_int
+    
     def plot_eic(self, target_mz, target_rt=None, mz_tol=0.005, rt_tol=0.3, 
                  output=None, show_rt_line=True, ylim=None, return_eic_data=False):
         """

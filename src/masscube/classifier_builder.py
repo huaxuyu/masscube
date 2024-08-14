@@ -7,7 +7,7 @@ It provides:
 
 # Import modules
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.feature_selection import SelectKBest, chi2
+from sklearn.feature_selection import SelectKBest
 from sklearn.model_selection import train_test_split, cross_val_score, KFold
 from sklearn.metrics import roc_curve, auc
 from sklearn.metrics import accuracy_score
@@ -189,20 +189,28 @@ def build_classifier(path=None, feature_num=None, gaussian_cutoff=0.6, fill_perc
     sample_names = sample_table.iloc[:,0].values[(sample_table.iloc[:,1].values != "blank") & (sample_table.iloc[:,1].values != "qc")]
     sample_groups = sample_table.iloc[:,1].values[(sample_table.iloc[:,1].values != "blank") & (sample_table.iloc[:,1].values != "qc")]
     
-    # preprocess data by 
+    # preprocess data by
+    selected_feature_numbers = [len(df)]
     # 1. selecting annotated metabolites
     df = df[df['search_mode'] == 'identity_search']
+    selected_feature_numbers.append(len(df))
     # 2. filter by Gaussian similarity
     df = df[df['Gaussian_similarity'] > gaussian_cutoff]
+    selected_feature_numbers.append(len(df))
     # 3. remove in-source fragments
     df = df[df['is_in_source_fragment'] == False]
+    selected_feature_numbers.append(len(df))
     # 4. remove isotopes
     df = df[df['is_isotope'] == False]
+    selected_feature_numbers.append(len(df))
+    df = df.drop_duplicates(subset='annotation', keep='first')
+    selected_feature_numbers.append(len(df))
     # 5. only keep the samples that are not blank or qc
     keep_columns = df.columns[:22].tolist() + sample_names.tolist()
     df = df[keep_columns]
     df['fill_percentage'] = df.iloc[:, 22:].astype(bool).sum(axis=1)/len(sample_names)
     df = df[df['fill_percentage'] > fill_percentage_cutoff]
+    selected_feature_numbers.append(len(df))
     X = df.iloc[:, 22:].values
     for i in X:
         i[i == 0] = np.min(i[i != 0]) * fill_ratio
@@ -250,6 +258,7 @@ def build_classifier(path=None, feature_num=None, gaussian_cutoff=0.6, fill_perc
     print('Cross-validation scores:', np.mean(cv_scores).round(3), '+/-', np.std(cv_scores).round(3))
     print('Selected features:', selected_features)
     print('ROC AUC:', roc_auc)
+    print(selected_feature_numbers)
 
 
 def predict_samples(path, mz_tol=0.01, rt_tol=0.3):
