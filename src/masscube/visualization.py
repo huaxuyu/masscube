@@ -10,7 +10,7 @@ import os
 import re
 from tqdm import tqdm
 
-from .annotation import _extract_peaks_from_string
+from .annotation import extract_peaks_from_string
 
 def plot_bpcs(data_list=None, output=None, autocolor=False, show_legend=True):
     """
@@ -232,8 +232,8 @@ def plot_ms2_matching_from_feature_table(feature_table, params=None, output_dir=
         return None
 
     for i in tqdm(range(len(ms2))):
-        peaks1 = _extract_peaks_from_string(ms2[i])
-        peaks2 = _extract_peaks_from_string(matched_ms2[i])
+        peaks1 = extract_peaks_from_string(ms2[i])
+        peaks2 = extract_peaks_from_string(matched_ms2[i])
 
         # replace all the special characters to "_"
         a = re.sub(r"[^a-zA-Z0-9]", "_", annotations[i])

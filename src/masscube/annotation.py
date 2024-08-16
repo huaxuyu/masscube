@@ -69,7 +69,7 @@ def feature_annotation(features, parameters, num=5):
             continue
         parsed_ms2 = []
         for ms2 in f.ms2_seq:
-            peaks = _extract_peaks_from_string(ms2)
+            peaks = extract_peaks_from_string(ms2)
             peaks = entropy_search.clean_spectrum_for_search(f.mz, peaks, precursor_ions_removal_da=2.0)
             parsed_ms2.append(peaks)
         # sort parsed ms2 by summed intensity
@@ -364,18 +364,20 @@ def _correct_db(db):
             a['precursor_mz'] = float(a.pop(similar_key[0]))
 
 
-def _extract_peaks_from_string(ms2):
+def extract_peaks_from_string(ms2):
     """
     Extract peaks from MS2 spectrum.
 
     Parameters
     ----------
     ms2 : str
-        MS2 spectrum in string format.
+        MS2 spectrum in string format. Format: "mz1;intensity1|mz2;intensity2|..."
+        example: "100.0;1000.0|200.0;2000.0|300.0;3000.0|"
     
-    Example
+    returns
     ----------
-    
+    peaks : numpy.array
+        Peaks in numpy array format.
     """
     
     # Use findall function to extract all numbers matching the pattern
