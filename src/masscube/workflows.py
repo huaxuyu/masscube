@@ -359,7 +359,7 @@ def untargeted_metabolomics_workflow(path=None, batch_size=100, cpu_ratio=0.8):
     
 
 # 4. Evaluate the data quality of the raw files
-def run_evaluation(path):
+def run_evaluation(path=None):
     """
     Evaluate the run and report the problematic files.
 
@@ -368,6 +368,9 @@ def run_evaluation(path):
     path : str
         Path to the project directory.
     """
+
+    if path is None:
+        path = os.getcwd()
 
     # check if sample table exists
     if os.path.exists(os.path.join(path, "sample_table.csv")):
