@@ -272,9 +272,9 @@ def untargeted_metabolomics_workflow(path=None, batch_size=100, cpu_ratio=0.8):
     else:
         print("The aligned feature table is found. Step 3 (feature alignment), Step 4 (gap filling), and Step 5 (annotation) are skipped.")
         if os.path.exists(os.path.join(params.project_dir, "aligned_feature_table.txt")):
-            feature_table = pd.read_csv(os.path.join(params.project_dir, "aligned_feature_table.txt"), sep="\t")
+            feature_table = pd.read_csv(os.path.join(params.project_dir, "aligned_feature_table.txt"), sep="\t", low_memory=False)
         elif os.path.exists(os.path.join(params.project_dir, "aligned_feature_table_before_normalization.txt")):
-            feature_table = pd.read_csv(os.path.join(params.project_dir, "aligned_feature_table_before_normalization.txt"), sep="\t")
+            feature_table = pd.read_csv(os.path.join(params.project_dir, "aligned_feature_table_before_normalization.txt"), sep="\t", low_memory=False)
         medadata.append({
             "name": "feature_alignment",
             "layer": 3,

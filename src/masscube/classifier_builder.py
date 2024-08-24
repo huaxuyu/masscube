@@ -50,6 +50,11 @@ def feature_selection(X, y, k=None):
 
     if k is None:
         k = int(np.ceil(X.shape[0]/10))
+    
+    if k < 5:
+        k = 5
+        print('Sample size is too small. Constructed model may not be reliable.')
+        print('The number of features is set to 5.')
 
     selector = SelectKBest(k=k)
 
@@ -177,6 +182,9 @@ def build_classifier(path=None, feature_num=None, gaussian_cutoff=0.6, fill_perc
         The number of folds for cross-validation. Default is 5.
     """
 
+    if path is None:
+        path = os.getcwd()
+
     # process the raw data
     if not data_processed:
         untargeted_metabolomics_workflow(path)
@@ -256,9 +264,7 @@ def build_classifier(path=None, feature_num=None, gaussian_cutoff=0.6, fill_perc
 
     # print the results
     print('Cross-validation scores:', np.mean(cv_scores).round(3), '+/-', np.std(cv_scores).round(3))
-    print('Selected features:', selected_features)
     print('ROC AUC:', roc_auc)
-    print(selected_feature_numbers)
 
 
 def predict_samples(path, mz_tol=0.01, rt_tol=0.3):
