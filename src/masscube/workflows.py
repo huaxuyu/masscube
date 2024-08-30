@@ -411,21 +411,7 @@ def run_evaluation(path=None):
         print("No problematic files are found.")
 
 
-# 5. Targeted metabolomics workflow
-def targeted_metabolomics_workflow(path=None):
-    """
-    The targeted metabolomics workflow. The function is under development.
-
-    Parameters
-    ----------
-    path : str
-        The working directory. If None, the current working directory is used.
-    """
-
-    pass
-
-
-# 6. Single-file peak picking (batch mode)
+# 5. Single-file peak picking (batch mode)
 def batch_file_processing(path=None, batch_size=100, cpu_ratio=0.8):
     """
     The untargeted metabolomics workflow. See the documentation for details.
@@ -474,59 +460,3 @@ def batch_file_processing(path=None, batch_size=100, cpu_ratio=0.8):
         p.starmap(feature_detection, [(f, params) for f in raw_file_names[i:i+batch_size]])
         p.close()
         p.join()
-
-
-# 7. Determine sample total amount
-def sample_total_amount(path):
-    """
-    Determine the total amount of the samples based on LC-MS data. See the documentation for details.
-
-    Parameters
-    ----------
-    path : str
-        Path to the mzML or mzXML files.
-    """
-
-    pass
-
-# 8. Serial QC calibration
-def qc_calibration(path):
-    """
-    Serial QC calibration. See the documentation for details.
-
-    Parameters
-    ----------
-    path : str
-        Path to the mzML or mzXML files.
-    """
-
-    pass
-
-
-
-# 9. Mass calibration
-def mass_calibration(path):
-    """
-    Mass calibration. See the documentation for details.
-
-    Parameters
-    ----------
-    path : str
-        Path to the mzML or mzXML files.
-    """
-
-    pass
-
-
-# 10. Untargeted metabolomics workflow with multiple analytical modes (RP+, RP-, HILIC+, HILIC-)
-def untargeted_metabolomics_workflow_multi_mode(path=None):
-    """
-    The untargeted metabolomics workflow with multiple analytical modes. See the documentation for details.
-
-    Parameters
-    ----------
-    path : str
-        The working directory. If None, the current working directory is used.
-    """
-
-    pass
