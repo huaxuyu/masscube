@@ -218,8 +218,12 @@ def gap_filling(features, parameters, mode='forced_peak_picking'):
 
     # calculate the fill percentage after gap filling (blank samples are not included)
     blank_num = len([x for x in parameters.individual_sample_groups if 'blank' in x])
-    for f in features:
-        f.fill_percentage = (np.sum(f.detected_seq)-blank_num) / (len(parameters.sample_names)-blank_num) * 100
+    if blank_num > 0:
+        for f in features:
+            f.fill_percentage = np.sum(f.detected_seq[:-blank_num]) / (len(parameters.sample_names)-blank_num) * 100
+    else:
+        for f in features:
+            f.fill_percentage = np.sum(f.detected_seq) / len(parameters.sample_names) * 100
     return features
 
 
