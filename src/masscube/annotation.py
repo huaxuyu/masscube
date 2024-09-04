@@ -9,6 +9,8 @@ import numpy as np
 import json
 import pandas as pd
 import re
+from tqdm import tqdm
+
 from ms_entropy import read_one_spectrum, FlashEntropySearch
 
 def load_msms_db(path):
@@ -64,7 +66,7 @@ def feature_annotation(features, parameters, num=5):
 
     entropy_search = load_msms_db(parameters.msms_library)
 
-    for f in features:
+    for f in tqdm(features):
         if len(f.ms2_seq) == 0:
             continue
         parsed_ms2 = []

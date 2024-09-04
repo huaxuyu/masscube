@@ -6,6 +6,7 @@
 import pandas as pd
 import os
 import json
+import gzip
 from importlib.metadata import version
 
 # Define a class to store the parameters
@@ -280,16 +281,35 @@ def find_ms_info(file_name):
     ion_mode = 'positive'
     centroid = False
 
-    with open(file_name, 'r') as f:
-        for i, line in enumerate(f):
-            if 'orbitrap' in line.lower():
-                ms_type = 'orbitrap'
-            if 'negative' in line.lower():
-                ion_mode = 'negative'
-            if "centroid spectrum" in line.lower() or 'centroided="1"' in line.lower():
-                centroid = True
-            if i > 200:
-                break
+    ext = os.path.splitext(file_name)[1].lower()
+
+    # if mzML of mzXML
+    if ext == '.mzml' or ext == '.mzxml':
+        with open(file_name, 'r') as f:
+            for i, line in enumerate(f):
+                if 'orbitrap' in line.lower():
+                    ms_type = 'orbitrap'
+                if 'negative' in line.lower():
+                    ion_mode = 'negative'
+                if "centroid spectrum" in line.lower() or 'centroided="1"' in line.lower():
+                    centroid = True
+                if i > 200:
+                    break
+    
+    # if mzjson or compressed mzjson
+    elif ext == '.mzjson' or ext == '.gz':
+        if ext.lower() == ".mzjson":
+            with open(file_name, 'r') as f:
+                data = json.load(f)
+        else:
+            with gzip.open(file_name, 'rt') as f:
+                data = json.load(f)
+        ms_type = data["metadata"]["instrument_type"]
+        ion_mode = data["metadata"]["ion_mode"]
+        if "centroid" in data["metadata"]:
+            centroid = data["metadata"]["centroid"]
+        else:
+            centroid = True
 
     return ms_type, ion_mode, centroid
 

@@ -10,6 +10,8 @@ import os
 import matplotlib.pyplot as plt
 import pandas as pd
 from datetime import datetime
+import json
+import gzip
 
 from .params import Params
 from .peak_detect import find_rois, cut_roi
@@ -38,6 +40,9 @@ class MSData:
         """
 
         self.scans = []             # A list of MS scans
+        self.ms1_idx = []   # MS1 scan index
+        self.ms2_idx = []   # MS2 scan index
+
         self.ms1_rt_seq = []        # Retention times of all MS1 scans
         self.bpc_int = []           # Intensity of the BPC
         self.rois = []              # A list of ROIs
@@ -65,10 +70,10 @@ class MSData:
 
         if os.path.isfile(file_name):
             # get extension from file name
-            ext = os.path.splitext(file_name)[1]
+            ext = os.path.splitext(file_name)[1].lower()
 
-            if ext.lower() != ".mzml" and ext.lower() != ".mzxml":
-                raise ValueError("Unsupported raw data format. Raw data must be in mzML or mzXML.")
+            if ext not in [".mzml", ".mzxml", ".mzjson", ".gz"]:
+                raise ValueError("Unsupported raw data format. Raw data must be in mzML, mzXML or mzjson.")
 
             self.file_name = os.path.splitext(os.path.basename(file_name))[0]
 
@@ -82,6 +87,16 @@ class MSData:
                 with mzxml.MzXML(file_name) as reader:
                     self.extract_scan_mzxml(reader, int_tol=params.int_tol, read_ms2=read_ms2, 
                                             clean_ms2=clean_ms2, centroid=centroid)
+            elif ext.lower() == ".mzjson":
+                with open(file_name, 'r') as f:
+                    data = json.load(f)
+                    self.read_mzjson(data, int_tol=params.int_tol, read_ms2=read_ms2, 
+                                    clean_ms2=clean_ms2, centroid=centroid)
+            elif ext.lower() == ".gz":
+                with gzip.open(file_name, 'rt') as f:
+                    data = json.load(f)
+                    self.read_mzjson(data, int_tol=params.int_tol, read_ms2=read_ms2, 
+                                    clean_ms2=clean_ms2, centroid=centroid)
         else:
             print("File does not exist.")
 
@@ -97,8 +112,6 @@ class MSData:
         """
 
         idx = 0     # Scan number
-        self.ms1_idx = []   # MS1 scan index
-        self.ms2_idx = []   # MS2 scan index
 
         rt_unit = spectra[0]['scanList']['scan'][0]['scan start time'].unit_info
 
@@ -150,7 +163,7 @@ class MSData:
         self.ms1_rt_seq = np.array(self.ms1_rt_seq)
 
 
-    def extract_scan_mzxml(self, spectra, int_tol, read_ms2=True, clean_ms2=False, centroid=True):
+    def extract_scan_mzxml(self, spectra, int_tol=0, read_ms2=True, clean_ms2=False, centroid=True):
         """
         Function to extract all scans and convert them to Scan objects.
 
@@ -161,9 +174,6 @@ class MSData:
         """
 
         idx = 0     # Scan number
-        self.ms1_idx = []   # MS1 scan index
-        self.ms2_idx = []   # MS2 scan index
-
         rt_unit = spectra[0]["retentionTime"].unit_info
 
         # Iterate over all scans
@@ -207,7 +217,54 @@ class MSData:
                 idx += 1
 
         self.ms1_rt_seq = np.array(self.ms1_rt_seq)
+    
 
+    def read_mzjson(self, data, int_tol=0, read_ms2=True, clean_ms2=False, centroid=False):
+        """
+        Function to read mzjson file.
+
+        Parameters
+        ----------------------------------------------------------
+        file_name: str
+            File name of mzjson file.
+        """
+
+        self.file_name = data['metadata']['name']
+        self.start_time = data['metadata']['timestamp']
+
+        for idx, scan in enumerate(data['scans']):
+            if scan['level'] == 1:
+                temp_scan = Scan(level=1, scan=idx, rt=scan['time'])
+                mz_array = np.array(scan['mz'], dtype=np.float64)
+                int_array = np.array([float(x) for x in scan['intensity']], dtype=np.int64)
+                mz_array = mz_array[int_array > int_tol]
+                int_array = int_array[int_array > int_tol]
+
+                if centroid:
+                    mz_array, int_array = _centroid(mz_array, int_array)
+
+                temp_scan.add_info_by_level(mz_seq=mz_array, int_seq=int_array)
+                self.ms1_idx.append(idx)
+
+                # update base peak chromatogram
+                self.bpc_int.append(np.max(int_array))
+                self.ms1_rt_seq.append(scan['time'])
+
+            elif scan['level'] == 2 and read_ms2:
+                temp_scan = Scan(level=2, scan=idx, rt=scan['time'])
+                precursor_mz = scan['precursor_mz']
+                mz_array = np.array(scan['mz'], dtype=np.float64)
+                int_array = np.array([float(x) for x in scan['intensity']], dtype=np.int64)
+                peaks = np.array([mz_array, int_array], dtype=np.float64).T
+                temp_scan.add_info_by_level(precursor_mz=precursor_mz, peaks=peaks)
+                if clean_ms2:
+                    _clean_ms2(temp_scan)
+                self.ms2_idx.append(idx)
+
+            self.scans.append(temp_scan)
+
+        self.ms1_rt_seq = np.array(self.ms1_rt_seq)
+    
     
     def drop_ion_by_int(self):
         """
@@ -515,10 +572,16 @@ class MSData:
         plt.rcParams['font.size'] = 14
         plt.rcParams['font.family'] = 'Arial'
 
+        eic_data = []
         for target_mz in target_mz_seq:
         # get the eic data
             eic_rt, eic_int, _, _ = self.get_eic_data(target_mz, target_rt, mz_tol, rt_tol)
             plt.plot(eic_rt, eic_int, linewidth=1)
+            eic_data.append({
+                "mz": target_mz,
+                "eic_rt": eic_rt,
+                "eic_int": eic_int
+            })
         plt.xlabel("Retention Time (min)", fontsize=18, fontname='Arial')
         plt.ylabel("Intensity", fontsize=18, fontname='Arial')
         plt.xticks(fontsize=14, fontname='Arial')
@@ -538,7 +601,7 @@ class MSData:
             plt.show()
 
         if return_eic_data:
-            return eic_rt, eic_int
+            return eic_data
     
     def plot_eic(self, target_mz, target_rt=None, mz_tol=0.005, rt_tol=0.3, 
                  output=None, show_rt_line=True, ylim=None, return_eic_data=False):
