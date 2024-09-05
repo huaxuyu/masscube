@@ -40,7 +40,7 @@ class Params:
         # Feature detection
         self.mz_tol_ms1 = 0.01              # m/z tolerance for MS1, default is 0.01
         self.mz_tol_ms2 = 0.015             # m/z tolerance for MS2, default is 0.015
-        self.int_tol = 30000                # Intensity tolerance, default is 30000 for Orbitrap and 1000 for other instruments, integer
+        self.int_tol = None                   # Intensity tolerance, recommend 30000 for Orbitrap and 1000 for QTOF, integer
         self.roi_gap = 30                   # Gap within a feature, default is 30 (i.e. 30 consecutive scans without signal), integer
         self.ppr = 0.7                      # Peak peak correlation threshold for feature grouping, default is 0.7
 
@@ -196,6 +196,42 @@ class Params:
         # STEP 6: set output
         self.output_single_file = True
         self.output_aligned_file = True
+
+
+    def _batch_processing_preparation(self):
+        """
+        Prepare the parameters for the batch processing.
+        """
+    
+        # STEP 1: check if the project directory exists
+        if not os.path.exists(self.project_dir):
+            raise ValueError("The project directory does not exist. Please create the directory first.")
+        
+        self.sample_dir = os.path.join(self.project_dir, "data")
+        self.single_file_dir = os.path.join(self.project_dir, "single_files")
+        self.bpc_dir = os.path.join(self.project_dir, "chromatogram")
+
+        # STEP 2: check if the required files are prepared
+        #         three items are required: raw MS data, sample table, parameter file
+        if not os.path.exists(self.sample_dir) or len(os.listdir(self.sample_dir)) == 0:
+            raise ValueError("No raw MS data is found in the project directory.")
+        if not os.path.exists(os.path.join(self.project_dir, "parameters.csv")):
+            print("No parameter file is found in the project directory. Default parameters will be used.")
+
+        # STEP 3: create the output directories if not exist
+        if not os.path.exists(self.single_file_dir):
+            os.makedirs(self.single_file_dir)
+        if not os.path.exists(self.bpc_dir):
+            os.makedirs(self.bpc_dir)
+        
+        # STEP 4: read the parameters from csv file or use default values
+        if os.path.exists(os.path.join(self.project_dir, "parameters.csv")):
+            self.read_parameters_from_csv(os.path.join(self.project_dir, "parameters.csv"))
+        else:
+            print("Using default parameters...")
+            self.plot_bpc = True
+
+        self.output_single_file = True
 
 
     def set_default(self, ms_type, ion_mode):

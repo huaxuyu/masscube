@@ -13,7 +13,7 @@ from datetime import datetime
 import json
 import gzip
 
-from .params import Params
+from .params import Params, find_ms_info
 from .peak_detect import find_rois, cut_roi
 
 
@@ -42,6 +42,7 @@ class MSData:
         self.scans = []             # A list of MS scans
         self.ms1_idx = []   # MS1 scan index
         self.ms2_idx = []   # MS2 scan index
+        self.centroid = True        # Centroid the data
 
         self.ms1_rt_seq = []        # Retention times of all MS1 scans
         self.bpc_int = []           # Intensity of the BPC
@@ -53,7 +54,7 @@ class MSData:
         self.start_time = None      # Start acquisition time of the raw data
 
 
-    def read_raw_data(self, file_name, params, read_ms2=True, clean_ms2=False, centroid=True):
+    def read_raw_data(self, file_name, params, read_ms2=True, clean_ms2=False, centroid_mz=True):
         """
         Function to read raw data to MS1 and MS2 (if available)
         (supported by pyteomics package).
@@ -82,26 +83,26 @@ class MSData:
             if ext.lower() == ".mzml":
                 with mzml.MzML(file_name) as reader:
                     self.extract_scan_mzml(reader, int_tol=params.int_tol, read_ms2=read_ms2, 
-                                           clean_ms2=clean_ms2, centroid=centroid)
+                                           clean_ms2=clean_ms2, centroid_mz=centroid_mz)
             elif ext.lower() == ".mzxml":
                 with mzxml.MzXML(file_name) as reader:
                     self.extract_scan_mzxml(reader, int_tol=params.int_tol, read_ms2=read_ms2, 
-                                            clean_ms2=clean_ms2, centroid=centroid)
+                                            clean_ms2=clean_ms2, centroid_mz=centroid_mz)
             elif ext.lower() == ".mzjson":
                 with open(file_name, 'r') as f:
                     data = json.load(f)
                     self.read_mzjson(data, int_tol=params.int_tol, read_ms2=read_ms2, 
-                                    clean_ms2=clean_ms2, centroid=centroid)
+                                    clean_ms2=clean_ms2, centroid_mz=centroid_mz)
             elif ext.lower() == ".gz":
                 with gzip.open(file_name, 'rt') as f:
                     data = json.load(f)
                     self.read_mzjson(data, int_tol=params.int_tol, read_ms2=read_ms2, 
-                                    clean_ms2=clean_ms2, centroid=centroid)
+                                    clean_ms2=clean_ms2, centroid_mz=centroid_mz)
         else:
             print("File does not exist.")
 
 
-    def extract_scan_mzml(self, spectra, int_tol=0, read_ms2=True, clean_ms2=False, centroid=True):
+    def extract_scan_mzml(self, spectra, int_tol=0, read_ms2=True, clean_ms2=False, centroid_mz=True):
         """
         Function to extract all scans and convert them to Scan objects.
 
@@ -138,8 +139,8 @@ class MSData:
                     if len(mz_array) == 0:
                         continue
 
-                    if centroid:
-                        mz_array, int_array = _centroid(mz_array, int_array)
+                    if centroid_mz:
+                        mz_array, int_array = centroid_mz_data(mz_array, int_array)
 
                     temp_scan.add_info_by_level(mz_seq=mz_array, int_seq=int_array)
                     self.ms1_idx.append(idx)
@@ -163,7 +164,7 @@ class MSData:
         self.ms1_rt_seq = np.array(self.ms1_rt_seq)
 
 
-    def extract_scan_mzxml(self, spectra, int_tol=0, read_ms2=True, clean_ms2=False, centroid=True):
+    def extract_scan_mzxml(self, spectra, int_tol=0, read_ms2=True, clean_ms2=False, centroid_mz=True):
         """
         Function to extract all scans and convert them to Scan objects.
 
@@ -194,8 +195,8 @@ class MSData:
                     mz_array = mz_array[int_array > int_tol]
                     int_array = int_array[int_array > int_tol]
 
-                    if centroid:
-                        mz_array, int_array = _centroid(mz_array, int_array)
+                    if centroid_mz:
+                        mz_array, int_array = centroid_mz_data(mz_array, int_array)
 
                     temp_scan.add_info_by_level(mz_seq=mz_array, int_seq=int_array)
                     self.ms1_idx.append(idx)
@@ -219,7 +220,7 @@ class MSData:
         self.ms1_rt_seq = np.array(self.ms1_rt_seq)
     
 
-    def read_mzjson(self, data, int_tol=0, read_ms2=True, clean_ms2=False, centroid=False):
+    def read_mzjson(self, data, int_tol=0, read_ms2=True, clean_ms2=False, centroid_mz=False):
         """
         Function to read mzjson file.
 
@@ -240,8 +241,8 @@ class MSData:
                 mz_array = mz_array[int_array > int_tol]
                 int_array = int_array[int_array > int_tol]
 
-                if centroid:
-                    mz_array, int_array = _centroid(mz_array, int_array)
+                if centroid_mz:
+                    mz_array, int_array = centroid_mz_data(mz_array, int_array)
 
                 temp_scan.add_info_by_level(mz_seq=mz_array, int_seq=int_array)
                 self.ms1_idx.append(idx)
@@ -972,7 +973,7 @@ def _clean_ms2(ms2, offset=2, int_drop_ratio=0.01):
         ms2.peaks = ms2.peaks[ms2.peaks[:, 1] > int_drop_ratio * np.max(ms2.peaks[:, 1])]
 
 
-def _centroid(mz_seq, int_seq, mz_tol=0.005):
+def centroid_mz_data(mz_seq, int_seq, mz_tol=0.005):
     """
     Function to centroid the m/z and intensity sequences.
 
@@ -1003,8 +1004,8 @@ def _centroid(mz_seq, int_seq, mz_tol=0.005):
     return np.array(mz_seq), int_seq
 
 
-def read_raw_file_to_obj(file_name, params=None, int_tol=1000, centroid=True, read_ms2=True, 
-                         clean_ms2=False, print_summary=False):
+def read_raw_file_to_obj(file_name, params=None, int_tol=None, centroid_mz=True, 
+                         read_ms2=True, clean_ms2=False, print_summary=False):
     """
     Read a raw file to a MSData object.
     It's a useful function for data visualization or brief data analysis.
@@ -1030,15 +1031,32 @@ def read_raw_file_to_obj(file_name, params=None, int_tol=1000, centroid=True, re
         A MSData object.
     """
 
+    ms_type, ion_mode, centroid = find_ms_info(file_name)
+
+    if int_tol is None:
+        if ms_type == "orbitrap":
+            dft_int_tol = 30000
+        elif ms_type == "tof":
+            dft_int_tol = 1000
+    
     # create a MSData object
     d = MSData()
+    d.centroid = centroid
 
     # read raw data
     if params is None:
         params = Params()
-        params.int_tol = int_tol
-    
-    d.read_raw_data(file_name, params=params, read_ms2=read_ms2, clean_ms2=clean_ms2, centroid=centroid)
+        params.int_tol = dft_int_tol
+    else:
+        if int_tol is not None:
+            params.int_tol = int_tol
+        if params.int_tol is None:
+            params.int_tol = dft_int_tol
+    params.ion_mode = ion_mode
+
+    d.read_raw_data(file_name, params=params, read_ms2=read_ms2, clean_ms2=clean_ms2, centroid_mz=centroid_mz)
+
+    d.params = params
     
     if print_summary:
         print("Number of MS1 scans: " + str(len(d.ms1_idx)), "Number of MS2 scans: " + str(len(d.ms2_idx)))

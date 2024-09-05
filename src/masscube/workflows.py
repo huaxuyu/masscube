@@ -9,20 +9,18 @@ import pickle
 from copy import deepcopy
 import pandas as pd
 import numpy as np
-from tqdm import tqdm
 from importlib.metadata import version
 from scipy.stats import zscore
 import time
 import json
 
-from .raw_data_utils import MSData
-from .params import Params, find_ms_info
+from .raw_data_utils import read_raw_file_to_obj
+from .params import Params
 from .feature_grouping import annotate_isotope, annotate_adduct, annotate_in_source_fragment
 from .alignment import feature_alignment, gap_filling, output_feature_table
 from .annotation import feature_annotation, annotate_rois, feature_annotation_mzrt
 from .normalization import sample_normalization
 from .visualization import plot_ms2_matching_from_feature_table
-# from .network import network_analysis
 from .stats import statistical_analysis
 from .feature_table_utils import convert_features_to_df, output_feature_to_msp
 
@@ -59,24 +57,14 @@ def feature_detection(file_name, params=None, cal_g_score=True, cal_a_score=True
 
     try:
         # create a MSData object
-        d = MSData()
+        d = read_raw_file_to_obj(file_name, params=params, centroid_mz=True, read_ms2=True, clean_ms2=False)
 
-        # set parameters
-        ms_type, ion_mode, centroid = find_ms_info(file_name)
-        if not centroid:
+        if not d.centroid:
             print("File: " + file_name + " is not centroided and skipped.")
             return None
         
-        # if params is None, use the default parameters
-        if params is None:
-            params = Params()
-            params.set_default(ms_type, ion_mode)
-        
         if ms2_library_path is not None:
-            params.msms_library = ms2_library_path
-
-        # read raw data
-        d.read_raw_data(file_name, params, clean_ms2=True)
+            d.params.msms_library = ms2_library_path
 
         # detect region of interests (ROIs)
         d.find_rois()
@@ -100,7 +88,7 @@ def feature_detection(file_name, params=None, cal_g_score=True, cal_a_score=True
         if annotation and d.params.msms_library is not None:
             annotate_rois(d)
 
-        if params.plot_bpc:
+        if d.params.plot_bpc:
             d.plot_bpc(label_name=True, output_dir=os.path.join(params.bpc_dir, d.file_name + "_bpc.png"))
 
         # output single file to a txt file
@@ -432,22 +420,22 @@ def batch_file_processing(path=None, batch_size=100, cpu_ratio=0.8):
         params.project_dir = path
     else:
         params.project_dir = os.getcwd()
-    params._untargeted_metabolomics_workflow_preparation()
-
-    with open(os.path.join(params.project_dir, "project.mc"), "wb") as f:
-        pickle.dump(params, f)
+    params._batch_processing_preparation()
     
     raw_file_names = os.listdir(params.sample_dir)
-    raw_file_names = [f for f in raw_file_names if f.lower().endswith(".mzml") or f.lower().endswith(".mzxml")]
+    raw_file_names = [f for f in raw_file_names if f.lower().endswith(".mzml") or f.lower().endswith(".mzxml")
+                      or f.lower().endswith(".mzjson.gz") or f.lower().endswith(".mzjson")]
     raw_file_names = [f for f in raw_file_names if not f.startswith(".")]   # for Mac OS
+    
     # skip the files that have been processed
     txt_files = os.listdir(params.single_file_dir)
     txt_files = [f.split(".")[0] for f in txt_files if f.lower().endswith(".txt")]
     txt_files = [f for f in txt_files if not f.startswith(".")]  # for Mac OS
     raw_file_names = [f for f in raw_file_names if f.split(".")[0] not in txt_files]
+    
     raw_file_names = [os.path.join(params.sample_dir, f) for f in raw_file_names]
-
     print("Total number of files to be processed: " + str(len(raw_file_names)))
+
     # process files by multiprocessing, each batch contains 100 files by default (tunable in batch_size)
     print("Processing files by multiprocessing...")
     workers = int(multiprocessing.cpu_count() * cpu_ratio)
