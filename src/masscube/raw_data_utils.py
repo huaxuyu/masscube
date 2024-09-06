@@ -1038,6 +1038,8 @@ def read_raw_file_to_obj(file_name, params=None, int_tol=None, centroid_mz=True,
             dft_int_tol = 30000
         elif ms_type == "tof":
             dft_int_tol = 1000
+    else:
+        dft_int_tol = int_tol
     
     # create a MSData object
     d = MSData()
@@ -1048,8 +1050,6 @@ def read_raw_file_to_obj(file_name, params=None, int_tol=None, centroid_mz=True,
         params = Params()
         params.int_tol = dft_int_tol
     else:
-        if int_tol is not None:
-            params.int_tol = int_tol
         if params.int_tol is None:
             params.int_tol = dft_int_tol
     params.ion_mode = ion_mode

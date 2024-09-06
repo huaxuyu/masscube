@@ -149,6 +149,43 @@ def feature_alignment(path, parameters, drop_by_fill_pct_ratio=0.1):
         features = [f for f in features if np.sum(f.detected_seq[:-blank_num]) > drop_by_fill_pct_ratio*(len(parameters.sample_names)-blank_num)]
     else:
         features = [f for f in features if np.sum(f.detected_seq) > drop_by_fill_pct_ratio*len(parameters.sample_names)]
+    
+    # STEP 6: clean the feature list to remove the features with almost the same mz and rt
+    if parameters.clean_feature_table:
+        features = sorted(features, key=lambda x: x.mz)
+        mz_groups = []
+        mz_groups_tmp = [0]
+        for i, f in enumerate(features):
+            if i == 0:
+                continue
+            if np.abs(f.mz - features[i-1].mz) < mz_tol:
+                mz_groups_tmp.append(i)
+            else:
+                mz_groups.append(mz_groups_tmp)
+                mz_groups_tmp = [i]
+        mz_groups.append(mz_groups_tmp)
+
+        cleaned_idx = []
+        for group in mz_groups:
+            if len(group) == 1:
+                cleaned_idx.append(group[0])
+            else:
+                group = sorted(group, key=lambda x: features[x].rt)
+                rt_groups = []
+                rt_groups_tmp = [group[0]]
+                for i in range(1, len(group)):
+                    if np.abs(features[group[i]].rt - features[group[i-1]].rt) < 0.1:
+                        rt_groups_tmp.append(group[i])
+                    else:
+                        rt_groups.append(rt_groups_tmp)
+                        rt_groups_tmp = [group[i]]
+                rt_groups.append(rt_groups_tmp)
+                for rt_group in rt_groups:
+                    rt_group = sorted(rt_group, key=lambda x: features[x].highest_intensity, reverse=True)
+                    cleaned_idx.append(rt_group[0])
+        features = [features[i] for i in cleaned_idx]
+
+    features = sorted(features, key=lambda x: x.highest_intensity, reverse=True)
 
     for i in range(len(features)):
         features[i].id = i

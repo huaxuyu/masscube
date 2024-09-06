@@ -57,7 +57,7 @@ def feature_detection(file_name, params=None, cal_g_score=True, cal_a_score=True
 
     try:
         # create a MSData object
-        d = read_raw_file_to_obj(file_name, params=params, centroid_mz=True, read_ms2=True, clean_ms2=False)
+        d = read_raw_file_to_obj(file_name, params=params, centroid_mz=True, read_ms2=True, clean_ms2=True)
 
         if not d.centroid:
             print("File: " + file_name + " is not centroided and skipped.")
@@ -438,6 +438,7 @@ def batch_file_processing(path=None, batch_size=100, cpu_ratio=0.8):
 
     # process files by multiprocessing, each batch contains 100 files by default (tunable in batch_size)
     print("Processing files by multiprocessing...")
+
     workers = int(multiprocessing.cpu_count() * cpu_ratio)
     for i in range(0, len(raw_file_names), batch_size):
         if len(raw_file_names) - i < batch_size:
@@ -445,6 +446,6 @@ def batch_file_processing(path=None, batch_size=100, cpu_ratio=0.8):
         else:
             print("Processing files from " + str(i) + " to " + str(i+batch_size))
         p = multiprocessing.Pool(workers)
-        p.starmap(feature_detection, [(f, params) for f in raw_file_names[i:i+batch_size]])
+        p.starmap(feature_detection, [(f, params, True, True, False, False, False ) for f in raw_file_names[i:i+batch_size]])
         p.close()
         p.join()
