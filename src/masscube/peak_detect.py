@@ -221,6 +221,8 @@ class Roi:
         self.matched_peak_number = None
         self.smiles = None
         self.inchikey = None
+        self.matched_precursor_mz = None
+        self.matched_peaks = None
 
 
     def extend_roi(self, scan_idx, rt, mz, intensity):

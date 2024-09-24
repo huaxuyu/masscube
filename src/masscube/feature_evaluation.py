@@ -138,9 +138,9 @@ def calculate_asymmetry_factor(y):
     idx = np.argmax(y)
 
     if idx == 0:
-        return 0.0
+        return 99.0
     elif idx == len(y) - 1:
-        return 99
+        return 0.0
 
     arr = y < 0.1 * y[idx]
 
@@ -151,9 +151,10 @@ def calculate_asymmetry_factor(y):
         left_idx = 0
     else:
         left_idx = left_idx[-1]
+    
     if len(right_idx) == 0:
         right_idx = len(y) - 1
     else:
         right_idx = right_idx[0] + idx
 
-    return (idx - left_idx) / (right_idx - idx)
+    return (right_idx - idx) / (idx - left_idx)

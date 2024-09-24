@@ -62,7 +62,7 @@ def generate_sample_table(path=None, output=True):
         return sample_table
 
 
-def get_timestamps(path, output=True):
+def get_timestamps(path=None, output=True):
     """
     Get timestamps for individual files and sort the files by time.
     The stucture of the path should be:

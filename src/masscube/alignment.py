@@ -174,7 +174,7 @@ def feature_alignment(path, parameters, drop_by_fill_pct_ratio=0.1):
                 rt_groups = []
                 rt_groups_tmp = [group[0]]
                 for i in range(1, len(group)):
-                    if np.abs(features[group[i]].rt - features[group[i-1]].rt) < 0.1:
+                    if np.abs(features[group[i]].rt - features[group[i-1]].rt) < 0.05:
                         rt_groups_tmp.append(group[i])
                     else:
                         rt_groups.append(rt_groups_tmp)
@@ -192,7 +192,7 @@ def feature_alignment(path, parameters, drop_by_fill_pct_ratio=0.1):
     
     # output the models to pickle files
     if parameters.run_rt_correction:
-        with open(os.path.join(parameters.project_dir, "rt_correction_models.pkl"), "wb") as f:
+        with open(os.path.join(parameters.project_file_dir, "rt_correction_models.pkl"), "wb") as f:
             pickle.dump(rt_cor_functions, f)
 
     return features

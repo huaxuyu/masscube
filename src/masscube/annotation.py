@@ -48,6 +48,9 @@ def load_msms_db(path):
         entropy_search.build_index(db)
         print("MS/MS database loaded.")
         return entropy_search
+    else:
+        print("The MS/MS database format {} is not supported.".format(ext))
+        print("Please provide a MS/MS database in pkl (best), msp, or json format.")
 
 
 def feature_annotation(features, parameters, num=5):
@@ -175,82 +178,213 @@ def feature_annotation_mzrt(features, path, default_adduct="[M+H]+", mz_tol=0.01
     return features
 
 
-def annotate_rois(d):
+def annotate_rois(rois, ms2_library=None, ms2_library_path=None, sim_tol=0.7, 
+                  search_mode='identity_search', ms1_tol=0.01, ms2_tol=0.015, clean_spec=True):
     """
-    A function to annotate rois based on their MS/MS spectra and a MS/MS database.
+    A function to annotate rois (Roi objects) based on a MS/MS database. Only top 1 match with 
+    similarity > sim_tol will be reported.
 
     Parameters
     ----------
-    d : MSData object
-        MS data.
-    """
-
-    # load the MS/MS database
-    entropy_search = load_msms_db(d.params.msms_library)
-    
-    for f in d.rois:
-        f.annotation = None
-        f.similarity = None
-        f.matched_peak_number = None
-        f.smiles = None
-        f.inchikey = None
-        f.matched_precursor_mz = None
-        f.matched_peaks = None
-        f.formula = None
-
-        if f.best_ms2 is not None:
-            peaks = entropy_search.clean_spectrum_for_search(f.mz, f.best_ms2.peaks, precursor_ions_removal_da=2.0)
-            entropy_similarity, matched_peaks_number = entropy_search.identity_search(precursor_mz=f.mz, peaks=peaks, ms1_tolerance_in_da=d.params.mz_tol_ms1, 
-                                                                                      ms2_tolerance_in_da=d.params.mz_tol_ms2, output_matched_peak_number=True)
-            
-            idx = np.argmax(entropy_similarity)
-            if entropy_similarity[idx] > d.params.ms2_sim_tol:
-                matched = entropy_search[np.argmax(entropy_similarity)]
-                matched = {k.lower():v for k,v in matched.items()}
-                f.annotation = matched['name']
-                f.similarity = entropy_similarity[idx]
-                f.matched_peak_number = matched_peaks_number[idx]
-                f.smiles = matched['smiles'] if 'smiles' in matched else None
-                f.inchikey = matched['inchikey'] if 'inchikey' in matched else None
-                f.matched_precursor_mz = matched['precursor_mz']
-                f.matched_peaks = matched['peaks']
-                f.formula = matched['formula'] if 'formula' in matched else None
-
-
-def annotate_ms2(ms2_seq, path):
-    """
-    A function to annotate MS/MS spectra based on a MS/MS database.
-
-    Parameters
-    ----------
-    ms2_seq : list
-        A list of MS/MS spectra. Each MS/MS spectrum can be Scan object.
-    path : str
+    rois : list
+        A list of Roi objects.
+    ms2_library : FlashEntropySearch object
+        A FlashEntropySearch object.
+    ms2_library_path : str
         The path to the MS/MS database (.pkl, .msp, or .json).
+    sim_tol : float
+        The similarity threshold for MS/MS search. Default is 0.7.
+    search_mode : str
+        The search mode. Options: 'identity_search', 'hybrid_search', or 'all' for both.
+    ms1_tol : float
+        The m/z tolerance for MS1 search.
+    ms2_tol : float
+        The m/z tolerance for MS2 search.
+    clean_spec : bool
+        Whether to automatically clean the spectrum before searching. If you prefer to clean the spectrum using
+        other methods or parameters, set it to False and clean the spectrum before calling this function.
+        By default, spectrum cleanning will
+        1. Remove ions > precursor_mz-2.0 Da.
+        2. Remove peaks with intensity less than 1% of the base peak.
+        3. Centroid the spectrum by grouping fragment ions within 0.05 Da.
+
+    Returns
+    -------
+    None
+    """
+
+    peak_list = [f.best_ms2.peaks for f in rois]
+    precursor_mz_list = [f.mz for f in rois]
+
+    results = annoatate_peaks(peak_list, precursor_mz_list, ms2_library=ms2_library, ms2_library_path=ms2_library_path,
+                              search_mode=search_mode, ms1_tol=ms1_tol, ms2_tol=ms2_tol, top_n=1, clean_spec=clean_spec)
+    
+    for i in range(len(rois)):
+        matched = results[i]['identity_search'][0]
+        if matched['similarity'] > sim_tol:
+            rois[i].annotation = matched['matched_ms2']['name']
+            rois[i].similarity = matched['similarity']
+            rois[i].matched_peak_number = matched['matched_peak_number']
+            rois[i].smiles = matched['matched_ms2']['smiles'] if 'smiles' in matched['matched_ms2'] else None
+            rois[i].inchikey = matched['matched_ms2']['inchikey'] if 'inchikey' in matched['matched_ms2'] else None
+            rois[i].matched_ms2 = _convert_peaks_to_string(matched['matched_ms2']['peaks'])
+            rois[i].formula = matched['matched_ms2']['formula'] if 'formula' in matched['matched_ms2'] else None
+            rois[i].search_mode = 'identity_search'
+            rois[i].adduct_type = matched['matched_ms2']['precursor_type']
+        else:
+            matched = results[i]['hybrid_search'][0]
+            if matched['similarity'] > sim_tol:
+                rois[i].annotation = matched['matched_ms2']['name']
+                rois[i].similarity = matched['similarity']
+                rois[i].smiles = matched['matched_ms2']['smiles'] if 'smiles' in matched['matched_ms2'] else None
+                rois[i].inchikey = matched['matched_ms2']['inchikey'] if 'inchikey' in matched['matched_ms2'] else None
+                rois[i].matched_ms2 = _convert_peaks_to_string(matched['matched_ms2']['peaks'])
+                rois[i].formula = matched['matched_ms2']['formula'] if 'formula' in matched['matched_ms2'] else None
+                rois[i].search_mode = 'hybrid_search'
+    
+
+def annotate_ms2_scans(ms2_list, ms2_library=None, ms2_library_path=None, search_mode='identity_search', 
+                       ms1_tol=0.01, ms2_tol=0.015, top_n=1, clean_spec=True):
+    """
+    A function to annotate MS/MS spectra (Scan object) based on a MS/MS database.
+
+    Parameters
+    ----------
+    ms2_list : list
+        A list of MS/MS spectra (Scan objects).
+    ms2_library : FlashEntropySearch object
+        A FlashEntropySearch object.
+    ms2_library_path : str
+        The path to the MS/MS database (.pkl, .msp, or .json).
+    search_mode : str
+        The search mode. Options: 'identity_search', 'hybrid_search', or 'all' for both.
+    ms1_tol : float
+        The m/z tolerance for MS1 search.
+    ms2_tol : float
+        The m/z tolerance for MS2 search.
+    top_n : int
+        The number of top MS/MS spectra with the highest spectral similarities.
+    clean_spec : bool
+        Whether to automatically clean the spectrum before searching. If you prefer to clean the spectrum using
+        other methods or parameters, set it to False and clean the spectrum before calling this function.
+        By default, spectrum cleanning will
+        1. Remove ions > precursor_mz-2.0 Da.
+        2. Remove peaks with intensity less than 1% of the base peak.
+        3. Centroid the spectrum by grouping fragment ions within 0.05 Da.
     
     Returns
     ----------
-    annotations : list
-        A list of annotations.
+    results : list
+        A list of annotations. Each annotation is a dictionary with keys 'identity_search' and 'hybrid_search',
+        where the values are lists of top_n annotations as dictionaries with keys 'matched_ms2', 'similarity', and 'matched_peak_number'.
     """
 
-    entropy_search = load_msms_db(path)
-    annotations = []
-    for ms2 in ms2_seq:
-        peaks = entropy_search.clean_spectrum_for_search(ms2.precursor_mz, ms2.peaks, precursor_ions_removal_da=2.0)
-        entropy_similarity, matched_peaks_number = entropy_search.identity_search(precursor_mz=ms2.precursor_mz, peaks=peaks, ms1_tolerance_in_da=0.01, 
-                                                                                  ms2_tolerance_in_da=0.01, output_matched_peak_number=True)
-        idx = np.argmax(entropy_similarity)
-        annotations.append({
-            'matched_ms2': entropy_search[idx],
-            'similarity': entropy_similarity[idx],
-            'matched_peak_number': matched_peaks_number[idx]
-        })
-    
-    return annotations
-                
+    peak_list = [ms2.peaks for ms2 in ms2_list]
+    precursor_mz_list = [ms2.precursor_mz for ms2 in ms2_list]
 
-def feature_to_feature_search(feature_list, sim_tol=0.8):
+    return annoatate_peaks(peak_list, precursor_mz_list, ms2_library=ms2_library, ms2_library_path=ms2_library_path,
+                           search_mode=search_mode, ms1_tol=ms1_tol, ms2_tol=ms2_tol, top_n=top_n, clean_spec=clean_spec)
+
+
+def annoatate_peaks(peak_list, precursor_mz_list, ms2_library=None, ms2_library_path=None,
+                    search_mode='identity_search', ms1_tol=0.01, ms2_tol=0.015, top_n=1, clean_spec=True):
+    """
+    A function to annotate peaks based on a MS/MS database.
+
+    Parameters
+    ----------
+    peak_list : list
+        A list of peaks. Each peak is a list or numpy array with shape (N, 2), 
+        N is the number of peaks. The format of the peaks is [[mz1, intensity1], [mz2, intensity2], ...].
+    precursor_mz_list : list
+        A list of precursor m/z values.
+    ms2_library : FlashEntropySearch object
+        A FlashEntropySearch object.
+    ms2_library_path : str
+        The path to the MS/MS database (.pkl, .msp, or .json).
+    search_mode : str
+        The search mode. Options: 'identity_search', 'hybrid_search', or 'all' for both.
+    ms1_tol : float
+        The m/z tolerance for MS1 search.
+    ms2_tol : float
+        The m/z tolerance for MS2 search.
+    top_n : int
+        The number of top MS/MS spectra with the highest spectral similarities.
+    clean_spec : bool
+        Whether to automatically clean the spectrum before searching. If you prefer to clean the spectrum using 
+        other methods or parameters, set it to False and clean the spectrum before calling this function.
+        By default, spectrum cleanning will 
+        1. Remove ions > precursor_mz-2.0 Da.
+        2. Remove peaks with intensity less than 1% of the base peak.
+        3. Centroid the spectrum by grouping fragment ions within 0.05 Da.
+    
+    Returns
+    ----------
+    results : list
+        A list of annotations. Each annotation is a dictionary with keys 'identity_search' and 'hybrid_search', 
+        where the values are lists of top_n annotations as dictionaries with keys 'matched_ms2', 'similarity', and 'matched_peak_number'.
+    """
+
+    # check if the length of peak_list and precursor_mz_list are the same
+    if len(peak_list) != len(precursor_mz_list):
+        raise ValueError("The length of peak_list and precursor_mz_list must be the same.")
+    
+    # load the MS/MS database
+    if ms2_library is not None:
+        entropy_search = ms2_library
+    elif ms2_library_path is not None:
+        entropy_search = load_msms_db(ms2_library_path)
+    else:
+        raise ValueError("Please provide the MS/MS database.")
+    
+    results = [{'identity_search': [], 'hybrid_search': []} for i in range(len(peak_list))]
+    
+    if search_mode == 'all' or search_mode == 'identity_search':
+        for i in range(len(peak_list)):
+            peaks = peak_list[i]
+            if peaks is not None and len(peaks) > 0:
+                if clean_spec:
+                    peaks = entropy_search.clean_spectrum_for_search(precursor_mz_list[i], peaks, precursor_ions_removal_da=2.0)
+                entropy_similarity, matched_peaks_number = entropy_search.identity_search(precursor_mz=precursor_mz_list[i], peaks=peaks, 
+                                                                                        ms1_tolerance_in_da=ms1_tol, ms2_tolerance_in_da=ms2_tol, output_matched_peak_number=True)
+                matched_idx = np.argsort(entropy_similarity)[::-1][:top_n]
+                for idx in matched_idx:
+                    results[i]['identity_search'].append({
+                        'matched_ms2': entropy_search[idx],
+                        'similarity': entropy_similarity[idx],
+                        'matched_peak_number': matched_peaks_number[idx]
+                    })
+            else:
+                results[i]['identity_search'].append({
+                    'matched_ms2': None,
+                    'similarity': 0,
+                    'matched_peak_number': None
+                })
+    
+    if search_mode == 'all' or search_mode == 'hybrid_search':
+        for i in range(len(peak_list)):
+            peaks = peak_list[i]
+            if peaks is not None and len(peaks) > 0:
+                if clean_spec:
+                    peaks = entropy_search.clean_spectrum_for_search(precursor_mz_list[i], peaks, precursor_ions_removal_da=2.0)
+                entropy_similarity = entropy_search.hybrid_search(precursor_mz=precursor_mz_list[i], peaks=peaks, 
+                                                                ms1_tolerance_in_da=ms1_tol, ms2_tolerance_in_da=ms2_tol)
+                matched_idx = np.argsort(entropy_similarity)[::-1][:top_n]
+                for idx in matched_idx:
+                    results[i]['hybrid_search'].append({
+                        'matched_ms2': entropy_search[idx],
+                        'similarity': entropy_similarity[idx]
+                    })
+            else:
+                results[i]['hybrid_search'].append({
+                    'matched_ms2': 0,
+                    'similarity': None
+                })
+    
+    return results
+          
+
+def feature_to_feature_search(feature_list, sim_tol=0.7):
     """
     A function to calculate the MS2 similarity between features using hybrid search.
 

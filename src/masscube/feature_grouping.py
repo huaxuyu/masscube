@@ -23,7 +23,7 @@ def annotate_isotope(d, mz_tol=0.015, rt_tol=0.1, valid_intensity_ratio_range=[0
         The RT tolerance to find isotopes.
     valid_intensity_ratio_range: list
         The valid intensity ratio range between isotopes.
-    charge_state_range: list
+    charge_state_range: list (not used)
         The charge state range of the isotopes. [lower, upper]
     """
 

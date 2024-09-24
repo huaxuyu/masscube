@@ -186,7 +186,7 @@ def build_classifier(path=None, feature_num=None, gaussian_cutoff=0.6, fill_perc
         path = os.getcwd()
 
     # process the raw data
-    if not data_processed:
+    if not data_processed and not os.path.exists(os.path.join(path, 'aligned_feature_table.txt')):
         untargeted_metabolomics_workflow(path)
 
     # load the processed data

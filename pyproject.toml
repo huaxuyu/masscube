@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "masscube"
-version = "1.0.21"
+version = "1.0.22"
 authors = [
   { name="Huaxu Yu", email="yhxchem@outlook.com" },
 ]
@@ -20,7 +20,7 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "numpy>=1.24,<=1.26",
+    "numpy>=1.24",
     "pandas>=2.2.1",
     "pyteomics==4.6.3",
     "scipy>=1.10.1",

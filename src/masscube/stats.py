@@ -1,9 +1,13 @@
 # A module for statistical analysis
 
 # imports
-from scipy.stats import ttest_ind, f_oneway
+
 import numpy as np
 import os
+from scipy.stats import ttest_ind, f_oneway
+from sklearn.decomposition import PCA
+
+from .visualization import plot_pca
 
 def statistical_analysis(feature_table, params, before_norm=False):
     """
@@ -121,13 +125,6 @@ def anova(data_array, individual_sample_groups):
     # adjusted_p_values = false_discovery_control(p_values)
 
     return p_values
-
-
-import numpy as np
-from sklearn.decomposition import PCA
-import matplotlib.pyplot as plt
-import matplotlib.transforms as transforms
-from .visualization import plot_pca
 
 
 def pca_analysis(data_array, individual_sample_groups, scaling=True, transformation=True, gapFillingRatio=0.2, output_dir=None, before_norm=False):

@@ -56,8 +56,10 @@ class Params:
         self.ms2_sim_tol = 0.7              # MS2 similarity tolerance, default is 0.7
 
         # Parameters for normalization
-        self.run_normalization = False      # Whether to normalize the data, default is False
-        self.normalization_method = "pqn"   # Normalization method, default is "pqn" (probabilistic quotient normalization), character string
+        self.sample_normalization = False   # Whether to normalize the data based on total sample amount/concentration, default is False
+        self.sample_norm_method = "pqn"     # Normalization method, default is "pqn" (probabilistic quotient normalization), character string
+        self.signal_normalization = False   # Whether to run feature-wised normalization to correct systematic signal drift, default is False
+        self.signal_norm_method = "lowess"  # Normalization method for signal drift, default is "loess" (local polynomial regression fitting), character string
 
         # Parameters for output
         self.output_single_file = False     # Whether to output the processed individual files to a csv file
@@ -65,9 +67,6 @@ class Params:
 
         # Statistical analysis
         self.run_statistics = False         # Whether to perform statistical analysis
-
-        # # Network analysis
-        # self.run_network = False            # Whether to perform network analysis
 
         # Visualization
         self.plot_bpc = False               # Whether to plot base peak chromatogram
@@ -117,16 +116,20 @@ class Params:
         self.sample_dir = os.path.join(self.project_dir, "data")
         self.single_file_dir = os.path.join(self.project_dir, "single_files")
         self.ms2_matching_dir = os.path.join(self.project_dir, "ms2_matching")
-        self.bpc_dir = os.path.join(self.project_dir, "chromatogram")
-        # self.network_dir = os.path.join(self.project_dir, "network")
+        self.bpc_dir = os.path.join(self.project_dir, "chromatograms")
+        self.project_file_dir = os.path.join(self.project_dir, "project_files")
         self.statistics_dir = os.path.join(self.project_dir, "statistics")
+        self.normalization_dir = os.path.join(self.project_dir, "normalization_results")
         
         # STEP 2: check if the required files are prepared
-        #         three items are required: raw MS data, sample table, parameter file
+        #         three items are required: raw MS data, sample table and parameter file
         if not os.path.exists(self.sample_dir) or len(os.listdir(self.sample_dir)) == 0:
             raise ValueError("No raw MS data is found in the project directory.")
         if not os.path.exists(os.path.join(self.project_dir, "sample_table.csv")):
-            print("No sample table is found in the project directory. No statistical analysis and sample normalization will be performed.")
+            print("No sample table is found in the project directory. No statistical analysis and normalization will be performed.")
+            self.run_statistics = False
+            self.sample_normalization = False
+            self.signal_normalization = False
         if not os.path.exists(os.path.join(self.project_dir, "parameters.csv")):
             print("No parameter file is found in the project directory. Default parameters will be used.")
             print("To perform feature annotation, please specify the path of MS/MS library in the parameter file.")
@@ -138,10 +141,8 @@ class Params:
             os.makedirs(self.ms2_matching_dir)
         if not os.path.exists(self.bpc_dir):
             os.makedirs(self.bpc_dir)
-        # if not os.path.exists(self.network_dir):
-        #     os.makedirs(self.network_dir)
-        if not os.path.exists(self.statistics_dir):
-            os.makedirs(self.statistics_dir)
+        if not os.path.exists(self.project_file_dir):
+            os.makedirs(self.project_file_dir)
         
         # STEP 4: read the parameters from csv file or use default values
         if os.path.exists(os.path.join(self.project_dir, "parameters.csv")):
@@ -158,6 +159,11 @@ class Params:
             self.plot_bpc = True
             # annotation will not be performed if no MS/MS library is provided
             self.plot_ms2 = False
+        
+        if not os.path.exists(self.statistics_dir) and self.run_statistics:
+            os.makedirs(self.statistics_dir)
+        if not os.path.exists(self.normalization_dir) and (self.sample_normalization or self.signal_normalization):
+            os.makedirs(self.normalization_dir)
 
         # STEP 5: read the sample table and allocate the sample groups
         #         reorder the samples by qc, sample, and blank
@@ -210,7 +216,7 @@ class Params:
         
         self.sample_dir = os.path.join(self.project_dir, "data")
         self.single_file_dir = os.path.join(self.project_dir, "single_files")
-        self.bpc_dir = os.path.join(self.project_dir, "chromatogram")
+        self.bpc_dir = os.path.join(self.project_dir, "chromatograms")
 
         # STEP 2: check if the required files are prepared
         #         three items are required: raw MS data, sample table, parameter file

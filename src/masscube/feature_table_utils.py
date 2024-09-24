@@ -20,7 +20,8 @@ def output_feature_to_msp(feature_table, output_path):
 
     with open(output_path, "w") as f:
         for i in range(len(feature_table)):
-            if feature_table['MS2'][i] is None:
+            f.write("ID: " + str(feature_table['ID'][i]) + "\n")
+            if feature_table['MS2'][i] is None or feature_table['MS2'][i]!=feature_table['MS2'][i]:
                 f.write("NAME: Unknown\n")
                 f.write("PRECURSORMZ: " + str(feature_table['m/z'][i]) + "\n")
                 f.write("PRECURSORTYPE: " + str(feature_table['adduct'][i]) + "\n")
