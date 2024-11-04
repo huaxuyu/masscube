@@ -1,7 +1,7 @@
 # Author: Hauxu Yu
 
-# A module to align metabolic features from different samples
-# Isotopes and in-source fragments are not considered in the alignment
+# A module to align features (characterized by m/z and retention time) 
+# from different files. 
 
 # Import modules
 import numpy as np
@@ -24,7 +24,9 @@ def feature_alignment(path, parameters, drop_by_fill_pct_ratio=0.1):
     path: str
         The path to the feature tables.
     parameters: Params object
-        The parameters for alignment.
+        The parameters for alignment including sample names and sample groups.
+    drop_by_fill_pct_ratio: float
+        The ratio to drop the features with fill percentage less than the ratio.
 
     Returns
     ----------------------------------------------------------

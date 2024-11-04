@@ -1,9 +1,8 @@
 # Author: Hauxu Yu
 
 # A module to read and process the raw MS data
-# Classes are defined in order to handle the data
 
-# Import modules
+# imports
 from pyteomics import mzml, mzxml
 import numpy as np
 import os
@@ -19,52 +18,50 @@ from .peak_detect import find_rois, cut_roi
 
 class MSData:
     """
-    A class that models a single file (mzML or mzXML) and
-    processes the raw data.
-
-    Attributes
-    ----------------------------------------------------------
-    scans: list, a list of Scan objects
-    ms1_rt_seq: numpy array, retention times of all MS1 scans
-    bpc_int: numpy array, intensity of the BPC
-    rois: list, a list of ROI objects
-    rois_mz_seq: numpy array, m/z of all ROIs
-    params: Params object, a Params object that contains the parameters
+    A class that models a single file (mzML, mzXML, mzjson
+    or compressed mzjson file) and processes the raw data.
     """
 
-
     def __init__(self):
-        """
-        Function to initiate MSData.
-        ----------------------------------------------------------
-        """
-
-        self.scans = []             # A list of MS scans
-        self.ms1_idx = []   # MS1 scan index
-        self.ms2_idx = []   # MS2 scan index
-        self.centroid = True        # Centroid the data
-
-        self.ms1_rt_seq = []        # Retention times of all MS1 scans
-        self.bpc_int = []           # Intensity of the BPC
-        self.rois = []              # A list of ROIs
-        self.params = None          # A Params object
+        
+        # file metadata
         self.file_name = None       # File name of the raw data without extension
+        self.centroid = True        # Whether the raw data is centroid. False: profile data.
+        self.start_time = None      # Start acquisition time of the raw data
+
+        # scans
+        self.scans = []             # A list of MS scans
+        self.ms1_idx = []           # Scan indexes of MS1 spectra
+        self.ms1_rt_seq = []        # Retention times of all MS1 scans
+        self.ms2_idx = []           # Scan indexes of MS2 spectra
+
+        # parameters for data processing
+        self.params = None          # A Params object
+
+        # summarized data
+        self.bpc_int = []           # MS signal intensity array of the base peak chromatogram
+        self.rois = []              # A list of ROIs
         self.roi_mz_seq = None      # m/z of all ROIs
         self.roi_rt_seq = None      # Retention time of all ROIs
-        self.start_time = None      # Start acquisition time of the raw data
 
 
     def read_raw_data(self, file_name, params, read_ms2=True, clean_ms2=False, centroid_mz=True):
         """
-        Function to read raw data to MS1 and MS2 (if available)
-        (supported by pyteomics package).
+        Read raw data (mzML, mzXML, mzjson or compressed mzjson). Parsing of the mzML and mzXML files
+        is performed using pyteomics.
 
         Parameters
-        ----------------------------------------------------------
+        ----------
         file_name: str
-            File name of raw MS data (mzML or mzXML).
+            Name of the raw data file. Valid extensions are mzML, mzXML, mzjson and gz.
         params: Params object
             A Params object that contains the parameters.
+        read_ms2: bool
+            Whether to read MS2 scans.
+        clean_ms2: bool
+            Whether to clean MS2 scans.
+        centroid_mz: bool
+            Whether to further centroid m/z values to avoid electronic noise.
         """
 
         self.params = params
@@ -74,7 +71,7 @@ class MSData:
             ext = os.path.splitext(file_name)[1].lower()
 
             if ext not in [".mzml", ".mzxml", ".mzjson", ".gz"]:
-                raise ValueError("Unsupported raw data format. Raw data must be in mzML, mzXML or mzjson.")
+                raise ValueError("Unsupported raw data format. Raw data must be in mzML, mzXML, mzjson or gz format.")
 
             self.file_name = os.path.splitext(os.path.basename(file_name))[0]
 
@@ -107,9 +104,17 @@ class MSData:
         Function to extract all scans and convert them to Scan objects.
 
         Parameters
-        ----------------------------------------------------------
-        spectra: pyteomics object
+        ----------
+        spectra: iteratable object from pyteomics mzml.MzML
             An iteratable object that contains all MS1 and MS2 scans.
+        int_tol: int
+            Abolute intensity tolerance.
+        read_ms2: bool
+            Whether to read MS2 scans.
+        clean_ms2: bool
+            Whether to clean MS2 scans.
+        centroid_mz: bool
+            Whether to further centroid m/z values to avoid electronic or artificial noise.
         """
 
         idx = 0     # Scan number
@@ -172,6 +177,14 @@ class MSData:
         ----------------------------------------------------------
         spectra: pyteomics object
             An iteratable object that contains all MS1 and MS2 scans.
+        int_tol: int
+            Abolute intensity tolerance.
+        read_ms2: bool
+            Whether to read MS2 scans.
+        clean_ms2: bool
+            Whether to clean MS2 scans.
+        centroid_mz: bool
+            Whether to further centroid m/z values to avoid electronic or artificial noise.
         """
 
         idx = 0     # Scan number
@@ -226,14 +239,23 @@ class MSData:
 
         Parameters
         ----------------------------------------------------------
-        file_name: str
-            File name of mzjson file.
+        data: dict
+            Dictionary from a mzjson file.
+        int_tol: int
+            Abolute intensity tolerance.
+        read_ms2: bool
+            Whether to read MS2 scans.
+        clean_ms2: bool
+            Whether to clean MS2 scans.
+        centroid_mz: bool
+            Whether to further centroid m/z values to avoid electronic or artificial noise.
         """
 
         self.file_name = data['metadata']['name']
         self.start_time = data['metadata']['timestamp']
 
         for idx, scan in enumerate(data['scans']):
+            # note: the unit for retention time is minute in mzjson
             if scan['level'] == 1:
                 temp_scan = Scan(level=1, scan=idx, rt=scan['time'])
                 mz_array = np.array(scan['mz'], dtype=np.float64)
@@ -267,48 +289,47 @@ class MSData:
         self.ms1_rt_seq = np.array(self.ms1_rt_seq)
     
     
-    def drop_ion_by_int(self):
+    def drop_ion_by_int(self, int_tol=None):
         """
         Function to drop ions by intensity.
 
         Parameters
         ----------------------------------------------------------
-        tol: int
-            Intensity tolerance.
+        int_tol: int
+            Abolute intensity tolerance. If None, the default value in the params object will be used.
         """
 
+        if int_tol is None:
+            int_tol = self.params.int_tol
+
         for idx in self.ms1_idx:
-            self.scans[idx].mz_seq = self.scans[idx].mz_seq[self.scans[idx].int_seq > self.params.int_tol]
-            self.scans[idx].int_seq = self.scans[idx].int_seq[self.scans[idx].int_seq > self.params.int_tol]
+            self.scans[idx].mz_seq = self.scans[idx].mz_seq[self.scans[idx].int_seq > int_tol]
+            self.scans[idx].int_seq = self.scans[idx].int_seq[self.scans[idx].int_seq > int_tol]
 
 
     def find_rois(self):
         """
-        Function to find ROI in MS1 scans.
-
-        Parameters
-        ----------------------------------------------------------
-        params: Params object
-            A Params object that contains the parameters.
+        Function to find region of interests (ROIs) using MS1 scans.
         """
 
         self.rois = find_rois(self)
 
         for roi in self.rois:
-            roi.sum_roi(False, False)
+            # gaussian similarity and asymmetry factor will be calculated later if needed
+            roi.sum_roi(cal_g_score=False, cal_a_score=False)
         
         self.rois.sort(key=lambda x: x.mz)
 
+
     def cut_rois(self):
         """
-        Function to cut ROI into smaller pieces.
+        Function to segment ROIs by edge detection.
         """
 
         self.rois = [cut_roi(r, int_tol=self.params.int_tol) for r in self.rois]
         tmp = []
         for roi in self.rois:
             tmp.extend(roi)
-
         self.rois = tmp
 
 
@@ -318,8 +339,10 @@ class MSData:
 
         Parameters
         ----------------------------------------------------------
-        params: Params object
-            A Params object that contains the parameters.
+        cal_g_score: bool
+            Whether to calculate Gaussian similarity.
+        cal_a_score: bool
+            Whether to calculate asymmetry factor.
         """      
 
         for roi in self.rois:
@@ -344,7 +367,12 @@ class MSData:
             if len(roi.ms2_seq) > 0:
                 roi.best_ms2 = find_best_ms2(roi.ms2_seq)
     
+
     def allocate_ms2_to_rois(self):
+        """
+        Function to allocate MS2 scans to ROIs.
+        """
+
         for i in self.ms2_idx:
             if len(self.scans[i].peaks) == 0:
                 continue
@@ -356,7 +384,8 @@ class MSData:
             if len(matched_rois) > 0:
                 # assign ms2 to the roi with the highest peak height
                 matched_rois[np.argmax([roi.peak_height for roi in matched_rois])].ms2_seq.append(self.scans[i])
-    
+
+
     def drop_rois_without_ms2(self):
         """
         Function to drop ROIs without MS2.
@@ -373,9 +402,9 @@ class MSData:
         self.rois = [roi for roi in self.rois if roi.length >= length]
 
 
-    def _discard_isotopes(self):
+    def discard_isotopes(self):
         """
-        Function to discard isotopes.
+        Function to discard isotope peaks.
         """
 
         self.rois = [roi for roi in self.rois if not roi.is_isotope]
@@ -490,12 +519,14 @@ class MSData:
         ----------
         target_mz: float
             Target m/z.
-        mz_tol: float
-            m/z tolerance.
         target_rt: float
             Target retention time.
+        mz_tol: float
+            m/z tolerance.
         rt_tol: float
             Retention time tolerance.
+        rt_range: list
+            Retention time range [start, end]. The unit is minute.
 
         Returns
         -------
@@ -604,6 +635,7 @@ class MSData:
         if return_eic_data:
             return eic_data
     
+
     def plot_eic(self, target_mz, target_rt=None, mz_tol=0.005, rt_tol=0.3, 
                  output=None, show_rt_line=True, ylim=None, return_eic_data=False):
         """
@@ -624,6 +656,8 @@ class MSData:
         show_rt_line: bool
             True: show the target retention time.
             False: do not show the target retention time.
+        ylim: list
+            [min, max] of the y-axis.
         return_eic_data: bool   
             True: return the EIC data.
             False: do not return the EIC data.
@@ -673,8 +707,7 @@ class MSData:
         rt_tol: float
             Retention time tolerance.
         return_best: bool
-            True: only return the best MS2 scan with the highest intensity.
-            False: return all MS2 scans as a list.
+            whether to return the best MS2 scan with the highest total intensity.
         """
 
         matched_ms2 = []
@@ -704,6 +737,7 @@ class MSData:
         else:
             return matched_ms2
         
+
     def find_roi_by_mzrt(self, mz_target, rt_target=None, mz_tol=0.01, rt_tol=0.3):
         """
         Function to find roi by precursor m/z and retention time.
@@ -731,9 +765,10 @@ class MSData:
             
         return found_roi
     
+
     def find_ms1_scan_by_rt(self, rt_target):
         """
-        Function to find a MS1 scan by retention time.
+        Function to find the nearest n MS1 scan by retention time.
 
         Parameters
         ----------------------------------------------------------
@@ -742,6 +777,7 @@ class MSData:
         """
 
         idx = np.argmin(np.abs(self.ms1_rt_seq - rt_target))
+
         return self.scans[self.ms1_idx[idx]]
     
     
@@ -763,7 +799,20 @@ class MSData:
 
     def plot_roi(self, roi_idx, mz_tol=0.005, rt_range=[0, np.inf], rt_window=None, output=False):
         """
-        Function to plot EIC of a target m/z.
+        Function to plot EIC of a ROI.
+
+        Parameters
+        ----------
+        roi_idx: int
+            Index of the ROI.
+        mz_tol: float
+            m/z tolerance.
+        rt_range: list
+            Retention time range [start, end]. The unit is minute.
+        rt_window: float
+            Retention time window.
+        output: str
+            Output file name. If not specified, the plot will be shown.
         """
 
         if rt_window is not None:
@@ -793,52 +842,9 @@ class MSData:
             return eic_rt[np.argmax(eic_int)], np.max(eic_int), eic_scan_idx[np.argmax(eic_int)]
 
 
-    def plot_all_rois(self, output_path, mz_tol=0.01, rt_range=[0, np.inf], rt_window=None):
-        """
-        Function to plot EIC of all ROIs.
-        """
-
-        if output_path[-1] != "/":
-            output_path += "/"
-
-        for idx, roi in enumerate(self.rois):
-
-            if rt_window is not None:
-                rt_range = [roi.rt_seq[0] - rt_window, roi.rt_seq[-1] + rt_window]
-
-            # get the eic data
-            eic_rt, eic_int, _, eic_scan_idx = self.get_eic_data(roi.mz, mz_tol=mz_tol, rt_range=rt_range)
-            idx_start = np.where(eic_scan_idx == roi.scan_idx_seq[0])[0][0]
-            idx_end = np.where(eic_scan_idx == roi.scan_idx_seq[-1])[0][0] + 1
-
-            plt.figure(figsize=(9, 3))
-            plt.rcParams['font.size'] = 14
-            plt.rcParams['font.family'] = 'Arial'
-            plt.plot(eic_rt, eic_int, linewidth=0.5, color="black")
-            plt.fill_between(eic_rt[idx_start:idx_end], eic_int[idx_start:idx_end], color="black", alpha=0.2)
-            plt.axvline(x = roi.rt, color = 'b', linestyle = '--', linewidth=1)
-            plt.xlabel("Retention Time (min)", fontsize=18, fontname='Arial')
-            plt.ylabel("Intensity", fontsize=18, fontname='Arial')
-            plt.xticks(fontsize=14, fontname='Arial')
-            plt.yticks(fontsize=14, fontname='Arial')
-            plt.text(eic_rt[0], np.max(eic_int)*0.95, "m/z = {:.4f}".format(roi.mz), fontsize=12, fontname='Arial')
-            plt.text(eic_rt[0] + (eic_rt[-1]-eic_rt[0])*0.6, np.max(eic_int)*0.95, self.file_name, fontsize=10, fontname='Arial', color="gray")
-
-            file_name = output_path + "roi{}_".format(idx) + str(roi.mz.__round__(4)) + ".png"
-
-            plt.savefig(file_name, dpi=300, bbox_inches="tight")
-            plt.close()
-
-
 class Scan:
     """
     A class that represents a MS scan.
-    A MS1 spectrum has properties including:
-        scan number, retention time, 
-        m/z and intensities.
-    A MS2 spectrum has properties including:
-        scan number, retention time,
-        precursor m/z, product m/z and intensities.
     """
 
     def __init__(self, level=None, scan=None, rt=None):

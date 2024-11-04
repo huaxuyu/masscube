@@ -31,7 +31,7 @@ def feature_detection(file_name, params=None, cal_g_score=True, cal_a_score=True
                       anno_isotope=True, anno_adduct=True, anno_in_source_fragment=True, 
                       anno_ms2=False, ms2_library_path=None, segment_feature=True, output_dir=None):
     """
-    Untargeted feature detection from a single file (.mzML or .mzXML).
+    Untargeted feature detection from a single file (mzML, mzXML, mzjson or compressed mzjson).
 
     Parameters
     ----------
@@ -289,8 +289,9 @@ def untargeted_metabolomics_workflow(path=None, batch_size=100, cpu_ratio=0.8):
         })
         print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 
-    output_path = os.path.join(params.project_dir, "aligned_feature_table_before_normalization.txt")
-    output_feature_table(feature_table, output_path)
+    if params.signal_normalization:
+        output_path = os.path.join(params.project_dir, "aligned_feature_table_before_normalization.txt")
+        output_feature_table(feature_table, output_path)
     feature_table_before_normalization = deepcopy(feature_table)
     # normalization: signal drift normalization followed by sample normalization
     if params.signal_normalization:

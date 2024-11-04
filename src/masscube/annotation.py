@@ -107,6 +107,7 @@ def feature_annotation(features, parameters, num=5):
             f.formula = matched['formula'] if 'formula' in matched else None
             f.adduct_type = matched['precursor_type']
             f.best_ms2 = _convert_peaks_to_string(best_ms2)
+            f.matched_mz = matched['precursor_mz']
 
         else:
             peaks = parsed_ms2[0]
@@ -123,6 +124,7 @@ def feature_annotation(features, parameters, num=5):
                 f.inchikey = matched['inchikey'] if 'inchikey' in matched else None
                 f.matched_ms2 = _convert_peaks_to_string(matched['peaks'])
                 f.formula = matched['formula'] if 'formula' in matched else None
+                f.matched_mz = matched['precursor_mz']
 
     return features
 

@@ -1,6 +1,8 @@
 # Author: Hauxu Yu
 
-# A module to group metabolic features from unique compounds
+# A module to group features (unique m/z and reteniton time) 
+# originated from the same compound. The grouping is based on
+
 # 1. annotate isotopes
 # 2. annotate adducts
 # 3. annotate in-source fragments
@@ -8,10 +10,17 @@
 # Import modules
 import numpy as np
 
+"""
+Single file-based feature grouping
+==================================
+
+The following functions are used to group features in a single mzML or mzXML file.
+The grouping is based on m/z, retention time, scan-to-scan correlation, and MS/MS spectra.
+"""
 
 def annotate_isotope(d, mz_tol=0.015, rt_tol=0.1, valid_intensity_ratio_range=[0.001, 1.2], charge_state_range=[1,2]):
     """
-    Function to annotate isotopes in a MS data.
+    Find isotopes.
     
     Parameters
     ----------------------------------------------------------
@@ -224,6 +233,11 @@ def annotate_adduct(d, mz_tol=0.01, rt_tol=0.05):
         if r.adduct_type is None:
             r.adduct_type = default_adduct
 
+
+"""
+Helper functions and constants
+==============================
+"""
 
 def peak_peak_correlation(roi1, roi2):
     """
