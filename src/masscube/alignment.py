@@ -1,9 +1,9 @@
 # Author: Hauxu Yu
 
-# A module to align features (characterized by m/z and retention time) 
+# A module to align features (characterized by unique m/z and retention time) 
 # from different files. 
 
-# Import modules
+# imports
 import numpy as np
 import pandas as pd
 import os
@@ -13,194 +13,199 @@ from scipy.stats import zscore
 import pickle
 
 from .raw_data_utils import read_raw_file_to_obj
+from .params import Params
+from .feature_grouping import group_features_after_alignment
 
 
-def feature_alignment(path, parameters, drop_by_fill_pct_ratio=0.1):
+"""
+Classes
+------------------------------------------------------------------------------------------------------------------------
+"""
+
+class AlignedFeature:
     """
-    A function to align the features from individual files (.txt).
+    A class to model a feature in mass spectrometry data. Generally, a feature is defined as 
+    a unique pair of m/z and retention time.
+    """
+
+    def __init__(self, file_number=1):
+        """
+        Define the attributes of a aligned feature.
+
+        Parameters
+        ----------
+        file_number: int
+            The number of files.
+        """
+
+        # individual files
+        self.feature_id_arr = -np.ones(file_number, dtype=int)      # feature ID from individual files (-1 if not detected or gap filled)
+        self.mz_arr = np.zeros(file_number)                         # m/z
+        self.rt_arr = np.zeros(file_number)                         # retention time
+        self.scan_idx_arr = np.zeros(file_number, dtype=int)        # scan index of the peak apex
+        self.peak_height_arr = np.zeros(file_number)                # peak height
+        self.peak_area_arr = np.zeros(file_number)                  # peak area
+        self.top_average_arr = np.zeros(file_number)                # average of the highest three intensities
+        self.ms2_seq = []                                           # representative MS2 spectrum from each file (default: highest total intensity)
+        self.length_arr = np.zeros(file_number, dtype=int)          # length (i.e. non-zero scans in the peak)
+        self.gaussian_similarity_arr = np.zeros(file_number)        # Gaussian similarity
+        self.noise_score_arr = np.zeros(file_number)                # noise score
+        self.asymmetry_factor_arr = np.zeros(file_number)           # asymmetry factor
+        self.sse_arr = np.zeros(file_number)                        # squared error to the smoothed curve
+        self.is_segmented_arr = np.zeros(file_number, dtype=bool)   # whether the peak is segmented
+
+        # summary
+        self.id = None                              # index of the feature
+        self.feature_group_id = None                # feature group ID
+        self.mz = 0.0                               # m/z
+        self.rt = 0.0                               # retention time
+        self.reference_file = None                  # the reference file with the highest peak height
+        self.reference_idx = None                   # the index of the reference file
+        self.highest_intensity = 0.0                # the highest peak height from individual files (which is the reference file)
+        self.ms2 = None                             # representative MS2 spectrum
+        self.ms2_reference_file = None              # the reference file for the representative MS2 spectrum
+        self.gaussian_similarity = 0.0              # Gaussian similarity from the reference file
+        self.noise_score = 0.0                      # noise level from the reference file
+        self.asymmetry_factor = 0.0                 # asymmetry factor from the reference file
+        self.detection_rate = 0.0                   # number of detected files / total number of files (blank not included)
+        self.detection_rate_gap_filled = 0.0        # number of detected files after gap filling / total number of files (blank not included)
+        self.charge_state = 1                       # charge state
+        self.is_isotope = False                     # whether it is an isotope
+        self.isotope_signals = None                 # isotope signals [[m/z, intensity], ...]
+        self.is_in_source_fragment = False          # whether it is an in-source fragment
+        self.adduct_type = None                     # adduct type
+
+        self.annotation_algorithm = None            # annotation algorithm. Not used now.
+        self.search_mode = None                     # 'identity search', 'fuzzy search', or 'mzrt_search'
+        self.similarity = None                      # similarity score (0-1)
+        self.annotation = None                      # name of annotated compound
+        self.formula = None                         # molecular formula
+        self.matched_peak_number = None             # number of matched peaks
+        self.smiles = None                          # SMILES
+        self.inchikey = None                        # InChIKey
+        self.matched_precursor_mz = None            # matched precursor m/z
+        self.matched_adduct_type = None             # matched adduct type
+        self.matched_ms2 = None                     # matched ms2 spectra
+
+
+"""
+Functions
+------------------------------------------------------------------------------------------------------------------------
+"""
+
+def feature_alignment(path: str, params: Params):
+    """
+    Align the features from multiple processed single files as .txt format.
 
     Parameters
-    ----------------------------------------------------------
+    ----------
     path: str
         The path to the feature tables.
-    parameters: Params object
+    params: Params object
         The parameters for alignment including sample names and sample groups.
-    drop_by_fill_pct_ratio: float
-        The ratio to drop the features with fill percentage less than the ratio.
 
     Returns
-    ----------------------------------------------------------
-    feature_table: DataFrame
-        The aligned feature table.
+    -------
+    features: list
+        A list of aligned features.
     """
 
-    # STEP 1: get names of individual files (.txt)
-    txt_file_names = parameters.sample_names
-    txt_file_names = [f + ".txt" for f in txt_file_names]
-    txt_file_names = [os.path.join(path, name) for name in txt_file_names]
-
-    # STEP 2: initiate aligned features and parameters
+    # STEP 1: preparation
     features = []
-    mz_tol = parameters.align_mz_tol
-    rt_tol = parameters.align_rt_tol
-    file_quality_arr = np.ones(len(parameters.sample_names), dtype=bool)
-    # select anchors for retention time correction
-    if parameters.run_rt_correction:
-        mz_ref, rt_ref = rt_anchor_selection(txt_file_names[:20])
+    names = [f + ".txt" for f in params.sample_names]
+    names = [os.path.join(path, name) for name in names]
+    not_found_files = [params.sample_names[i] for i in range(len(names)) if not os.path.exists(names[i])]
+    if len(not_found_files) > 0:
+        for f in not_found_files:
+            params.problematic_files[f] = "file does not exist"
+        # remove those files from names
+        names = [names[i] for i in range(len(names)) if params.sample_names[i] not in not_found_files]
+        # remove those files from sample metadata
+        params.sample_metadata = params.sample_metadata[~params.sample_metadata['file_name'].isin(not_found_files)]
+    
+    # find anchors to correct tetention times
+    if params.correct_rt:
+        mz_ref, rt_ref = rt_anchor_selection(names[:20])
         rt_cor_functions = {}
     
-    # STEP 3: read individual feature tables and align features
-    for i, file_name in enumerate(tqdm(parameters.sample_names)):
-        # check if the file exists, if not, add the file to problematic_files
-        if not os.path.exists(txt_file_names[i]):
-            file_quality_arr[i] = False
+    # STEP 2: read individual feature tables and align features
+    for i, file_name in enumerate(tqdm(params.sample_names)):
+        
+        if not os.path.exists(names[i]):
             continue
 
         # read feature table
-        current_table = pd.read_csv(txt_file_names[i], low_memory=False, sep="\t")
-        current_table = current_table[current_table["MS2"].notna()|(current_table["length"]>=parameters.min_scan_num_for_alignment)]
+        current_table = pd.read_csv(names[i], low_memory=False, sep="\t")
+        current_table = current_table[current_table["MS2"].notna()|(current_table["total_scans"]>params.scan_number_cutoff)]
+        
         # sort current table by peak height from high to low
         current_table = current_table.sort_values(by="peak_height", ascending=False)
         current_table.index = range(len(current_table))
-        avail_roi = np.ones(len(current_table), dtype=bool)
+
+        availible_features = np.ones(len(current_table), dtype=bool)
+
         # retention time correction
-        if parameters.run_rt_correction and parameters.individual_sample_groups[i] != 'blank':
+        if params.correct_rt and params.sample_metadata['is_blank'][i] == False:
             rt_arr = current_table["RT"].values
             rt_max = np.max(rt_arr)
             rt_arr, model = retention_time_correction(mz_ref, rt_ref, current_table["m/z"].values, rt_arr, rt_max=rt_max, return_model=True)
             current_table["RT"] = rt_arr
             rt_cor_functions[file_name] = model
 
-        if len(features) > 0:
-            for f in features:
-                # search mz and rt in the current feature table
-                v = np.logical_and(np.abs(f.mz - current_table["m/z"].values) < mz_tol, np.abs(f.rt - current_table["RT"].values) < rt_tol)
-                v = np.logical_and(v, avail_roi)
-                v = np.where(v)[0]
-                
-                if len(v) > 0:
-                    v = v[0]
-                    f.mz_seq[i] = current_table.loc[v, "m/z"]
-                    f.rt_seq[i] = current_table.loc[v, "RT"]
-                    f.peak_height_seq[i] = current_table.loc[v, "peak_height"]
-                    f.peak_area_seq[i] = current_table.loc[v, "peak_area"]
-                    f.ms2_seq.append(current_table.loc[v, "MS2"])
-                    f.detected_seq[i] = True
-                    f.roi_id_seq[i] = current_table.loc[v, "ID"]
-                    avail_roi[v] = False
-                    # check if this file can be the reference file
-                    if current_table.loc[v, "peak_height"] > f.highest_intensity:
-                        f.highest_intensity = current_table.loc[v, "peak_height"]
-                        f.gaussian_similarity = current_table.loc[v, "Gaussian_similarity"]
-                        f.noise_level = current_table.loc[v, "noise_level"]
-                        f.asymmetry_factor = current_table.loc[v, "asymmetry_factor"]
-                        f.charge_state = current_table.loc[v, "charge"]
-                        f.is_isotope = current_table.loc[v, "is_isotope"]
-                        f.isotopes = current_table.loc[v, "isotopes"]
-                        f.is_in_source_fragment = current_table.loc[v, "is_in_source_fragment"]
-                        f.adduct_type = current_table.loc[v, "adduct"]
-                        f.reference_file = file_name
+        for f in features:
+            v1 = np.abs(f.mz - current_table["m/z"].values) < params.mz_tol_alignment
+            v2 = np.abs(f.rt - current_table["RT"].values) < params.rt_tol_alignment
+            idx = np.where(v1 & v2 & availible_features)[0]
+            
+            if len(idx) > 0:
+                _assign_value_to_feature(f=f, df=current_table, i=i, p=idx[0], file_name=file_name)
+                availible_features[idx[0]] = False
+                # check if this file can be the reference file
+                if current_table.loc[idx[0], "peak_height"] > f.highest_intensity:
+                    _assign_reference_values(f=f, df=current_table, i=i, p=idx[0], file_name=file_name)
 
-        # if an ROI is not detected in the previous files, add it to the features
-        if np.sum(avail_roi) > 0:
-            v = np.where(avail_roi)[0]
-            for j in v:
-                f = Feature(file_number=len(parameters.sample_names))
-                f.mz = current_table.loc[j, "m/z"]
-                f.rt = current_table.loc[j, "RT"]
-                f.mz_seq[i] = current_table.loc[j, "m/z"]
-                f.rt_seq[i] = current_table.loc[j, "RT"]
-                f.peak_height_seq[i] = current_table.loc[j, "peak_height"]
-                f.peak_area_seq[i] = current_table.loc[j, "peak_area"]
-                f.ms2_seq.append(current_table.loc[j, "MS2"])
-                f.detected_seq[i] = True
-                f.roi_id_seq[i] = current_table.loc[j, "ID"]
-                f.highest_intensity = current_table.loc[j, "peak_height"]
-                f.gaussian_similarity = current_table.loc[j, "Gaussian_similarity"]
-                f.noise_level = current_table.loc[j, "noise_level"]
-                f.asymmetry_factor = current_table.loc[j, "asymmetry_factor"]
-                f.charge_state = current_table.loc[j, "charge"]
-                f.is_isotope = current_table.loc[j, "is_isotope"]
-                f.isotopes = current_table.loc[j, "isotopes"]
-                f.is_in_source_fragment = current_table.loc[j, "is_in_source_fragment"]
-                f.adduct_type = current_table.loc[j, "adduct"]
-                f.reference_file = file_name
+        # if an feature is not detected in the previous files, add it to the features
+        for j, b in enumerate(availible_features):
+            if b:
+                f = AlignedFeature(file_number=len(params.sample_names))
+                _assign_value_to_feature(f=f, df=current_table, i=i, p=j, file_name=file_name)
+                _assign_reference_values(f=f, df=current_table, i=i, p=j, file_name=file_name)
                 features.append(f)
 
         # summarize (calculate the average mz and rt) and reorder the features
         features = sorted(features, key=lambda x: x.highest_intensity, reverse=True)
-        for f in features:
-            f.calculate_mzrt()
-
-    # STEP 4: drop the problematic files and index the features
-    if np.sum(file_quality_arr) > 0:
-        parameters.sample_names = [parameters.sample_names[i] for i in range(len(parameters.sample_names)) if file_quality_arr[i]]
-        parameters.individual_sample_groups = [parameters.individual_sample_groups[i] for i in range(len(parameters.individual_sample_groups)) if file_quality_arr[i]]
-        for f in features:
-            f.mz_seq = f.mz_seq[file_quality_arr]
-            f.rt_seq = f.rt_seq[file_quality_arr]
-            f.peak_height_seq = f.peak_height_seq[file_quality_arr]
-            f.peak_area_seq = f.peak_area_seq[file_quality_arr]
-            f.detected_seq = f.detected_seq[file_quality_arr]
-            # remove nan in f.ms2_seq
-            f.ms2_seq = [ms2 for ms2 in f.ms2_seq if ms2 == ms2]
     
-    # STEP 5: calculate the fill percentage and remove the features with fill percentage less than 0.1
-    blank_num = len([x for x in parameters.individual_sample_groups if 'blank' in x])
-    if blank_num > 0:
-        features = [f for f in features if np.sum(f.detected_seq[:-blank_num]) > drop_by_fill_pct_ratio*(len(parameters.sample_names)-blank_num)]
-    else:
-        features = [f for f in features if np.sum(f.detected_seq) > drop_by_fill_pct_ratio*len(parameters.sample_names)]
-    
-    # STEP 6: clean the feature list to remove the features with almost the same mz and rt
-    if parameters.clean_feature_table:
-        features = sorted(features, key=lambda x: x.mz)
-        mz_groups = []
-        mz_groups_tmp = [0]
-        for i, f in enumerate(features):
-            if i == 0:
-                continue
-            if np.abs(f.mz - features[i-1].mz) < mz_tol:
-                mz_groups_tmp.append(i)
-            else:
-                mz_groups.append(mz_groups_tmp)
-                mz_groups_tmp = [i]
-        mz_groups.append(mz_groups_tmp)
-
-        cleaned_idx = []
-        for group in mz_groups:
-            if len(group) == 1:
-                cleaned_idx.append(group[0])
-            else:
-                group = sorted(group, key=lambda x: features[x].rt)
-                rt_groups = []
-                rt_groups_tmp = [group[0]]
-                for i in range(1, len(group)):
-                    if np.abs(features[group[i]].rt - features[group[i-1]].rt) < 0.05:
-                        rt_groups_tmp.append(group[i])
-                    else:
-                        rt_groups.append(rt_groups_tmp)
-                        rt_groups_tmp = [group[i]]
-                rt_groups.append(rt_groups_tmp)
-                for rt_group in rt_groups:
-                    rt_group = sorted(rt_group, key=lambda x: features[x].highest_intensity, reverse=True)
-                    cleaned_idx.append(rt_group[0])
-        features = [features[i] for i in cleaned_idx]
-
-    features = sorted(features, key=lambda x: x.highest_intensity, reverse=True)
-
-    for i in range(len(features)):
-        features[i].id = i
-    
-    # output the models to pickle files
-    if parameters.run_rt_correction:
-        with open(os.path.join(parameters.project_file_dir, "rt_correction_models.pkl"), "wb") as f:
+    # save the retention time correction models
+    if params.correct_rt:
+        with open(os.path.join(params.project_file_dir, "rt_correction_models.pkl"), "wb") as f:
             pickle.dump(rt_cor_functions, f)
+    
+    # STEP 3: calculate the detection rate and drop features using the detection rate cutoff
+    v = ~params.sample_metadata['is_blank']
+    for f in features:
+        f.detection_rate = np.sum(f.feature_id_arr[v] != -1) / np.sum(v)
+    features = [f for f in features if f.detection_rate > params.detection_rate_cutoff]
+    
+    # STEP 4: clean features by merging the features with almost the same m/z and retention time
+    if params.merge_features:
+        features = merge_features(features, params)
+
+    # STEP 5: gap filling
+    if params.fill_gaps:
+        features = gap_filling(features, params)
+    
+    # # STEP 6: annotate feature groups
+    # if params.group_features_after_alignment:
+    #     group_features_after_alignment(features, params)
+    
+    # STEP 7: index the features
+    for i, f in enumerate(features):
+        f.id = i
 
     return features
 
 
-def gap_filling(features, parameters, mode='forced_peak_picking'):
+def gap_filling(features, params: Params):
     """
     A function to fill the gaps in the aligned feature table.
 
@@ -208,12 +213,8 @@ def gap_filling(features, parameters, mode='forced_peak_picking'):
     ----------------------------------------------------------
     features: list
         The aligned features.
-    parameters: Params object
+    params: Params object
         The parameters for gap filling.
-    mode: str
-        The mode for gap filling.
-        'forced_peak_picking': fill the gaps by forced peak picking.
-        '0.1_min_intensity': fill the gaps by the minimum intensity * 0.1 (no available yet)
 
     Returns
     ----------------------------------------------------------
@@ -221,28 +222,20 @@ def gap_filling(features, parameters, mode='forced_peak_picking'):
         The aligned features with filled gaps.
     """
 
-    # fill the gaps by forced peak picking
-    if mode == 'forced_peak_picking':
-        raw_file_names = os.listdir(parameters.sample_dir)
-        raw_file_names = [f for f in raw_file_names if f.lower().endswith(".mzml") or f.lower().endswith(".mzxml")]
-        raw_file_names = [f for f in raw_file_names if not f.startswith(".")]
-        raw_file_names = [os.path.join(parameters.sample_dir, f) for f in raw_file_names]
+    # fill the gaps by forced peak picking (local maximum)
+    if params.gap_filling_method == 'local_maximum':
 
         # if retention time correction is applied, read the model
-        if parameters.run_rt_correction and os.path.exists(os.path.join(parameters.project_dir, "rt_correction_models.pkl")):
-            with open(os.path.join(parameters.project_dir, "rt_correction_models.pkl"), "rb") as f:
+        if params.correct_rt and os.path.exists(os.path.join(params.project_dir, "rt_correction_models.pkl")):
+            with open(os.path.join(params.project_dir, "rt_correction_models.pkl"), "rb") as f:
                 rt_cor_functions = pickle.load(f)
         else:
             rt_cor_functions = None
 
-        for i, file_name in enumerate(tqdm(parameters.sample_names)):
-            matched_raw_file_name = [f for f in raw_file_names if file_name in f]
-            if len(matched_raw_file_name) == 0:
-                continue
-            else:
-                matched_raw_file_name = matched_raw_file_name[0]
-                d = read_raw_file_to_obj(matched_raw_file_name, int_tol=parameters.int_tol, read_ms2=False)
-                
+        for i, file_name in enumerate(tqdm(params.sample_names)):
+            n = os.path.join(params.tmp_file_dir, file_name + ".pkl")
+            if os.path.exists(n):
+                d = read_raw_file_to_obj(n)
                 # correct retention time if model is available
                 if rt_cor_functions is not None and file_name in rt_cor_functions.keys():
                     f = rt_cor_functions[file_name]
@@ -250,20 +243,71 @@ def gap_filling(features, parameters, mode='forced_peak_picking'):
                         d.correct_retention_time(f)
 
                 for f in features:
-                    if not f.detected_seq[i]:
-                        _, eic_int, _, _ = d.get_eic_data(f.mz, f.rt, parameters.align_mz_tol, 0.05)
-                        if len(eic_int) > 0:
-                            f.peak_height_seq[i] = np.max(eic_int)
-
-    # calculate the fill percentage after gap filling (blank samples are not included)
-    blank_num = len([x for x in parameters.individual_sample_groups if 'blank' in x])
-    if blank_num > 0:
-        for f in features:
-            f.fill_percentage = np.sum(f.detected_seq[:-blank_num]) / (len(parameters.sample_names)-blank_num) * 100
-    else:
-        for f in features:
-            f.fill_percentage = np.sum(f.detected_seq) / len(parameters.sample_names) * 100
+                    if f.feature_id_arr[i] == -1:
+                        _, eic_signals, _ = d.get_eic_data(f.mz, f.rt, params.mz_tol_alignment, 0.05)
+                        if len(eic_signals) > 0:
+                            f.peak_height_seq[i] = np.max(eic_signals[:, 1])
+    
+    # calculate the detection rate after gap filling (blank samples are not included)
+    v = ~params.sample_metadata['is_blank']
+    for f in features:
+        f.detection_rate_gap_filled = np.sum(f.feature_id_arr[v] != -1) / np.sum(v)
+    
     return features
+
+
+def merge_features(features: list, params: Params):
+    """
+    Clean features by merging the features with almost the same m/z and retention time.
+
+    Parameters
+    ----------
+    features: list
+        A list of AlignedFeature objects.
+    params: Params object
+        The parameters for feature cleaning.
+
+    Returns
+    -------
+    features: list
+        A list of cleaned AlignedFeature objects.
+    """
+
+    features = sorted(features, key=lambda x: x.mz)
+
+    mz_groups = []
+    mz_groups_tmp = [0]
+
+    for i, f in enumerate(features):
+        if i == 0:
+            continue
+        if np.abs(f.mz - features[i-1].mz) < params.mz_tol_merge_features:
+            mz_groups_tmp.append(i)
+        else:
+            mz_groups.append(mz_groups_tmp)
+            mz_groups_tmp = [i]
+    mz_groups.append(mz_groups_tmp)
+
+    cleaned_idx = []
+    for group in mz_groups:
+        if len(group) == 1:
+            cleaned_idx.append(group[0])
+        else:
+            group = sorted(group, key=lambda x: features[x].rt)
+            rt_groups = []
+            rt_groups_tmp = [group[0]]
+            for i in range(1, len(group)):
+                if np.abs(features[group[i]].rt - features[group[i-1]].rt) < params.rt_tol_merge_features:
+                    rt_groups_tmp.append(group[i])
+                else:
+                    rt_groups.append(rt_groups_tmp)
+                    rt_groups_tmp = [group[i]]
+            rt_groups.append(rt_groups_tmp)
+            for rt_group in rt_groups:
+                rt_group = sorted(rt_group, key=lambda x: features[x].highest_intensity, reverse=True)
+                cleaned_idx.append(rt_group[0])
+    
+    return [features[i] for i in cleaned_idx]
 
 
 def output_feature_table(feature_table, output_path):
@@ -281,7 +325,8 @@ def output_feature_table(feature_table, output_path):
     # keep four digits for the m/z column and three digits for the RT column
     feature_table["m/z"] = feature_table["m/z"].apply(lambda x: round(x, 4))
     feature_table["RT"] = feature_table["RT"].apply(lambda x: round(x, 3))
-    feature_table['fill_percentage'] = feature_table['fill_percentage'].apply(lambda x: round(x, 2))
+    feature_table['detection_rate'] = feature_table['detection_rate'].apply(lambda x: round(x, 2))
+    feature_table['detection_rate_gap_filled'] = feature_table['detection_rate_gap_filled'].apply(lambda x: round(x, 2))
     feature_table['similarity'] = feature_table['similarity'].astype(float)
     feature_table['similarity'] = feature_table['similarity'].apply(lambda x: round(x, 4))
 
@@ -399,7 +444,7 @@ def rt_anchor_selection(data_list, num=50, noise_tol=0.3, mz_tol=0.01, return_al
         table = pd.read_csv(data_list[ref_idx], sep="\t", low_memory=False)
         table = table.sort_values(by="m/z")
         mzs = table["m/z"].values
-        n_scores = table["noise_level"].values
+        n_scores = table["noise_score"].values
         v = [False]
         for i in range(1, len(mzs)-1):
             if mzs[i]-mzs[i-1] > mz_tol and mzs[i+1] - mzs[i] > mz_tol and n_scores[i] < noise_tol:
@@ -423,6 +468,11 @@ def rt_anchor_selection(data_list, num=50, noise_tol=0.3, mz_tol=0.01, return_al
         else:
             return valid_mzs[train_idx], valid_rts[train_idx]
 
+
+"""
+Internal Functions
+------------------------------------------------------------------------------------------------------------------------
+"""
 
 def _split_to_train_test(array, interval=0.3):
     """
@@ -454,61 +504,61 @@ def _split_to_train_test(array, interval=0.3):
     return train_idx, test_idx
 
 
-class Feature:
+def _assign_value_to_feature(f, df, i, p, file_name):
     """
-    A class to model a feature in mass spectrometry data. Generally, a feature is defined as 
-    a unique pair of m/z and retention time.
+    Assign the values from individual files to the aligned feature.
+
+    Parameters
+    ----------
+    f: AlignedFeature
+        The aligned feature.
+    df: DataFrame
+        The feature table from the individual file.
+    i: int
+        The file index among all files to be aligned.
+    p: int
+        The row index of the feature in the current individual file.
+    file_name: str
+        The name of the current file.
     """
 
-    def __init__(self, file_number=1):
-        """
-        Define the attributes of a aligned feature.
-        """
+    f.feature_id_arr[i] = df.loc[p, "feature_ID"]
+    f.mz_arr[i] = df.loc[p, "m/z"]
+    f.rt_arr[i] = df.loc[p, "RT"]
+    f.peak_height_arr[i] = df.loc[p, "peak_height"]
+    f.peak_area_arr[i] = df.loc[p, "peak_area"]
+    f.top_average_arr[i] = df.loc[p, "top_average"]
+    f.length_arr[i] = df.loc[p, "total_scans"]
+    f.gaussian_similarity_arr[i] = df.loc[p, "Gaussian_similarity"]
+    f.noise_score_arr[i] = df.loc[p, "noise_score"]
+    f.asymmetry_factor_arr[i] = df.loc[p, "asymmetry_factor"]
+    if df.loc[p, "MS2"] == df.loc[p, "MS2"]:
+        f.ms2_seq.append([file_name, df.loc[p, "MS2"]])
 
-        # summarized information
-        self.id = None                              # index of the feature
-        self.reference_file = None                  # the reference file
-        self.mz = 0.0                               # m/z
-        self.rt = 0.0                               # retention time
-        self.highest_intensity = 0.0                # the highest peak height from individual files (which is the reference file)
-        self.best_ms2 = None                        # the best MS2
-        self.gaussian_similarity = 0.0              # Gaussian similarity
-        self.noise_level = 0.0                      # noise level
-        self.asymmetry_factor = 0.0                 # asymmetry factor
-        self.fill_percentage = 0.0                  # fill percentage, in %
-        self.charge_state = 1                       # charge state
-        self.is_isotope = False                     # is isotope
-        self.isotopes = None                        # isotopes
-        self.is_in_source_fragment = False          # is in-source fragment
-        self.adduct_type = None                     # adduct type
 
-        self.annotation = None                      # annotation
-        self.search_mode = None                     # 'identity search', 'hybrid search', or 'mzrt_search'
-        self.formula = None                         # molecular formula
-        self.similarity = None                      # similarity score (0-1)
-        self.matched_peak_number = None             # number of matched peaks
-        self.smiles = None                          # SMILES
-        self.inchikey = None                        # InChIKey
-        self.matched_ms2 = None                     # matched MS2
+def _assign_reference_values(f, df, i, p, file_name):
+    """
+    Assign the reference values to the aligned feature.
 
-        # individual files
-        self.mz_seq = np.zeros(file_number)                     # m/z values from individual files
-        self.rt_seq = np.zeros(file_number)                     # retention time values from individual files
-        self.peak_height_seq = np.zeros(file_number)            # peak height from individual files
-        self.peak_area_seq = np.zeros(file_number)              # peak area from individual files 
-        self.ms2_seq = []                                       # best MS2 from individual files
-        self.detected_seq = np.zeros(file_number, dtype=bool)   # whether the feature is detected in individual files
-        self.roi_id_seq = -np.ones(file_number, dtype=int)      # ROI ID from individual files (-1 if not detected or gap filled)
+    Parameters
+    ----------
+    f: AlignedFeature
+        The aligned feature.
+    df: DataFrame
+        The feature table from the individual file.
+    i: int
+        The file index among all files to be aligned.
+    p: int
+        The row index of the feature in the current individual file.
+    file_name: str
+        The name of the reference file
+    """
 
-        # statistical analysis
-        self.fold_change = None             # fold change
-        self.t_test_p = None                # t-test p-value
-        self.adjusted_t_test_p = None       # adjusted t-test p-value
-    
-    def calculate_mzrt(self):
-        """
-        Calculate the m/z and retention time of the feature by averaging the values.
-        """
-
-        self.mz = np.mean(self.mz_seq[self.detected_seq])
-        self.rt = np.mean(self.rt_seq[self.detected_seq])
+    f.mz = df.loc[p, "m/z"]
+    f.rt = df.loc[p, "RT"]
+    f.reference_file = file_name
+    f.reference_idx = i
+    f.highest_intensity = df.loc[p, "peak_height"]
+    f.gaussian_similarity = df.loc[p, "Gaussian_similarity"]
+    f.noise_score = df.loc[p, "noise_score"]
+    f.asymmetry_factor = df.loc[p, "asymmetry_factor"]

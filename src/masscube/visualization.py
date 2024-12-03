@@ -10,7 +10,7 @@ import os
 import re
 from tqdm import tqdm
 
-from .annotation import extract_peaks_from_string
+from .annotation import extract_signals_from_string
 
 def plot_bpcs(data_list=None, output=None, autocolor=False, show_legend=True):
     """
@@ -58,20 +58,41 @@ def random_color_generator():
 _color_list = ["red", "blue", "green", "orange", "purple", "brown", "pink", "gray", "olive", "cyan"]
 
 
-def plot_roi(d, roi, mz_tol=0.01, rt_tol=1.0, output=False, break_scan=None):
+def plot_feature(d, feature, mz_tol=0.005, rt_tol=0.3, rt_range=None, output=False, break_scan=None):
     """
-    Function to plot EIC of a target m/z.
-    """
-    rt_range = [roi.rt_seq[0]-rt_tol, roi.rt_seq[-1]+rt_tol]
-    # get the eic data
-    eic_rt, eic_int, _, eic_scan_idx = d.get_eic_data(target_mz=roi.mz, rt_range=rt_range, mz_tol=mz_tol)
-    idx_start = np.where(eic_scan_idx == roi.scan_idx_seq[0])[0][0]
-    idx_end = np.where(eic_scan_idx == roi.scan_idx_seq[-1])[0][0] + 1
+    Function to plot the chromatogram of a feature.
 
-    if break_scan is not None:
-        idx_middle = np.where(eic_scan_idx == break_scan)[0][0]
+    Parameters
+    ----------
+    d : MSData object
+        The MSData object.
+    feature : Feature object
+        The feature to be plotted.
+    mz_tol : float
+        The m/z tolerance.
+    rt_tol : float
+        The retention time tolerance.
+    rt_range : list
+        The retention time range.
+    output : str
+        The output file name.
+    break_scan : int
+        The scan index to break the chromatogram.
+    """
+
+    if rt_range is None:
+        rt_range = [feature.rt_seq[0]-rt_tol, feature.rt_seq[-1]+rt_tol]
+
+    eic_rt, eic_signals, eic_scan_idx_arr = d.get_eic_data(target_mz=feature.mz, target_rt=feature.rt, 
+                                                                 mz_tol=mz_tol, rt_range=rt_range)
     
-    eic_int[idx_start:idx_end] = roi.int_seq
+    idx_start = np.where(eic_scan_idx_arr == feature.scan_idx_seq[0])[0][0]
+    idx_end = np.where(eic_scan_idx_arr == feature.scan_idx_seq[-1])[0][0] + 1
+    if break_scan is not None:
+        idx_middle = np.where(eic_scan_idx_arr == break_scan)[0][0]
+    
+    eic_int = eic_signals[:,1]
+    eic_int[idx_start:idx_end] = feature.signals[:,1]
 
     max_int = np.max(eic_int[idx_start:idx_end])
 
@@ -86,19 +107,17 @@ def plot_roi(d, roi, mz_tol=0.01, rt_tol=1.0, output=False, break_scan=None):
         plt.fill_between(eic_rt[idx_middle:idx_end], eic_int[idx_middle:idx_end], color="red", alpha=0.2)
     else:
         plt.fill_between(eic_rt[idx_start:idx_end], eic_int[idx_start:idx_end], color="black", alpha=0.2)
-    plt.axvline(x = roi.rt, color = 'b', linestyle = '--', linewidth=1, ymax=0.8)
-    # label the left and right of the ROI
-    plt.axvline(x = roi.rt_seq[0], color = 'black', linestyle = '--', linewidth=0.5, ymax=0.8)
-    plt.axvline(x = roi.rt_seq[-1], color = 'black', linestyle = '--', linewidth=0.5, ymax=0.8)
+    plt.axvline(x = feature.rt, color = 'b', linestyle = '--', linewidth=1, ymax=0.8)
+    # label the left and right of the feature
+    plt.axvline(x = feature.rt_seq[0], color = 'black', linestyle = '--', linewidth=0.5, ymax=0.8)
+    plt.axvline(x = feature.rt_seq[-1], color = 'black', linestyle = '--', linewidth=0.5, ymax=0.8)
     plt.xlabel("Retention Time (min)", fontsize=18, fontname='Arial')
     plt.ylabel("Intensity", fontsize=18, fontname='Arial')
-    plt.xticks(fontsize=14, fontname='Arial')
-    plt.yticks(fontsize=14, fontname='Arial')
-    plt.text(eic_rt[0], max_int*1.1, "m/z = {:.4f}".format(roi.mz), fontsize=11, fontname='Arial')
-    plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.2, max_int*1.1, "G-score = {:.2f}".format(roi.gaussian_similarity), fontsize=11, fontname='Arial', color="blue")
-    plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.4, max_int*1.1, "N-score = {:.2f}".format(roi.noise_level), fontsize=11, fontname='Arial', color="red")
-    plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.6, max_int*1.1, "A-score = {:.2f}".format(roi.asymmetry_factor), fontsize=11, fontname='Arial', color="darkgreen")
-    plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.8,max_int*1.1, d.file_name, fontsize=7, fontname='Arial', color="gray")
+    plt.text(eic_rt[0], max_int*1.1, "m/z = {:.4f}".format(feature.mz), fontsize=11, fontname='Arial')
+    plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.2, max_int*1.1, "G-score = {:.2f}".format(feature.gaussian_similarity), fontsize=11, fontname='Arial', color="blue")
+    plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.4, max_int*1.1, "N-score = {:.2f}".format(feature.noise_score), fontsize=11, fontname='Arial', color="red")
+    plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.6, max_int*1.1, "A-score = {:.2f}".format(feature.asymmetry_factor), fontsize=11, fontname='Arial', color="darkgreen")
+    plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.8,max_int*1.1, d.params.file_name, fontsize=7, fontname='Arial', color="gray")
 
     if output:
         plt.savefig(output, dpi=600, bbox_inches="tight")
@@ -154,8 +173,10 @@ def mirror_ms2(precursor_mz1, precursor_mz2, peaks1, peaks2, annotation=None, sc
     # note name and similarity score
     plt.text(xmax*0.9, 0.9, "Experiment", fontsize=12, fontname='Arial', color="grey")
     plt.text(xmax*0.9, -0.9, "Database", fontsize=12, fontname='Arial', color="grey")
-    plt.text(0, 0.9, "similarity = {:.3f}".format(score), fontsize=12, fontname='Arial', color="blue")
-    plt.text(0, -0.95, annotation, fontsize=12, fontname='Arial', color="black")
+    if score is not None:
+        plt.text(0, 0.9, "similarity = {:.3f}".format(score), fontsize=12, fontname='Arial', color="blue")
+    if annotation is not None:
+        plt.text(0, -0.95, annotation, fontsize=12, fontname='Arial', color="black")
 
     if output:
         plt.savefig(output, dpi=600, bbox_inches="tight")
@@ -223,7 +244,7 @@ def plot_ms2_matching_from_feature_table(feature_table, params=None, output_dir=
     score = list(sub_feature_table["similarity"])
     mz = list(sub_feature_table["m/z"])
     annotations = list(sub_feature_table["annotation"])
-    id = list(sub_feature_table["ID"])
+    id = list(sub_feature_table["feature_ID"])
 
     if output_dir is None and params is not None:
         output_dir = params.ms2_matching_dir
@@ -232,8 +253,8 @@ def plot_ms2_matching_from_feature_table(feature_table, params=None, output_dir=
         return None
 
     for i in tqdm(range(len(ms2))):
-        peaks1 = extract_peaks_from_string(ms2[i])
-        peaks2 = extract_peaks_from_string(matched_ms2[i])
+        peaks1 = extract_signals_from_string(ms2[i])
+        peaks2 = extract_signals_from_string(matched_ms2[i])
 
         # replace all the special characters to "_"
         a = re.sub(r"[^a-zA-Z0-9]", "_", annotations[i])
@@ -340,6 +361,9 @@ def confidence_ellipse(x, y, ax, n_std=3.0, facecolor='none', **kwargs):
     ellipse.set_transform(transf + ax.transData)
     return ax.add_patch(ellipse)
 
+
+def plot_intensity_trend():
+    pass
 
 
 COLORS = ["#FF5050", "#0078F0", "#00B050", "#FFC000", "#7030A0", "#FF00FF", "#00B0F0", "#FF0000", "#00FF00", "#0000FF"]

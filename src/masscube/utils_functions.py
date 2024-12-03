@@ -8,8 +8,7 @@ import os
 from tqdm import tqdm
 from pyteomics import mass
 from pyteomics.mass.mass import isotopologues, calculate_mass
-
-from .raw_data_utils import get_start_time
+from datetime import datetime
 
 
 def generate_sample_table(path=None, output=True):
@@ -190,3 +189,20 @@ def calculate_isotope_distribution(formula, mass_resolution=10000, intensity_thr
 
     return mass, abundance
     
+def get_start_time(file_name):
+    """
+    Function to get the start time of the raw data.
+
+    Parameters
+    ----------
+    file_name : str
+        Absolute path of the raw data.
+    """
+
+    if os.path.exists(str(file_name)):
+        with open(file_name, "rb") as f:
+            for l in f:
+                l = str(l)
+                if "startTimeStamp" in str(l):
+                    t = l.split("startTimeStamp")[1].split('"')[1]
+                    return datetime.strptime(t, "%Y-%m-%dT%H:%M:%SZ")

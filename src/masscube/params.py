@@ -8,6 +8,9 @@ import os
 import json
 import gzip
 from importlib.metadata import version
+import numpy as np
+
+from .utils_functions import get_start_time
 
 # Define a class to store the parameters
 class Params:
@@ -21,56 +24,89 @@ class Params:
         ----------------------------
         """
 
-        # The project
-        self.project_dir = None             # Project directory, character string
-        self.sample_names = None            # Absolute paths to the raw files, without extension, list of character strings
-        self.sample_groups = None           # Sample groups, list of character strings
-        self.sample_group_num = None        # Number of sample groups, integer
-        self.sample_dir = None              # Directory for the sample information, character string
-        self.single_file_dir = None         # Directory for the single file output, character string
-        self.annotation_dir = None          # Directory for the annotation output, character string
-        self.chromatogram_dir = None        # Directory for the chromatogram output, character string
-        # self.network_dir = None             # Directory for the network output, character string
-        self.statistics_dir = None          # Directory for the statistical analysis output, character string
+        # project
+        self.sample_names = None            # sample names without extension, list of strings
+        self.sample_abs_paths = None        # absolute paths of the raw MS data, list of strings
+        self.sample_metadata = None         # sample metadata, pandas DataFrame
+        self.project_dir = None             # project directory, string
+        self.sample_dir = None              # directory for the raw MS data, string
+        self.single_file_dir = None         # directory for the single file output, string
+        self.tmp_file_dir = None            # directory for the intermediate file output, string
+        self.ms2_matching_dir = None        # directory for the MS2 matching output, string
+        self.bpc_dir = None                 # directory for the base peak chromatogram output, string
+        self.project_file_dir = None        # directory for the project files, string
+        self.normalization_dir = None       # directory for the normalization output, string
+        self.statistics_dir = None          # directory for the statistical analysis output, string
+        self.problematic_files = None       # problematic files, dictionary: {file_name: error_message}
 
-        # MS data acquisition
-        self.rt_range = [0.0, 1000.0]       # RT range in minutes, list of two floats
-        self.ion_mode = "positive"          # Ionization mode, "positive" or "negative", character string
+        # raw data reading and cleaning
+        self.file_name = None               # file name of the raw data, string
+        self.file_path = None               # absolute path of the raw data, string
+        self.ion_mode = "positive"          # MS ion mode, "positive" or "negative", string
+        self.ms_type = None                 # type of MS, "orbitrap", "qtof", "tripletof" or "others", string
+        self.is_centroid = True             # whether the raw data is centroid data, boolean
+        self.file_format = None             # file type in lower case, 'mzml', 'mzxml', 'mzjson' or 'mzjson.gz', string
+        self.time = None                    # when the data file was acquired, datetime.datetime object
+        self.scan_time_unit = "minute"      # time unit of the scan time, "minute" or "second", string
+        self.mz_lower_limit = 0.0           # lower limit of m/z in Da, float
+        self.mz_upper_limit = 100000.0      # upper limit of m/z in Da, float
+        self.rt_lower_limit = 0.0           # lower limit of RT in minutes, float
+        self.rt_upper_limit = 10000.0       # upper limit of RT in minutes, float
+        self.scan_levels = [1,2]            # scan levels to be read, list of integers
+        self.centroid_mz_tol = 0.005        # m/z tolerance for centroiding, default is 0.005. set to None to disable centroiding
+        self.ms1_abs_int_tol = 1000.0       # absolute intensity threshold for MS1, recommend 30000 for Orbitrap and 1000 for QTOF
+        self.ms2_abs_int_tol = 500          # absolute intensity threshold for MS2, recommend 10000 for Orbitrap and 500 for QTOF
+        self.ms2_rel_int_tol = 0.01         # relative intensity threshold to base peak for MS2, default is 0.01
+        self.precursor_mz_offset = 2.0      # offset for MS2 m/z range in Da. The m/z upper limit is precursor_mz - precursor_mz_offset.
 
-        # Feature detection
+        # feature detection
         self.mz_tol_ms1 = 0.01              # m/z tolerance for MS1, default is 0.01
         self.mz_tol_ms2 = 0.015             # m/z tolerance for MS2, default is 0.015
-        self.int_tol = None                   # Intensity tolerance, recommend 30000 for Orbitrap and 1000 for QTOF, integer
-        self.roi_gap = 30                   # Gap within a feature, default is 30 (i.e. 30 consecutive scans without signal), integer
-        self.ppr = 0.7                      # Peak peak correlation threshold for feature grouping, default is 0.7
+        self.feature_gap_tol = 30           # gap tolerance within a feature, default is 30 (i.e. 30 consecutive scans without signal), integer
+        self.batch_size = 100               # batch size for parallel processing, default is 100, integer
+        self.percent_cpu_to_use = 0.8       # percentage of CPU to use, default is 0.8, float
+        
+        # feature grouping
+        self.group_features_single_file = False     # whether to group features in a single file, default is False
+        self.scan_scan_cor_tol = 0.7                # scan-to-scan correlation tolerance for feature grouping, default is 0.7
+        self.valid_charge_states = [1, 2]           # valid charge states for feature grouping, list of integers
 
-        # Parameters for feature alignment
-        self.align_mz_tol = 0.01            # m/z tolerance for MS1, default is 0.01
-        self.align_rt_tol = 0.2             # RT tolerance, default is 0.2
-        self.run_rt_correction = True       # Whether to perform RT correction, default is True
-        self.min_scan_num_for_alignment = 6    # Minimum scan number a feature to be aligned, default is 6
-        self.clean_feature_table = True     # Whether to clean the feature table, default is True
+        # feature alignment
+        self.mz_tol_alignment = 0.01                # m/z tolerance for alignment, default is 0.01
+        self.rt_tol_alignment = 0.2                 # RT tolerance for alignment, default is 0.2
+        self.correct_rt = True                      # whether to perform RT correction, default is True
+        self.scan_number_cutoff = 5                 # feature with non-zero scan number greater than the cutoff will be aligned, default is 5
+        self.detection_rate_cutoff = 0.1            # features detected need to be >rate*(qc+sample), default rate is 0.1
+        self.merge_features = True                  # whether to merge features with almost the same m/z and RT, default is True
+        self.mz_tol_merge_features = 0.01           # m/z tolerance for merging features, default is 0.01
+        self.rt_tol_merge_features = 0.05           # RT tolerance for merging features, default is 0.2
+        self.group_features_after_alignment = True  # whether to group features after alignment, default is False
+        self.fill_gaps = True                       # whether to fill the gaps in the aligned features, default is True
+        self.gap_filling_method = "local_maximum"   # method for gap filling, default is "local_maximum", string
 
-        # Parameters for feature annotation
-        self.msms_library = None            # Path to the MS/MS library (.msp or .pickle), character string
+        # feature annotation
+        self.ms2_library_path = None        # path to the MS2 library (.msp or .pickle), character string
         self.ms2_sim_tol = 0.7              # MS2 similarity tolerance, default is 0.7
+        self.fuzzy_search = True            # whether to perform fuzzy search, default is True
+        
+        # normalization
+        self.sample_normalization = False   # whether to normalize the data based on total sample amount/concentration, default is False
+        self.sample_norm_method = "pqn"     # sample normalization method, default is "pqn" (probabilistic quotient normalization), character string
+        self.signal_normalization = False   # whether to run feature-wised normalization to correct systematic signal drift, default is False
+        self.signal_norm_method = "lowess"  # normalization method for signal drift, default is "loess" (local polynomial regression fitting), character string
 
-        # Parameters for normalization
-        self.sample_normalization = False   # Whether to normalize the data based on total sample amount/concentration, default is False
-        self.sample_norm_method = "pqn"     # Normalization method, default is "pqn" (probabilistic quotient normalization), character string
-        self.signal_normalization = False   # Whether to run feature-wised normalization to correct systematic signal drift, default is False
-        self.signal_norm_method = "lowess"  # Normalization method for signal drift, default is "loess" (local polynomial regression fitting), character string
+        # statistical analysis
+        self.run_statistics = False         # whether to perform statistical analysis
 
-        # Parameters for output
-        self.output_single_file = False     # Whether to output the processed individual files to a csv file
-        self.output_aligned_file = False    # Whether to output aligned features to a csv file
+        # visualization
+        self.plot_bpc = False               # whether to plot base peak chromatograms
+        self.plot_ms2 = False               # whether to plot mirror plots for MS2 matching
 
-        # Statistical analysis
-        self.run_statistics = False         # Whether to perform statistical analysis
-
-        # Visualization
-        self.plot_bpc = False               # Whether to plot base peak chromatogram
-        self.plot_ms2 = False               # Whether to plot mirror plots for MS2 matching
+        # output
+        self.output_single_file = False     # whether to output the processed individual files to a csv file
+        self.output_ms1_scans = False       # whether to output all MS1 scans to a pickle file for faster data reloading (only used in untargted metabolomics workflow)
+        self.output_aligned_file = False    # whether to output aligned features to a csv file
+        self.quant_method = "peak_height"   # value for quantification and output, "peak_height", "peak_area" or "top_average", string
     
 
     def read_parameters_from_csv(self, path):
@@ -91,18 +127,46 @@ class Params:
                 value = float(df.iloc[i, 1])
             except:
                 value = df.iloc[i, 1]
-                if value.lower() == "true":
+                if value.lower() == "true" or value.lower() == "yes":
                     value = True
-                elif value.lower() == "false":
+                elif value.lower() == "false" or value.lower() == "no":
                     value = False
 
             setattr(self, df.iloc[i, 0], value)
-        
-        self.rt_range = [self.rt_start, self.rt_end]
 
         # check if the parameters are correct
         self.check_parameters()
-    
+
+
+    def read_sample_metadata(self, path):
+        """
+        Read the sample metadata from a csv file.
+        
+        Parameters
+        ----------
+        path : str
+            The path to the csv file.
+        """
+
+        df = pd.read_csv(path)
+        self.sample_names = list(df.iloc[:, 0])
+        df.columns = [col.lower() if col.lower() in ['is_qc', 'is_blank'] else col for col in df.columns]
+
+        if 'is_qc' in df.columns:
+            df['is_qc'] = df['is_qc'].apply(lambda x: True if x.lower() == 'yes' else False)
+        else:
+            df['is_qc'] = False
+        if 'is_blank' in df.columns:
+            df['is_blank'] = df['is_blank'].apply(lambda x: True if x.lower() == 'yes' else False)
+        else:
+            df['is_blank'] = False
+        
+        # move all qc samples to the front and all blank samples to the end
+        df = df.sort_values(by=['is_qc', 'is_blank'], ascending=[False, True])
+        df = df.reset_index(drop=True)
+        
+        self.sample_metadata = df
+
 
     def _untargeted_metabolomics_workflow_preparation(self):
         """
@@ -115,10 +179,11 @@ class Params:
         
         self.sample_dir = os.path.join(self.project_dir, "data")
         self.single_file_dir = os.path.join(self.project_dir, "single_files")
+        self.tmp_file_dir = os.path.join(self.project_dir, "tmp")
         self.ms2_matching_dir = os.path.join(self.project_dir, "ms2_matching")
         self.bpc_dir = os.path.join(self.project_dir, "chromatograms")
         self.project_file_dir = os.path.join(self.project_dir, "project_files")
-        self.statistics_dir = os.path.join(self.project_dir, "statistics")
+        self.statistics_dir = os.path.join(self.project_dir, "statistical_analysis")
         self.normalization_dir = os.path.join(self.project_dir, "normalization_results")
         
         # STEP 2: check if the required files are prepared
@@ -126,7 +191,7 @@ class Params:
         if not os.path.exists(self.sample_dir) or len(os.listdir(self.sample_dir)) == 0:
             raise ValueError("No raw MS data is found in the project directory.")
         if not os.path.exists(os.path.join(self.project_dir, "sample_table.csv")):
-            print("No sample table is found in the project directory. No statistical analysis and normalization will be performed.")
+            print("No sample table is found in the project directory. Normalization and statistical analysis will NOT be performed.")
             self.run_statistics = False
             self.sample_normalization = False
             self.signal_normalization = False
@@ -137,6 +202,8 @@ class Params:
         # STEP 3: create the output directories if not exist
         if not os.path.exists(self.single_file_dir):
             os.makedirs(self.single_file_dir)
+        if not os.path.exists(self.tmp_file_dir):
+            os.makedirs(self.tmp_file_dir)
         if not os.path.exists(self.ms2_matching_dir):
             os.makedirs(self.ms2_matching_dir)
         if not os.path.exists(self.bpc_dir):
@@ -155,54 +222,41 @@ class Params:
             file_name = os.path.join(self.sample_dir, file_names[0])
             ms_type, ion_mode, _ = find_ms_info(file_name)
             self.set_default(ms_type, ion_mode)
-            self.run_statistics = True
             self.plot_bpc = True
-            # annotation will not be performed if no MS/MS library is provided
-            self.plot_ms2 = False
         
         if not os.path.exists(self.statistics_dir) and self.run_statistics:
             os.makedirs(self.statistics_dir)
         if not os.path.exists(self.normalization_dir) and (self.sample_normalization or self.signal_normalization):
             os.makedirs(self.normalization_dir)
 
-        # STEP 5: read the sample table and allocate the sample groups
-        #         reorder the samples by qc, sample, and blank
-        if not os.path.exists(os.path.join(self.project_dir, "sample_table.csv")):
-            self.sample_names = [f for f in os.listdir(self.sample_dir) if not f.startswith(".")] # for macOS
-            self.sample_names = [f for f in self.sample_names if f.lower().endswith(".mzml") or f.lower().endswith(".mzxml")]
-            self.sample_names = [f.split(".")[0] for f in self.sample_names]
-            self.sample_groups = ["sample"] * len(self.sample_names)
-            self.individual_sample_groups = ["sample"] * len(self.sample_names)
-            self.sample_group_num = 1
-            # skip the normalization and statistics if no sample table is provided
-            self.run_normalization = False
-            self.run_statistics = False
+        # STEP 5: read the sample names and sample metadata from the sample table
+        if os.path.exists(os.path.join(self.project_dir, "sample_table.csv")):
+            self.read_sample_metadata(os.path.join(self.project_dir, "sample_table.csv"))
+            self.sample_names = list(self.sample_metadata.iloc[:, 0])
+            available_files = [f for f in os.listdir(self.sample_dir) if not f.startswith(".") and 
+                               (f.lower().endswith(".mzml") or f.lower().endswith(".mzxml"))]
+            # find the absolute paths of the raw MS data in order
+            self.sample_abs_paths = [None] * len(self.sample_names)
+            for i, name in enumerate(self.sample_names):
+                for f in available_files:
+                    if name in f:
+                        self.sample_abs_paths[i] = os.path.join(self.sample_dir, f)
+                        break
+            # find the start time of the raw MS data
+            self.sample_metadata['time'] = [get_start_time(path) for path in self.sample_abs_paths]
+            self.sample_metadata['analytical_order'] = 0
+            for rank, idx in enumerate(np.argsort(self.sample_metadata['time'])):
+                self.sample_metadata.loc[idx, 'analytical_order'] = rank + 1
         else:
-            sample_table = pd.read_csv(os.path.join(self.project_dir, "sample_table.csv"))
-            try:
-                sample_table.iloc[:, 1] = sample_table.iloc[:, 1].str.lower()
-            except:
-                raise ValueError("The second column of the sample table is not correct.")
-            sample_groups_pre = list(set(sample_table.iloc[:, 1]))
-            sample_groups = [i for i in sample_groups_pre if i not in ["qc", "blank"]]
-            self.sample_group_num = len(sample_groups)
-            if "qc" in sample_groups_pre:
-                sample_groups = ["qc"] + sample_groups
-            if "blank" in sample_groups_pre:
-                sample_groups = sample_groups + ["blank"]
-
-            sample_table_new = pd.DataFrame(columns=sample_table.columns)
-            for i in range(len(sample_groups)):
-                sample_table_new = pd.concat([sample_table_new, sample_table[sample_table.iloc[:, 1].str.lower() == sample_groups[i]]])
-            self.sample_names = list(sample_table_new.iloc[:, 0])
-            self.sample_groups = sample_groups
-            self.individual_sample_groups = []
-            for name in self.sample_names:
-                self.individual_sample_groups.append(sample_table_new[sample_table_new.iloc[:, 0] == name].iloc[0, 1])
+            self.sample_names = [f for f in os.listdir(self.sample_dir) if not f.startswith(".") and 
+                                 (f.lower().endswith(".mzml") or f.lower().endswith(".mzxml"))]
+            self.sample_abs_paths = [os.path.join(self.sample_dir, f) for f in self.sample_names]
+            self.sample_names = [f.split(".")[0] for f in self.sample_names]
 
         # STEP 6: set output
-        self.output_single_file = True
-        self.output_aligned_file = True
+        self.output_single_file = True      # output the processed individual files to a txt file
+        self.output_ms1_scans = True        # for faster data reloading in gap filling
+        self.output_aligned_file = True     # output the aligned features to a txt file
 
 
     def _batch_processing_preparation(self):
@@ -252,13 +306,13 @@ class Params:
         """
 
         if ms_type == "orbitrap":
-            self.int_tol = 30000
-        elif ms_type == "tof":
-            self.int_tol = 1000
-        if ion_mode == "positive":
-            self.ion_mode = "positive"
-        elif ion_mode == "negative":
-            self.ion_mode = "negative"
+            self.ms1_abs_int_tol = 30000
+            self.ms2_abs_int_tol = 10000
+        else:
+            self.ms1_abs_int_tol = 1000
+            self.ms2_abs_int_tol = 500
+        
+        self.ion_mode = ion_mode
     
 
     def check_parameters(self):
@@ -271,10 +325,9 @@ class Params:
             if not value[0] <= getattr(self, key) <= value[1]:
                 print(f"Parameter {key} is not out of range. The value is set to the default value.")
                 setattr(self, key, PARAMETER_DEFAULT[key])
-        
-        if self.msms_library != self.msms_library:
-            self.msms_library = None
-    
+        if not os.path.exists(str(self.ms2_library_path)):
+            self.ms2_library_path = None
+
 
     def output_parameters(self, path, format="json"):
         """
@@ -301,7 +354,7 @@ class Params:
                 json.dump(parameters, f)
         else:
             raise ValueError("The output format is not supported.")
-        
+
 
 def find_ms_info(file_name):
     """
@@ -324,13 +377,11 @@ def find_ms_info(file_name):
     ion_mode = 'positive'
     centroid = False
 
-    ext = os.path.splitext(file_name)[1].lower()
-
-    # if mzML of mzXML
-    if ext == '.mzml' or ext == '.mzxml':
+    # for mzml and mzxml
+    if file_name.lower().endswith('.mzml') or file_name.lower().endswith('.mzxml'):
         with open(file_name, 'r') as f:
             for i, line in enumerate(f):
-                if 'orbitrap' in line.lower():
+                if 'orbitrap' in line.lower() or 'q exactive' in line.lower():
                     ms_type = 'orbitrap'
                 if 'negative' in line.lower():
                     ion_mode = 'negative'
@@ -338,49 +389,52 @@ def find_ms_info(file_name):
                     centroid = True
                 if i > 200:
                     break
-    
-    # if mzjson or compressed mzjson
-    elif ext == '.mzjson' or ext == '.gz':
-        if ext.lower() == ".mzjson":
-            with open(file_name, 'r') as f:
-                data = json.load(f)
-        else:
-            with gzip.open(file_name, 'rt') as f:
-                data = json.load(f)
-        ms_type = data["metadata"]["instrument_type"]
-        ion_mode = data["metadata"]["ion_mode"]
-        if "centroid" in data["metadata"]:
-            centroid = data["metadata"]["centroid"]
-        else:
-            centroid = True
 
     return ms_type, ion_mode, centroid
 
 
 PARAMETER_RAGES = {
-    "rt_start": [0.0, 1000.0],
-    "rt_end": [0.0, 1000.0],
-    "mz_tol_ms1": [0.0, 0.02],
-    "mz_tol_ms2": [0.0, 0.02],
-    "int_tol": [0, 1e10],
-    "roi_gap": [0, 50],
-    "min_scan_num_for_alignment": [0, 50],
-    "align_mz_tol": [0.0, 0.02],
-    "align_rt_tol": [0.0, 2.0],
-    "ppr": [0.5, 1.0],
-    "ms2_sim_tol": [0.0, 1.0]
+    "mz_lower_limit": (0.0, 100000.0),
+    "mz_upper_limit": (0.0, 100000.0),
+    "rt_lower_limit": (0.0, 10000.0),
+    "rt_upper_limit": (0.0, 10000.0),
+    "centroid_mz_tol": (0.0, 0.1),
+    "ms1_abs_int_tol": (0, 1e10),
+    "ms2_abs_int_tol": (0, 1e10),
+    "ms2_rel_int_tol": (0.0, 1.0),
+    "precursor_mz_offset": (0.0, 100000.0),
+    "mz_tol_ms1": (0.0, 0.02),
+    "mz_tol_ms2": (0.0, 0.02),
+    "feature_gap_tol": (0, 100),
+    "scan_scan_cor_tol": (0.0, 1.0),
+    "mz_tol_alignment": (0.0, 0.02),
+    "rt_tol_alignment": (0.0, 2.0),
+    "scan_number_cutoff": (0, 100),
+    "detection_rate_cutoff": (0.0, 1.0),
+    "mz_tol_merge_features": (0.0, 0.02),
+    "rt_tol_merge_features": (0.0, 0.5),
+    "ms2_sim_tol": (0.0, 1.0)
 }
 
 PARAMETER_DEFAULT = {
-    "rt_start": 0.0,
-    "rt_end": 1000.0,
+    "mz_lower_limit": 0.0,
+    "mz_upper_limit": 100000.0,
+    "rt_lower_limit": 0.0,
+    "rt_upper_limit": 10000.0,
+    "centroid_mz_tol": 0.005,
+    "ms1_abs_int_tol": 1000.0,
+    "ms2_abs_int_tol": 500,
+    "ms2_rel_int_tol": 0.01,
+    "precursor_mz_offset": 2.0,
     "mz_tol_ms1": 0.01,
     "mz_tol_ms2": 0.015,
-    "int_tol": 30000,
-    "roi_gap": 10,
-    "min_scan_num_for_alignment": 5,
-    "align_mz_tol": 0.01,
-    "align_rt_tol": 0.2,
-    "ppr": 0.7,
+    "feature_gap_tol": 30,
+    "scan_scan_cor_tol": 0.7,
+    "mz_tol_alignment": 0.01,
+    "rt_tol_alignment": 0.2,
+    "scan_number_cutoff": 5,
+    "detection_rate_cutoff": 0.1,
+    "mz_tol_merge_features": 0.01,
+    "rt_tol_merge_features": 0.05,
     "ms2_sim_tol": 0.7
 }

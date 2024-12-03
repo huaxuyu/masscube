@@ -116,3 +116,5 @@ def rawdata_to_mzjson(raw_data_file: str, mzjson_file: str = None, int_tol_ms1: 
             mzjson_file = os.path.join(os.path.dirname(raw_data_file), os.path.basename(raw_data_file).split(".")[0] + ".mzjson")
         with open(mzjson_file, "w") as f:
             json.dump(mzjson, f)
+
+

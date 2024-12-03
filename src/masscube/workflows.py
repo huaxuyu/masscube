@@ -18,7 +18,7 @@ from .raw_data_utils import read_raw_file_to_obj
 from .params import Params
 from .feature_grouping import annotate_isotope, annotate_adduct, annotate_in_source_fragment
 from .alignment import feature_alignment, gap_filling, output_feature_table
-from .annotation import feature_annotation, annotate_rois, feature_annotation_mzrt
+from .annotation import annotate_aligned_features, annotate_features, feature_annotation_mzrt
 from .normalization import sample_normalization, signal_normalization
 from .visualization import plot_ms2_matching_from_feature_table
 from .stats import statistical_analysis
@@ -27,11 +27,10 @@ from .utils_functions import get_timestamps
 
 
 # 1. Untargeted feature detection for a single file
-def feature_detection(file_name, params=None, cal_g_score=True, cal_a_score=True,
-                      anno_isotope=True, anno_adduct=True, anno_in_source_fragment=True, 
-                      anno_ms2=False, ms2_library_path=None, segment_feature=True, output_dir=None):
+def process_single_file(file_name, params=None, segment_feature=True, group_features=False, evaluate_peak_shape=False,
+                        annotate_ms2=False, ms2_library_path=None, output_dir=None):
     """
-    Untargeted feature detection from a single file (mzML, mzXML, mzjson or compressed mzjson).
+    Untargeted data processing for a single file (mzML, mzXML, mzjson or compressed mzjson).
 
     Parameters
     ----------
@@ -40,23 +39,16 @@ def feature_detection(file_name, params=None, cal_g_score=True, cal_a_score=True
     params : Params object
         Parameters for feature detection. If None, the default parameters are used
         based on the type of mass spectrometer.
-    cal_g_score : bool
-        Whether to calculate the Gaussian similarity for peaks. Default is True.
-    cal_a_score : bool
-        Whether to calculate the asymmetry factor for peaks. Default is True.
-    anno_isotope : bool
-        Whether to annotate isotopes. Default is True.
-    anno_adduct : bool
-        Whether to annotate adducts. Default is True.
-    anno_in_source_fragment : bool
-        Whether to annotate in-source fragments. Default is True.
-    anno_ms2 : bool
-        Whether to annotate MS2 spectra. If True, the MS2 library should be provided in the params object.
-        Otherwise, the MS2 annotation is skipped. Default is False.
-    ms2_library_path : str
-        Another way to provide the path to the MS2 library by skipping setting the params object.
     segment_feature : bool
         Whether to segment the feature to peaks for distinguishing possible isomers. Default is True.
+    group_features : bool
+        Whether to group features by isotopes, adducts and in-source fragments. Default is True.
+    evaluate_peak_shape : bool
+        Whether to evaluate the peak shape by calculating noise score and asymmetry factor. Default is True.
+    annotate_ms2 : bool
+        Whether to annotate MS2 spectra. Default is False.
+    ms2_library_path : str
+        Another way to specify the MS2 library path.
     output_dir : str
         The output directory for the single file. If None, the output is saved to the same directory as the raw file.
 
@@ -68,54 +60,61 @@ def feature_detection(file_name, params=None, cal_g_score=True, cal_a_score=True
 
     try:
         # STEP 1. data reading, parsing, and parameter preparation
-        d = read_raw_file_to_obj(file_name, params=params, centroid_mz=True, read_ms2=True, clean_ms2=True)
+        d = read_raw_file_to_obj(file_name, params=params)
         # check if the file is centroided
-        if not d.centroid:
+        if not d.params.is_centroid:
             print("File: " + file_name + " is not centroided and skipped.")
             return None
         # set ms2 library path
         if ms2_library_path is not None:
-            d.params.msms_library = ms2_library_path
+            d.params.ms2_library_path = ms2_library_path
 
-        # STEP 2. feature detection
-        d.find_rois()
-        # segmentation for isomer peak detection
+        # STEP 2. feature detection and segmentation
+        d.detect_features()
         if segment_feature:
-            d.cut_rois()
+            d.segment_features()
 
-        # STEP 3. feature evaluation (peak height, peak area, Gaussian similarity, asymmetry factor, etc.)
-        d.summarize_roi(cal_g_score=cal_g_score, cal_a_score=cal_a_score)
+        # STEP 3. feature evaluation
+        if evaluate_peak_shape:
+            d.summarize_features(cal_g_score=True, cal_a_score=True)
+        else:
+            d.summarize_features(cal_g_score=False, cal_a_score=False)
 
-        # STEP4. feature grouping including annotate isotopes, adducts, and in-source fragments
-        if anno_isotope:
+        # STEP4. feature grouping
+        if group_features:
             annotate_isotope(d)
-        if anno_in_source_fragment:
             annotate_in_source_fragment(d)
-        if anno_adduct:
             annotate_adduct(d)
 
-        # annotate MS2 spectra
-        if anno_ms2 and d.params.msms_library is not None:
-            annotate_rois(d.rois, d.params.msms_library, sim_tol=d.params.ms2_sim_tol, mz_tol=d.params.ms2_mz_tol, rt_tol=d.params.ms2_rt_tol)
+        # STEP 5. MS2 annotation
+        if annotate_ms2:
+            if ms2_library_path is None:
+                ms2_library_path = d.params.ms2_library_path
+            if ms2_library_path is not None:
+                annotate_features(d=d, sim_tol=d.params.ms2_sim_tol, fuzzy_search=True, ms2_library_path=ms2_library_path)
 
-        if d.params.plot_bpc:
-            d.plot_bpc(label_name=True, output_dir=os.path.join(params.bpc_dir, d.file_name + "_bpc.png"))
-
-        # output single file to a txt file
+        # STEP 6. Visualization and output
+        if d.params.plot_bpc and d.params.bpc_dir is not None:
+            d.plot_bpc(output_dir=os.path.join(d.params.bpc_dir, d.params.file_name + "_bpc.png"))
         if d.params.output_single_file:
-            d.output_single_file()
-        elif output_dir is not None:
-            d.output_single_file(os.path.join(output_dir, d.file_name + ".txt"))
+            if output_dir is not None:
+                d.output_single_file(os.path.join(output_dir, d.params.file_name + ".txt"))
+            elif d.params.single_file_dir is not None:
+                d.output_single_file()
+            
+        # for faster data reloading
+        if d.params.output_ms1_scans:
+            d.output_ms1_to_pickle()
 
         return d
     
-    except Exception as e:
-        print("Error: " + str(e))
+    except:
+        print("Error: " + file_name + " is skipped.")
         return None
 
 
 # 2. Untargeted metabolomics workflow
-def untargeted_metabolomics_workflow(path=None, batch_size=100, cpu_ratio=0.8):
+def untargeted_metabolomics_workflow(path=None, return_results=False):
     """
     The untargeted metabolomics workflow. See the documentation for details.
 
@@ -123,260 +122,158 @@ def untargeted_metabolomics_workflow(path=None, batch_size=100, cpu_ratio=0.8):
     ----------
     path : str
         The working directory. If None, the current working directory is used.
-    batch_size : int
-        The number of files to be processed in each batch.
-    cpu_ratio : float
-        The ratio of CPU cores to be used.
+    return_results : bool
+        Whether to return the results. Default is False.
+
+    Returns
+    -------
+    features : list
+        A list of features.
+    params : Params object
+        Parameters for the workflow.
     """
 
-    # start of the workflow
     print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
     print("Welcome to the untargeted metabolomics workflow.")
     print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 
-    # define the metadata and parameters
-    medadata = [
-        {
-            "name": "overview",
-            "layer": 0,
-            "packages": [
-                {"name": "masscube", "version": version("masscube")},
-                {"name": "numpy", "version": version("numpy")},
-                {"name": "pandas", "version": version("pandas")},
-                {"name": "scipy", "version": version("scipy")},
-                {"name": "matplotlib", "version": version("matplotlib")},
-                {"name": "pyteomics", "version": version("pyteomics")},
-                {"name": "scikit-learn", "version": version("scikit-learn")},
-                {"name": "ms_entropy", "version": version("ms_entropy")},
-                {"name": "lxml", "version": version("lxml")}
-            ],
-            "start_time": time.strftime("%Y-%m-%d %H:%M:%S %Z", time.localtime())
-        }
-    ]
-
+    # STEP 1. Prepare parameters for the workflow
     print("Step 1: Preparing the workflow...")
+    
+    metadata = deepcopy(DATA_PROCESSING_METADATA)
+    metadata[0]['start_time'] = time.strftime("%Y-%m-%d %H:%M:%S %Z", time.localtime())
+    metadata[0]['dependencies'] = {item: version(item) for item in DEPENDENCIES}
     params = Params()
+   
     # obtain the working directory
     if path is not None:
         params.project_dir = path
     else:
         params.project_dir = os.getcwd()
-    params._untargeted_metabolomics_workflow_preparation()
     
-    raw_file_names = os.listdir(params.sample_dir)
-    raw_file_names = [f for f in raw_file_names if f.lower().endswith(".mzml") or f.lower().endswith(".mzxml")]
-    raw_file_names = [f for f in raw_file_names if not f.startswith(".")]   # for Mac OS
-    total_file_num = len(raw_file_names)
-    # skip the files that have been processed
-    txt_files = os.listdir(params.single_file_dir)
-    txt_files = [f.split(".")[0] for f in txt_files if f.lower().endswith(".txt")]
-    txt_files = [f for f in txt_files if not f.startswith(".")]  # for Mac OS
-    raw_file_names = [f for f in raw_file_names if f.split(".")[0] not in txt_files]
-    raw_file_names = [os.path.join(params.sample_dir, f) for f in raw_file_names]
-
-    print("\t{} raw file are found, {} files to be processed.".format(total_file_num, len(raw_file_names)))
+    params._untargeted_metabolomics_workflow_preparation()
 
     # save the parameters to metadata
-    p_meta = {
-        "name": "parameters",
-        "layer": 1,
-    }
     for key, value in params.__dict__.items():
-        p_meta[key] = value
-    medadata.append(p_meta)
+        metadata[1][key] = value
     print("\tWorkflow is prepared.")
     print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 
-    # process files by multiprocessing, each batch contains 100 files by default (tunable in batch_size)
-    print("Step 2: Processing individual files for feature detection, evaluation, and grouping...")
-    workers = int(multiprocessing.cpu_count() * cpu_ratio)
+    # STEP 2. Process individual files
+    print("Step 2: Processing individual files for feature detection...")
+    processed_files = [f.split(".")[0] for f in os.listdir(params.single_file_dir) if f.lower().endswith(".txt")]
+    to_be_processed = []
+    for i, f in enumerate(params.sample_names):
+        if f not in processed_files:
+            to_be_processed.append(params.sample_abs_paths[i])
+    print("\t{} files to process out of {} files.".format(len(to_be_processed), len(params.sample_abs_paths)))
+    
+    workers = int(multiprocessing.cpu_count() * params.percent_cpu_to_use)
     print("\tA total of {} CPU cores are detected, {} cores are used.".format(multiprocessing.cpu_count(), workers))
-    for i in range(0, len(raw_file_names), batch_size):
-        if len(raw_file_names) - i < batch_size:
-            print("Processing files from " + str(i) + " to " + str(len(raw_file_names)))
+    for i in range(0, len(to_be_processed), params.batch_size):
+        if len(to_be_processed) - i < params.batch_size:
+            print("\tProcessing files from " + str(i) + " to " + str(len(to_be_processed)))
         else:
-            print("Processing files from " + str(i) + " to " + str(i+batch_size))
+            print("\tProcessing files from " + str(i) + " to " + str(i+to_be_processed))
         p = multiprocessing.Pool(workers)
-        p.starmap(feature_detection, [(f, params) for f in raw_file_names[i:i+batch_size]])
+        p.starmap(process_single_file, [(f, params) for f in to_be_processed[i:i+params.batch_size]])
         p.close()
         p.join()
-    medadata.append({
-        "name": "feature_detection",
-        "layer": 2,
-        "core_num": workers,
-        "batch_size": batch_size,
-        "status": "completed"
-    })
+        
+    metadata[2]["status"] = "completed"
     print("\tIndividual file processing is completed.")
     print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 
-    if not os.path.exists(os.path.join(params.project_dir, "aligned_feature_table_before_normalization.txt")) and not os.path.exists(os.path.join(params.project_dir, "aligned_feature_table.txt")):
-        # feature alignment
-        print("Step 3: Aligning features...")
-        features = feature_alignment(params.single_file_dir, params)
-        medadata.append({
-            "name": "feature_alignment",
-            "layer": 3,
-            "status": "completed"
-        })
-        print("\tFeature alignment is completed.")
-        print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-
-        # gap filling
-        print("Step 4: Filling gaps...")
-        features = gap_filling(features, params)
-        medadata.append({
-            "name": "gap_filling",
-            "layer": 4,
-            "status": "completed"
-        })
-        print("\tGap filling is completed.")
-        print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-
-        # annotation (using MS2 library)
-        print("Step 5: Annotating features...")
-        ms2_anno = False
-        mzrt_anno = False
-        if params.msms_library is not None and os.path.exists(params.msms_library):
-            features = feature_annotation(features, params)
-            print("\tMS2 annotation is completed.")
-            ms2_anno = True
-        else:
-            print("\tNo MS2 library is found. MS2 annotation is skipped.")
-        
-        # annotation (using mzrt list)
-        if os.path.exists(os.path.join(params.project_dir, "mzrt_list.csv")):
-            print("\tAnnotating features using the extra mzrt list...")
-            mzrt_anno = True
-            default_adduct = "[M+H]+" if params.ion_mode == "positive" else "[M-H]-"
-            features = feature_annotation_mzrt(features, os.path.join(params.project_dir, "mzrt_list.csv"), default_adduct, params.align_mz_tol, params.align_rt_tol)
-            print("\tmz/rt annotation is completed.")
-        medadata.append({
-            "name": "feature_annotation",
-            "layer": 5,
-            "status": "completed",
-            "ms2_annotation": "applied" if ms2_anno else "skipped",
-            "mzrt_annotation": "applied" if mzrt_anno else "skipped"
-        })
-
-        feature_table = convert_features_to_df(features, params.sample_names)
-        # output the acquired MS2 spectra to a MSP file (designed for MassWiki)
-        output_path = os.path.join(params.project_file_dir, "features.msp")
-        output_feature_to_msp(feature_table, output_path)
-        print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+    # STEP 3. Feature alignment
+    print("Step 3: Aligning features...")
+    features = feature_alignment(params.single_file_dir, params)
+    metadata[3]["status"] = "completed"
+    print("\tFeature alignment is completed.")
+    print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+    
+    # STEP 4. Feature annotation
+    print("Step 4: Annotating features...")
+    # annotation (using MS2 library)
+    if params.ms2_library_path is not None and os.path.exists(params.ms2_library_path):
+        features = annotate_aligned_features(features, params)
+        print("\tMS2 annotation is completed.")
     else:
-        print("The aligned feature table is found. Step 3 (feature alignment), Step 4 (gap filling), and Step 5 (annotation) are skipped.")
-        if os.path.exists(os.path.join(params.project_dir, "aligned_feature_table.txt")):
-            feature_table = pd.read_csv(os.path.join(params.project_dir, "aligned_feature_table.txt"), sep="\t", low_memory=False)
-        elif os.path.exists(os.path.join(params.project_dir, "aligned_feature_table_before_normalization.txt")):
-            feature_table = pd.read_csv(os.path.join(params.project_dir, "aligned_feature_table_before_normalization.txt"), sep="\t", low_memory=False)
-        medadata.append({
-            "name": "feature_alignment",
-            "layer": 3,
-            "status": "use previous result"
-        })
-        medadata.append({
-            "name": "gap_filling",
-            "layer": 4,
-            "status": "use previous result"
-        })
-        medadata.append({
-            "name": "feature_annotation",
-            "layer": 5,
-            "status": "use previous result",
-            "ms2_annotation": "use previous result",
-            "mzrt_annotation": "use previous result"
-        })
-        print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+        print("\tNo MS2 library is found. MS2 annotation is skipped.")
+    # annotation (using mzrt list)
+    if os.path.exists(os.path.join(params.project_dir, "mzrt_list.csv")):
+        print("\tAnnotating features using the extra mzrt list...")
+        default_adduct = "[M+H]+" if params.ion_mode == "positive" else "[M-H]-"
+        features = feature_annotation_mzrt(features, os.path.join(params.project_dir, "mzrt_list.csv"), default_adduct, params.align_mz_tol, params.align_rt_tol)
+        print("\tmz/rt annotation is completed.")
+    metadata[4]["status"] = "completed"
 
+    feature_table = convert_features_to_df(features=features, sample_names=params.sample_names, quant_method=params.quant_method)
+    # output feature table to a txt file
+    output_path = os.path.join(params.project_dir, "aligned_feature_table.txt")
+    output_feature_table(feature_table, output_path)
+    # output the acquired MS2 spectra to a MSP file (designed for MassWiki)
+    output_path = os.path.join(params.project_file_dir, "features.msp")
+    output_feature_to_msp(feature_table, output_path)
+    print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+
+    # STEP 5. signal normalization
     if params.signal_normalization:
-        output_path = os.path.join(params.project_dir, "aligned_feature_table_before_normalization.txt")
-        output_feature_table(feature_table, output_path)
-    feature_table_before_normalization = deepcopy(feature_table)
-    # normalization: signal drift normalization followed by sample normalization
-    if params.signal_normalization:
-        print("Step 6: Running signal drift normalization...")
-        # get timestamp to find acquisition orders
-        sample_names = feature_table.columns[22:].values
+        print("Step 5: Running signal normalization...")
+        feature_table_before_normalization = deepcopy(feature_table)
+        sample_names = params.sample_names
         df_time = get_timestamps(params.project_dir, output=False)
         time_by_name = df_time.iloc[:,0].values
         analytical_order = [np.where(time_by_name == name)[0][0] for name in sample_names]
         feature_table = signal_normalization(feature_table, params.individual_sample_groups, analytical_order, params.signal_norm_method)
-        medadata.append({
-            "name": "signal_normalization",
-            "layer": 6,
-            "status": "completed"
-        })
+        metadata[5]["status"] = "completed"
         print("\tMS signal drift normalization is completed.")
     else:
-        medadata.append({
-            "name": "signal_normalization",
-            "layer": 6,
-            "status": "skipped"
-        })
+        metadata[5]["status"] = "skipped"
         print("Step 6: MS signal drift normalization is skipped.")
     print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 
-    if params.sample_normalization:
-        print("Step 7: Running sample normalization...")
-        feature_table = sample_normalization(feature_table, params.individual_sample_groups, params.sample_norm_method)
-        medadata.append({
-            "name": "sample_normalization",
-            "layer": 7,
-            "status": "completed"
-        })
-        print("\tSample Normalization is completed.")
-    else:
-        medadata.append({
-            "name": "sample_normalization",
-            "layer": 7,
-            "status": "skipped"
-        })
-        print("Step 7: Sample normalization is skipped.")
+    # # STEP 6. sample normalization
+    # if params.sample_normalization:
+    #     print("Step 6: Running sample normalization...")
+    #     feature_table = sample_normalization(feature_table, params.individual_sample_groups, params.sample_norm_method)
+    #     metadata[6]["status"] = "completed"
+    #     print("\tSample Normalization is completed.")
+    # else:
+    #     metadata[6]["status"] = "skipped"
+    #     print("Step 6: Sample normalization is skipped.")
 
-    # statistical analysis
-    if params.run_statistics:
-        print("Step 8: Running statistical analysis...")
-        feature_table_before_normalization = statistical_analysis(feature_table_before_normalization, params, before_norm=True)
-        feature_table = statistical_analysis(feature_table, params)
-        medadata.append({
-            "name": "statistical_analysis",
-            "layer": 8,
-            "status": "completed"
-        })
-        print("\tStatistical analysis is completed.")
-    else:
-        medadata.append({
-            "name": "statistical_analysis",
-            "layer": 8,
-            "status": "skipped"
-        })
-        print("Step 8: Statistical analysis is skipped.")
-    print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+    # # STEP 7. statistical analysis
+    # if params.run_statistics:
+    #     print("Step 7: Running statistical analysis...")
+    #     feature_table_before_normalization = statistical_analysis(feature_table_before_normalization, params, before_norm=True)
+    #     feature_table = statistical_analysis(feature_table, params)
+    #     metadata[7]["status"] = "completed"
+    #     print("\tStatistical analysis is completed.")
+    # else:
+    #     metadata[7]["status"] = "skipped"
+    #     print("Step 7: Statistical analysis is skipped.")
+    # print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
     
-    # output feature table
-    output_path = os.path.join(params.project_dir, "aligned_feature_table.txt")
-    output_feature_table(feature_table, output_path)
-
-    # output metadata and parameters
-    medadata[0]['end_time'] = time.strftime("%Y-%m-%d %H:%M:%S %Z", time.localtime())
+    # STEP 8. output and visualization
+    metadata[0]['end_time'] = time.strftime("%Y-%m-%d %H:%M:%S %Z", time.localtime())
     time_label = time.strftime("%Y%m%d%H%M%S", time.localtime())
-    metadata_file_name = "data_processing_metadata_" + time_label + ".json"
-    with open(os.path.join(params.project_file_dir, metadata_file_name), "w") as f:
-        json.dump(medadata, f)
+    metadata_file_name = "data_processing_metadata_" + time_label + ".pkl"
+    with open(os.path.join(params.project_file_dir, metadata_file_name), "wb") as f:
+        pickle.dump(metadata, f)
     with open(os.path.join(params.project_file_dir, "project.masscube"), "wb") as f:
         pickle.dump(params, f)
 
-    print("Data processing is completed.")
-    print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
     # plot annoatated metabolites
     if params.plot_ms2:
-        print("Visualization step 1: Plotting MS2 matching...")
+        print("Plotting MS2 matching...")
         plot_ms2_matching_from_feature_table(feature_table, params)
         print("\tMS2 plotting is completed.")
 
     print("The workflow is completed.")
-    
+
+    if return_results:
+        return features, params
+
 
 # 4. Evaluate the data quality of the raw files
 def run_evaluation(path=None):
@@ -478,6 +375,53 @@ def batch_file_processing(path=None, batch_size=100, cpu_ratio=0.8):
         else:
             print("Processing files from " + str(i) + " to " + str(i+batch_size))
         p = multiprocessing.Pool(workers)
-        p.starmap(feature_detection, [(f, params, True, True, False, False, False ) for f in raw_file_names[i:i+batch_size]])
+        p.starmap(process_single_file, [(f, params, True, True, False, False, False ) for f in raw_file_names[i:i+batch_size]])
         p.close()
         p.join()
+
+
+DEPENDENCIES = ('masscube', 'numpy', 'pandas', 'scipy', 'matplotlib', 'pyteomics', 'scikit-learn', 'ms_entropy', 'lxml')
+
+DATA_PROCESSING_METADATA = [
+    {
+        "name": "overview",
+        "layer": 0,
+        "dependencies": None,
+        "start_time": None,
+        "end_time": None,
+    },
+    {
+        "name": "parameters",
+        "layer": 1,
+    },
+    {
+        "name": "feature_detection",
+        "layer": 2,
+        "status": "not completed",
+    },
+    {
+        "name": "feature_alignment",
+        "layer": 3,
+        "status": "not completed"
+    },
+    {
+        "name": "feature_annotation",
+        "layer": 4,
+        "status": "not completed",
+    },
+    {
+        "name": "signal_normalization",
+        "layer": 5,
+        "status": "not completed"
+    },
+    {
+        "name": "sample_normalization",
+        "layer": 6,
+        "status": "not completed"
+    },
+    {
+        "name": "statistical_analysis",
+        "layer": 7,
+        "status": "not completed"
+    }
+]

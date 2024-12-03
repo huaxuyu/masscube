@@ -1,26 +1,183 @@
 # Author: Hauxu Yu
 
-# A module to group features (unique m/z and reteniton time) 
-# originated from the same compound. The grouping is based on
+# A module to group features (unique m/z and reteniton time) originated from the 
+# same compound. It will annotate isotopes, in-source fragments and adducts.
 
-# 1. annotate isotopes
-# 2. annotate adducts
-# 3. annotate in-source fragments
+# Development plan: annotation of multimers are to be performed in the future.
 
-# Import modules
+# imports
 import numpy as np
 
-"""
-Single file-based feature grouping
-==================================
+from .params import Params
 
-The following functions are used to group features in a single mzML or mzXML file.
-The grouping is based on m/z, retention time, scan-to-scan correlation, and MS/MS spectra.
-"""
+
+def group_features_after_alignment(features, params: Params):
+    """
+    Group features after alignment based on the reference file. This function requires
+    to reload the raw data to examine the scan-to-scan correlation between features.
+
+    Parameters
+    ----------
+    features: list
+        A list of AlignedFeature objects.
+    params: Params object
+        A Params object that contains the parameters for feature grouping.
+    """
+
+    pass
+
+def annotate_feature_groups(d, adduct_dict=None, primary_ions=None, rt_tol=0.1):
+    """
+    Assign feature grouping to features by annotating isotopes, in-source fragments, 
+    and adducts.
+
+    Parameters
+    ----------------------------------------------------------
+    d: MSData object
+        An MSData object that contains the detected rois to be grouped.
+    adduct_dict: dict
+        A dictionary that contains the adducts to be annotated. If None, the default
+        adducts will be used.
+    primary_ions: list
+        A list of possible primary ions to be considered. The primary ion has the highest 
+        intensity in the group. By default, the primary ions for
+        1. positve mode: [M+H]+, [M+Na]+, [M+NH4]+ and [M+H-H2O]+
+        2. negative mode: [M-H]-, [M-H-H2O]-
+    rt_tol: float
+        The retention time tolerance to find isotopes and in-source fragments.
+    """
+
+    # prioritize the features with higher intensity
+    d.features.sort(key=lambda x: x.peak_height, reverse=True)
+    feature_mz = np.array([f.mz for f in d.features])
+    feature_rt = np.array([f.rt for f in d.features])
+    group_to_assign = np.ones(len(d.features), dtype=bool)
+
+    feature_group_id = 0
+
+    for i, feature in enumerate(d.features):
+
+        if group_to_assign[i]:
+            continue
+        
+        # set feature group id
+        feature.feature_group_id = feature_group_id
+
+        # find isotope first
+        
+
+        # list all possible adducts and in-source fragments. if any of them is found, further find their isotopes
+        adduct_form = find_adduct_form(feature.mz, d.scans[feature.scan_idx].signals, 
+                                       d.params.ion_mode, d.params.mz_tol_ms1)
+        search_dict = generate_search_dict(adduct_form, adduct_dict, primary_ions)
+
+        # find the features that are in the same group
+        for key in search_dict.keys():
+            v1 = np.abs(feature_mz - search_dict[key]) < d.params.mz_tol_ms1
+            v2 = np.abs(feature_rt - feature.rt) < rt_tol
+            v = np.where(np.logical_and(v1, v2, group_to_assign))[0]
+
+            if len(v) == 0:
+                continue
+            else:
+                # check which has the largest scan-to-scan correlation
+                for vi in v:
+                    if scan_to_scan_correlation(feature, d.features[vi]) > d.params.ppr:
+                        group_to_assign[vi] = False
+                        d.features[vi].feature_group_id = feature_group_id
+                        # find isotopes for this ion
+
+        feature_group_id += 1
+    pass
+
+
+def annotate_feature_groups_aligned(d, adduct_dict=None, primary_ions=None, rt_tol=0.1):
+    pass
+
+
+
+def generate_search_dict(feature, adduct_form, ion_mode):
+    """
+    Generate a search dictionary for the feature grouping.
+
+    Parameters
+    ----------
+    feature: Feature object
+        The feature object to be grouped.
+    adduct_form: str
+        The adduct form of the feature.
+    ion_mode: str
+        The ionization mode. "positive" or "negative".
+
+    Returns
+    -------
+    dict
+        A dictionary that contains the possible adducts and in-source fragments.
+    """
+
+    search_dict = {}
+    if ion_mode.lower() == "positive":
+        dic = ADDUCT_POS
+    elif ion_mode.lower() == "negative":
+        dic = ADDUCT_NEG
+    
+    base_mz = feature.mz - dic['adduct_form'][0]
+
+    # possible adducts
+    for key in dic.keys():
+        if key != adduct_form:
+            search_dict[key] = base_mz*dic[key][1] + dic[key][0]
+    
+    # possible in-source fragments
+    if feature.ms2 is not None:
+        for i, p in enumerate(feature.ms2.signals):
+            search_dict[f'ISF_{i}'] = p[0]
+    
+    return search_dict
+
+
+def find_adduct_form(mz, signals, mode="positive", mz_tol=0.01):
+    """
+    Find the most likely adduct form of a feature based on its m/z and MS1 signals.
+    By default, the postive mode adducts considered are [M+H]+, [M+Na]+, [M+NH4]+, and [M+H-H2O]+, 
+    and the negative mode adducts considered are [M-H]-, [M-H-H2O]-, [M+FA]-, and [M+Ac]-.
+
+    Parameters
+    ----------
+    mz: float
+        The m/z value of the feature.
+    signals: np.array
+        The MS1 signals as [[m/z, intensity], ...]
+    mode: str
+        The ionization mode. "positive" or "negative".
+    mz_tol: float
+        The m/z tolerance to find the adduct.
+    
+    Returns
+    -------
+    str
+        The most likely adduct.
+    """
+
+    if mode.lower() == "positive":
+        adduct_dict = _adduct_pos_primary
+    elif mode.lower() == "negative":
+        adduct_dict = _adduct_neg_primary
+    else:
+        return None
+
+    diff = mz - signals[:, 0]
+    scores = np.zeros(len(adduct_dict.keys()))
+    for i, values in enumerate(adduct_dict.values()):
+        for v in values:
+            scores[i] += np.sign(np.sum(np.abs(diff - v) < mz_tol)) * signals[:,1][np.argmin(np.abs(diff - v))]
+    
+    return list(adduct_dict.keys())[np.argmax(scores)]
+    
 
 def annotate_isotope(d, mz_tol=0.015, rt_tol=0.1, valid_intensity_ratio_range=[0.001, 1.2], charge_state_range=[1,2]):
     """
-    Find isotopes.
+    A function to annotate isotopes in the MS data.
     
     Parameters
     ----------------------------------------------------------
@@ -29,7 +186,7 @@ def annotate_isotope(d, mz_tol=0.015, rt_tol=0.1, valid_intensity_ratio_range=[0
     mz_tol: float
         The m/z tolerance to find isotopes.
     rt_tol: float
-        The RT tolerance to find isotopes.
+        The retention time tolerance to find isotopes.
     valid_intensity_ratio_range: list
         The valid intensity ratio range between isotopes.
     charge_state_range: list (not used)
@@ -40,7 +197,7 @@ def annotate_isotope(d, mz_tol=0.015, rt_tol=0.1, valid_intensity_ratio_range=[0
     d.rois.sort(key=lambda x: x.mz)
 
     for r in d.rois:
-        
+
         if r.is_isotope:
             continue
 
@@ -153,7 +310,7 @@ def annotate_in_source_fragment(d, mz_tol=0.01, rt_tol=0.05):
             else:
                 v = v[0]
 
-            if peak_peak_correlation(r, d.rois[v]) > d.params.ppr:
+            if scan_to_scan_correlation(r, d.rois[v]) > d.params.ppr:
                 roi_to_label[v] = False
                 d.rois[v].is_in_source_fragment = True
                 d.rois[v].isf_parent_roi_id = r.id
@@ -220,7 +377,7 @@ def annotate_adduct(d, mz_tol=0.01, rt_tol=0.05):
             else:
                 v = v[0]
 
-            if peak_peak_correlation(r, d.rois[v]) > d.params.ppr:
+            if scan_to_scan_correlation(r, d.rois[v]) > d.params.ppr:
                 roi_to_label[v] = False
                 d.rois[v].adduct_type = adduct
                 d.rois[v].adduct_parent_roi_id = r.id
@@ -239,54 +396,68 @@ Helper functions and constants
 ==============================
 """
 
-def peak_peak_correlation(roi1, roi2):
+def scan_to_scan_correlation(feature_a, feature_b):
     """
-    A function to find the peak-peak correlation between two rois.
+    Calculate the scan-to-scan correlation between two features using Pearson correlation.
 
     Parameters
-    ----------------------------------------------------------
-    roi1: ROI object
-        An ROI object.
-    roi2: ROI object
-        An ROI object.
+    ----------
+    feature_a: Feature object
+        The first feature object.
+    feature_b: Feature object
+        The second feature object.
     
     Returns
-    ----------------------------------------------------------
-    pp_cor: float
-        The peak-peak correlation between the two rois.
+    -------
+    float
+        The scan-to-scan correlation between the two features.
     """
 
     # find the common scans in the two rois
-    common_scans = np.intersect1d(roi1.scan_idx_seq, roi2.scan_idx_seq)
+    common_idx_a = np.nonzero(np.in1d(feature_a.scan_idx_seq, feature_b.scan_idx_seq))[0]
+    common_idx_b = np.nonzero(np.in1d(feature_b.scan_idx_seq, feature_a.scan_idx_seq))[0]
 
-    if len(common_scans) < 5:
+    # if the number of common scans is less than 5, return 1
+    if len(common_idx_a) < 5:
         return 1.0
 
     # find the intensities of the common scans in the two rois
-    int1 = roi1.int_seq[np.isin(roi1.scan_idx_seq, common_scans)]
-    int2 = roi2.int_seq[np.isin(roi2.scan_idx_seq, common_scans)]
+    int1 = feature_a.signals[common_idx_a,1]
+    int2 = feature_b.signals[common_idx_b,1]
 
-    # calculate the correlation
-    # if all values are same, return 1
+    # if all values are same in either feature, return 1
+    # this is to avoid the case where the common scans are all zeros
     if np.all(int1 == int1[0]) or np.all(int2 == int2[0]):
         return 1.0
     
-    pp_cor = np.corrcoef(int1, int2)[0, 1]
-    return pp_cor
+    return np.corrcoef(int1, int2)[0, 1]
 
 
-def get_charge_state(mz_seq):
-    
+def get_charge_state(mz_seq, valid_charge_states=[1,2]):
+    """
+    A function to determine the charge state using the m/z sequence of isotopes.
+
+    Parameters
+    ----------
+    mz_seq: list
+        A list of m/z values of isotopes.
+    valid_charge_states: list
+        A list of valid charge states.
+
+    Returns
+    -------
+    int
+        The charge state of the isotopes.
+    """
+
+    # if there is only one isotope, return 1
     if len(mz_seq) < 2:
         return 1
     else:
-        mass_diff = mz_seq[1] - mz_seq[0]
-
-        # check mass diff is closer to 1 or 0.5 | note, mass_diff can be larger than 1
-        if abs(mass_diff - 1) < abs(mass_diff - 0.5):
-            return 1
-        else:
-            return 2
+        for charge in valid_charge_states:
+            if abs(mz_seq[1] - mz_seq[0] - 1.003355/charge) < 0.01:
+                return charge
+    return 1
 
 
 # could include more adducts
@@ -304,50 +475,71 @@ _ADDUCT_MASS_DIFFERENCE_NEG_AGAINST_H = {
     '[M+HCOO]-': 46.005479,
 }
 
-"""
-_adduct_pos = [
-    {'name': '[M+H]+', 'm': 1, 'charge': 1, 'mass': 1.00727645223},
-    {'name': '[M+Na]+', 'm': 1, 'charge': 1, 'mass': 22.989220702},
-    {'name': '[M+K]+', 'm': 1, 'charge': 1, 'mass': 38.9631579064},
-    {'name': '[M+NH4]+', 'm': 1, 'charge': 1, 'mass': 18.03382555335},
-    {'name': '[M-H+2Na]+', 'm': 1, 'charge': 1, 'mass': 44.97116495177},
-    {'name': '[M+H-H2O]+', 'm': 1, 'charge': 1, 'mass': -17.0032882318},
-    {'name': '[M+H-2H2O]+', 'm': 1, 'charge': 1, 'mass': -35.01385291583},
-    {'name': '[M+H-3H2O]+', 'm': 1, 'charge': 1, 'mass': -53.02441759986},
 
-    {'name': '[2M+H]+', 'm': 2, 'charge': 1, 'mass': 1.00727645223},
-    {'name': '[2M+Na]+', 'm': 2, 'charge': 1, 'mass': 22.989220702},
-    {'name': '[2M+K]+', 'm': 2, 'charge': 1, 'mass': 38.9631579064},
-    {'name': '[2M+NH4]+', 'm': 2, 'charge': 1, 'mass': 18.03382555335},
-    {'name': '[2M-H+2Na]+', 'm': 2, 'charge': 1, 'mass': 44.97116495177},
-    {'name': '[2M+H-H2O]+', 'm': 2, 'charge': 1, 'mass': -17.0032882318},
-    {'name': '[2M+H-2H2O]+', 'm': 2, 'charge': 1, 'mass': -35.01385291583},
-    {'name': '[2M+H-3H2O]+', 'm': 2, 'charge': 1, 'mass': -53.02441759986},
-
-    {'name': '[M+2H]2+', 'm': 1, 'charge': 2, 'mass': 2.01455290446},
-    {'name': '[M+H+Na]2+', 'm': 1, 'charge': 2, 'mass': 23.99649715423},
-    {'name': '[M+H+NH4]2+', 'm': 1, 'charge': 2, 'mass': 19.04110200558},
-    {'name': '[M+Ca]2+', 'm': 1, 'charge': 2, 'mass': 39.961493703},
-    {'name': '[M+Fe]2+', 'm': 1, 'charge': 2, 'mass': 55.93383917}
-]
-
-_adduct_neg = {
-    {'name': '[M-H]-', 'm': 1, 'charge': 1, 'mass': -1.00727645223},
-    {'name': '[M+Cl]-', 'm': 1, 'charge': 1, 'mass': 34.968304102},
-    {'name': '[M+Br]-', 'm': 1, 'charge': 1, 'mass': 78.91778902},
-    {'name': '[M+FA]-', 'm': 1, 'charge': 1, 'mass': 44.99710569137},
-    {'name': '[M+Ac]-', 'm': 1, 'charge': 1, 'mass': 59.01275575583},
-    {'name': '[M-H-H2O]-', 'm': 1, 'charge': 1, 'mass': -19.01784113626},
-
-    {'name': '[2M-H]-', 'm': 2, 'charge': 1, 'mass': -1.00727645223},
-    {'name': '[2M+Cl]-', 'm': 2, 'charge': 1, 'mass': 34.968304102},
-    {'name': '[2M+Br]-', 'm': 2, 'charge': 1, 'mass': 78.91778902},
-    {'name': '[2M+FA]-', 'm': 2, 'charge': 1, 'mass': 44.99710569137},
-    {'name': '[2M+Ac]-', 'm': 2, 'charge': 1, 'mass': 59.01275575583},
-    {'name': '[2M-H-H2O]-', 'm': 2, 'charge': 1, 'mass': -19.01784113626},
-
-    {'name': '[M-2H]2-', 'm': 1, 'charge': 2, 'mass': -2.01455290446},
-    {'name': '[M-H+Cl]2-', 'm': 1, 'charge': 2, 'mass': 33.96157622977},
-    {'name': '[M-H+Br]2-', 'm': 1, 'charge': 2, 'mass': 77.91106114777},
+ADDUCT_POS = {
+    '[M+H]+': (1.007276, 1),
+    '[M+NH4]+': (18.033826, 1),
+    '[M+H+CH3OH]+': (33.03349, 1),
+    '[M+Na]+': (22.989221, 1),
+    '[M+K]+': (38.963158, 1),
+    '[M+Li]+': (6.014574, 1),
+    '[M+Ag]+': (106.904548, 1),
+    '[M+H+CH3CN]+': (42.033826, 1),
+    '[M-H+2Na]+': (44.971165, 1),
+    '[M+H-H2O]+': (-17.003288, 1),
+    '[M+H-2H2O]+': (-35.01385291583, 1),
+    '[M+H-3H2O]+': (-53.02441759986, 1),
+    '[M+H+HAc]+': (61.02841, 1),
+    '[M+H+HFA]+': (47.01276, 1),
+    '[M+Ca]2+': (39.961493, 1),
+    '[M+Fe]2+': (55.93384, 1),
+    '[2M+H]+': (1.007276, 2),
+    '[2M+NH4]+': (18.033826, 2),
+    '[2M+Na]+': (22.989221, 2),
+    '[2M+H-H2O]+': (-17.003288, 2),
+    '[3M+H]+': (1.007276, 3),
+    '[3M+NH4]+': (18.033826, 3),
+    '[3M+Na]+': (22.989221, 3),
+    '[3M+H-H2O]+': (-17.003288, 3),
+    '[M+2H]2+': (0.503638, 1),
+    '[M+3H]3+': (0.335759, 1),
 }
-"""
+
+ADDUCT_NEG = {
+    '[M-H]-': (-1.007276, 1),
+    '[M+Cl]-': (34.969401, 1),
+    '[M+Br]-': (78.918886, 1),
+    '[M+FA]-': (44.998203, 1),
+    '[M+Ac]-': (59.013853, 1),
+    '[M-H-H2O]-': (-19.017841, 1),
+    '[M-H+Cl]2-': (33.962124, 1),
+    '[2M-H]-': (-1.007276, 2),
+    '[2M+Cl]-': (34.969401, 2),
+    '[2M+Br]-': (78.918886, 2),
+    '[2M+FA]-': (44.998203, 2),
+    '[2M+Ac]-': (59.013853, 2),
+    '[2M-H-H2O]-': (-19.017841, 2),
+    '[3M-H]-': (-1.007276, 3),
+    '[3M+Cl]-': (34.969401, 3),
+    '[3M+Br]-': (78.918886, 3),
+    '[3M+FA]-': (44.998203, 3),
+    '[3M+Ac]-': (59.013853, 3),
+    '[3M-H-H2O]-': (-19.017841, 3),
+    '[M-2H]2-': (-0.503638, 1),
+    '[M-3H]3-': (-0.335759, 1),
+}
+
+
+_adduct_pos_primary = {
+    '[M+H]+': [-21.981945, -17.02655, 18.010564],
+    '[M+Na]+': [21.981945, 4.955395, 39.992509],
+    '[M+NH4]+': [17.02655, -4.955395, 35.037114],
+    '[M+H-H2O]+': [-18.010564, -39.992509, -35.037114]
+}
+
+_adduct_neg_primary = {
+    '[M-H]-': [18.010565, -46.005479, -60.021129],
+    '[M-H-H2O]-': [-18.010565, -64.016044, -78.031694],
+    '[M+FA]-': [46.005479, 64.016044, -14.01565],
+    '[M+Ac]-': [60.021129, 78.031694, 14.01565]
+}

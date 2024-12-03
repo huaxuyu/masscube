@@ -11,10 +11,16 @@ import pandas as pd
 from datetime import datetime
 import json
 import gzip
+import pickle
 
 from .params import Params, find_ms_info
-from .peak_detect import find_rois, cut_roi
+from .feature_detection import detect_features, segment_feature
 
+
+"""
+Classes
+------------------------------------------------------------------------------------------------------------------------
+"""
 
 class MSData:
     """
@@ -23,29 +29,20 @@ class MSData:
     """
 
     def __init__(self):
-        
-        # file metadata
-        self.file_name = None       # File name of the raw data without extension
-        self.centroid = True        # Whether the raw data is centroid. False: profile data.
-        self.start_time = None      # Start acquisition time of the raw data
 
-        # scans
-        self.scans = []             # A list of MS scans
-        self.ms1_idx = []           # Scan indexes of MS1 spectra
-        self.ms1_rt_seq = []        # Retention times of all MS1 scans
-        self.ms2_idx = []           # Scan indexes of MS2 spectra
-
-        # parameters for data processing
-        self.params = None          # A Params object
-
-        # summarized data
-        self.bpc_int = []           # MS signal intensity array of the base peak chromatogram
-        self.rois = []              # A list of ROIs
-        self.roi_mz_seq = None      # m/z of all ROIs
-        self.roi_rt_seq = None      # Retention time of all ROIs
+        self.scans = []                 # A list of Scan objects for mass spectra
+        self.ms1_idx = []               # Scan indexes of MS1 spectra
+        self.ms1_time_arr = []          # Time of MS1 scans
+        self.ms2_idx = []               # Scan indexes of MS2 spectra
+        self.params = None              # A Params object that contains all parameters
+        self.base_peak_arr = []         # Base peak chromatogram, [[m/z, intensity], ...]
+        self.features = []              # A list of features
+        self.feature_mz_arr = None      # m/z of all ROIs
+        self.feature_rt_arr = None      # Retention time of all ROIs
 
 
-    def read_raw_data(self, file_name, params, read_ms2=True, clean_ms2=False, centroid_mz=True):
+    def read_raw_data(self, file_name, params=None, scan_levels=[1,2], centroid_mz_tol=0.005, 
+                      ms1_abs_int_tol=None, ms2_abs_int_tol=None, ms2_rel_int_tol=0.01, precursor_mz_offset=2):
         """
         Read raw data (mzML, mzXML, mzjson or compressed mzjson). Parsing of the mzML and mzXML files
         is performed using pyteomics.
@@ -56,460 +53,435 @@ class MSData:
             Name of the raw data file. Valid extensions are mzML, mzXML, mzjson and gz.
         params: Params object
             A Params object that contains the parameters.
-        read_ms2: bool
-            Whether to read MS2 scans.
-        clean_ms2: bool
-            Whether to clean MS2 scans.
-        centroid_mz: bool
-            Whether to further centroid m/z values to avoid electronic noise.
+        scan_levels: list
+            MS levels to read, default is [1, 2] for MS1 and MS2 respectively.
+        centroid_mz_tol: float
+            m/z tolerance for centroiding. Set to None to disable centroiding.
+        ms1_abs_int_tol: int
+            Abolute intensity tolerance for MS1 scans.
+        ms2_abs_int_tol: int
+            Abolute intensity tolerance for MS2 scans. The final tolerance is the maximum of
+            ms2_abs_int_tol and base signal intensity * ms2_rel_int_tol.
+        ms2_rel_int_tol: float
+            Relative intensity cutoff to the base signal for MS2 scans. Default is 0.01.
+            Set to zero to disable this filter.
+        precursor_mz_offset: float
+            To remove the precursor ion from MS2 scan. The m/z upper limit of signals 
+            in MS2 scans is calculated as precursor_mz - precursor_mz_offset.
         """
+
+        if file_name.lower().endswith(".pkl"):
+            data = pickle.load(open(file_name, "rb"))
+            self.read_ms1_pickle(data)
+            return None
+
+        # priority for parameter setting:
+        # 1. a Params object
+        # 2. parameters provided through the function
+        # 3. default parameters
+
+        if params is None:
+            params = Params()
+            ms_type, ion_mode, centroid = find_ms_info(file_name)
+            params.scan_levels = scan_levels
+            params.centroid_mz_tol = centroid_mz_tol
+            params.ms1_abs_int_tol = ms1_abs_int_tol
+            params.ms2_abs_int_tol = ms2_abs_int_tol
+            params.ms2_rel_int_tol = ms2_rel_int_tol
+            params.precursor_mz_offset = precursor_mz_offset
+            params.ms_type = ms_type
+            params.ion_mode = ion_mode
+            params.is_centroid = centroid
+        
+        # set intensity tolerance for MS1 scans if not provided
+        if params.ms1_abs_int_tol is None:
+            # 30000 for orbitrap, 1000 for other types
+            if ms_type == "orbitrap":
+                params.ms1_abs_int_tol = 30000
+            else:
+                params.ms1_abs_int_tol = 1000
+        if params.ms2_abs_int_tol is None:
+            if ms_type == "orbitrap":
+                params.ms2_abs_int_tol = 10000
+            else:
+                params.ms2_abs_int_tol = 500
 
         self.params = params
 
+        # for file name
+        self.params.file_path = file_name
+        base_name = os.path.basename(file_name)
+        self.params.file_name = base_name.split(".")[0]
+        
         if os.path.isfile(file_name):
-            # get extension from file name
-            ext = os.path.splitext(file_name)[1].lower()
-
-            if ext not in [".mzml", ".mzxml", ".mzjson", ".gz"]:
-                raise ValueError("Unsupported raw data format. Raw data must be in mzML, mzXML, mzjson or gz format.")
-
-            self.file_name = os.path.splitext(os.path.basename(file_name))[0]
-
-            self.start_time = get_start_time(file_name)
-
-            if ext.lower() == ".mzml":
+            if base_name.lower().endswith(".mzml"):
                 with mzml.MzML(file_name) as reader:
-                    self.extract_scan_mzml(reader, int_tol=params.int_tol, read_ms2=read_ms2, 
-                                           clean_ms2=clean_ms2, centroid_mz=centroid_mz)
-            elif ext.lower() == ".mzxml":
+                    self.extract_scan_mzml(scans=reader)
+                    self.params.file_format = "mzml"
+            elif base_name.lower().endswith(".mzxml"):
                 with mzxml.MzXML(file_name) as reader:
-                    self.extract_scan_mzxml(reader, int_tol=params.int_tol, read_ms2=read_ms2, 
-                                            clean_ms2=clean_ms2, centroid_mz=centroid_mz)
-            elif ext.lower() == ".mzjson":
+                    self.extract_scan_mzxml(scans=reader)
+                    self.params.file_format = "mzxml"
+            elif base_name.lower().endswith(".mzjson"):
                 with open(file_name, 'r') as f:
                     data = json.load(f)
-                    self.read_mzjson(data, int_tol=params.int_tol, read_ms2=read_ms2, 
-                                    clean_ms2=clean_ms2, centroid_mz=centroid_mz)
-            elif ext.lower() == ".gz":
+                    self.read_mzjson(data)
+                    self.params.file_format = "mzjson"
+            elif base_name.lower().endswith(".gz"):
                 with gzip.open(file_name, 'rt') as f:
                     data = json.load(f)
-                    self.read_mzjson(data, int_tol=params.int_tol, read_ms2=read_ms2, 
-                                    clean_ms2=clean_ms2, centroid_mz=centroid_mz)
+                    self.read_mzjson(data)
+                    self.params.file_format = "mzjson.gz"
+            else:
+                raise ValueError("Unsupported raw data format. " +
+                                 "Raw data must be mzML, mzXML, mzjson or mzjson.gz.")
         else:
-            print("File does not exist.")
+            print("File {} does not exist.".format(file_name))
 
 
-    def extract_scan_mzml(self, spectra, int_tol=0, read_ms2=True, clean_ms2=False, centroid_mz=True):
+    def extract_scan_mzml(self, scans):
         """
         Function to extract all scans and convert them to Scan objects.
 
         Parameters
         ----------
-        spectra: iteratable object from pyteomics mzml.MzML
+        scans: iteratable object from pyteomics mzml.MzML
             An iteratable object that contains all MS1 and MS2 scans.
-        int_tol: int
-            Abolute intensity tolerance.
-        read_ms2: bool
-            Whether to read MS2 scans.
-        clean_ms2: bool
-            Whether to clean MS2 scans.
-        centroid_mz: bool
-            Whether to further centroid m/z values to avoid electronic or artificial noise.
         """
 
-        idx = 0     # Scan number
+        if self.params is None:
+            raise ValueError("Please set the parameters before extracting scans.")
 
-        rt_unit = spectra[0]['scanList']['scan'][0]['scan start time'].unit_info
+        time_unit = scans[0]['scanList']['scan'][0]['scan start time'].unit_info
 
-        # Iterate over all scans
-        for spec in spectra:
-            # Get the retention time and convert to minute
+        for idx, spec in enumerate(scans):
+            # get level of mass spectrum
+            level = spec['ms level']
+            if level not in self.params.scan_levels:
+                continue
+
+            # convert scan time to minute
             try:
-                rt = spec['scanList']['scan'][0]['scan start time']
+                scan_time = spec['scanList']['scan'][0]['scan start time']
             except:
-                rt = spec['scanList']['scan'][0]['scan time']
+                scan_time = spec['scanList']['scan'][0]['scan time']   # not a standard format
+            if time_unit == 'second':
+                scan_time /= 60
+            # skip scans outside the defined retention time range
+            if scan_time < self.params.rt_lower_limit or scan_time > self.params.rt_upper_limit:
+                continue
+
+            signals = np.array([spec['m/z array'], spec['intensity array']], dtype=np.float32).T
+
+            # process signals based on parameters and scan level
+            if level == 1:
+                signals = clean_signals(signals, intensity_range=[self.params.ms1_abs_int_tol, np.inf])
+                if self.params.centroid_mz_tol is not None:
+                    signals = centroid_signals(signals, mz_tol=self.params.centroid_mz_tol)
+                precursor_mz = None
+                self.ms1_idx.append(idx)
+                self.ms1_time_arr.append(scan_time)
+                self.base_peak_arr.append(signals[np.argmax(signals[:, 1])])
+            else:
+                precursor_mz = spec['precursorList']['precursor'][0]['selectedIonList']['selectedIon'][0]['selected ion m/z']
+                if len(signals) == 0:
+                    int_upper = self.params.ms2_abs_int_tol
+                else:
+                    int_upper = max(self.params.ms2_abs_int_tol, np.max(signals[:, 1]) * self.params.ms2_rel_int_tol)
+                signals = clean_signals(signals, mz_range=[0, precursor_mz - self.params.precursor_mz_offset],
+                                        intensity_range=[int_upper, np.inf])
+                if self.params.centroid_mz_tol is not None:
+                    signals = centroid_signals(signals, mz_tol=self.params.centroid_mz_tol)
+                self.ms2_idx.append(idx)
             
-            if rt_unit == 'second':
-                rt = rt / 60
+            self.scans.append(Scan(level=level, id=idx, scan_time=scan_time, signals=signals, 
+                                   precursor_mz=precursor_mz))
 
-            # Check if the retention time is within the range
-            if self.params.rt_range[0] < rt < self.params.rt_range[1]:
-                if spec['ms level'] == 1:
-                    temp_scan = Scan(level=1, scan=idx, rt=rt)
-                    mz_array = np.array(spec['m/z array'], dtype=np.float64)
-                    int_array = np.array(spec['intensity array'], dtype=np.int64)
-                    mz_array = mz_array[int_array > int_tol]
-                    int_array = int_array[int_array > int_tol]
-
-                    if len(mz_array) == 0:
-                        continue
-
-                    if centroid_mz:
-                        mz_array, int_array = centroid_mz_data(mz_array, int_array)
-
-                    temp_scan.add_info_by_level(mz_seq=mz_array, int_seq=int_array)
-                    self.ms1_idx.append(idx)
-
-                    # update base peak chromatogram
-                    self.bpc_int.append(np.max(int_array))
-                    self.ms1_rt_seq.append(rt)
-
-                elif spec['ms level'] == 2 and read_ms2:
-                    temp_scan = Scan(level=2, scan=idx, rt=rt)
-                    precursor_mz = spec['precursorList']['precursor'][0]['selectedIonList']['selectedIon'][0]['selected ion m/z']
-                    peaks = np.array([spec['m/z array'], spec['intensity array']], dtype=np.float64).T
-                    temp_scan.add_info_by_level(precursor_mz=precursor_mz, peaks=peaks)
-                    if clean_ms2:
-                        _clean_ms2(temp_scan)
-                    self.ms2_idx.append(idx)
-                
-                self.scans.append(temp_scan)
-                idx += 1
-        
-        self.ms1_rt_seq = np.array(self.ms1_rt_seq)
+        self.ms1_time_arr = np.array(self.ms1_time_arr)
+        self.base_peak_arr = np.array(self.base_peak_arr)
 
 
-    def extract_scan_mzxml(self, spectra, int_tol=0, read_ms2=True, clean_ms2=False, centroid_mz=True):
+    def extract_scan_mzxml(self, scans):
         """
         Function to extract all scans and convert them to Scan objects.
 
         Parameters
-        ----------------------------------------------------------
-        spectra: pyteomics object
+        ----------
+        scans: iteratable object from pyteomics mzxml.MzXML
             An iteratable object that contains all MS1 and MS2 scans.
-        int_tol: int
-            Abolute intensity tolerance.
-        read_ms2: bool
-            Whether to read MS2 scans.
-        clean_ms2: bool
-            Whether to clean MS2 scans.
-        centroid_mz: bool
-            Whether to further centroid m/z values to avoid electronic or artificial noise.
         """
 
-        idx = 0     # Scan number
-        rt_unit = spectra[0]["retentionTime"].unit_info
+        if self.params is None:
+            raise ValueError("Please set the parameters before extracting scans.")
+        
+        time_unit = scans[0]["retentionTime"].unit_info
 
-        # Iterate over all scans
-        for spec in spectra:
-            # Get the retention time and convert to minute
-            rt = spec["retentionTime"]    # retention time of mzXML is in minute
+        for idx, spec in enumerate(scans):
+            # get level of mass spectrum
+            level = spec['msLevel']
+            if level not in self.params.scan_levels:
+                continue
 
-            if rt_unit == 'second':
-                rt = rt / 60
+            # convert scan time to minute
+            scan_time = spec["retentionTime"]
+            if time_unit == 'second':
+                scan_time = scan_time / 60
+            # skip scans outside the defined retention time range
+            if scan_time < self.params.rt_lower_limit or scan_time > self.params.rt_upper_limit:
+                continue
 
-            # Check if the retention time is within the range
-            if self.params.rt_range[0] < rt < self.params.rt_range[1]:
-                if spec['msLevel'] == 1:
-                    temp_scan = Scan(level=1, scan=idx, rt=rt)
-                    mz_array = np.array(spec['m/z array'], dtype=np.float64)
-                    int_array = np.array(spec['intensity array'], dtype=np.int64)
-
-                    mz_array = mz_array[int_array > int_tol]
-                    int_array = int_array[int_array > int_tol]
-
-                    if centroid_mz:
-                        mz_array, int_array = centroid_mz_data(mz_array, int_array)
-
-                    temp_scan.add_info_by_level(mz_seq=mz_array, int_seq=int_array)
-                    self.ms1_idx.append(idx)
-
-                    # update base peak chromatogram
-                    self.bpc_int.append(np.max(int_array))
-                    self.ms1_rt_seq.append(rt)
-
-                elif spec['msLevel'] == 2 and read_ms2:
-                    temp_scan = Scan(level=2, scan=idx, rt=rt)
-                    precursor_mz = spec['precursorMz'][0]['precursorMz']
-                    peaks = np.array([spec['m/z array'], spec['intensity array']], dtype=np.float64).T
-                    temp_scan.add_info_by_level(precursor_mz=precursor_mz, peaks=peaks)
-                    if clean_ms2:
-                        _clean_ms2(temp_scan)
-                    self.ms2_idx.append(idx)
-                
-                self.scans.append(temp_scan)
-                idx += 1
-
-        self.ms1_rt_seq = np.array(self.ms1_rt_seq)
-    
-
-    def read_mzjson(self, data, int_tol=0, read_ms2=True, clean_ms2=False, centroid_mz=False):
-        """
-        Function to read mzjson file.
-
-        Parameters
-        ----------------------------------------------------------
-        data: dict
-            Dictionary from a mzjson file.
-        int_tol: int
-            Abolute intensity tolerance.
-        read_ms2: bool
-            Whether to read MS2 scans.
-        clean_ms2: bool
-            Whether to clean MS2 scans.
-        centroid_mz: bool
-            Whether to further centroid m/z values to avoid electronic or artificial noise.
-        """
-
-        self.file_name = data['metadata']['name']
-        self.start_time = data['metadata']['timestamp']
-
-        for idx, scan in enumerate(data['scans']):
-            # note: the unit for retention time is minute in mzjson
-            if scan['level'] == 1:
-                temp_scan = Scan(level=1, scan=idx, rt=scan['time'])
-                mz_array = np.array(scan['mz'], dtype=np.float64)
-                int_array = np.array([float(x) for x in scan['intensity']], dtype=np.int64)
-                mz_array = mz_array[int_array > int_tol]
-                int_array = int_array[int_array > int_tol]
-
-                if centroid_mz:
-                    mz_array, int_array = centroid_mz_data(mz_array, int_array)
-
-                temp_scan.add_info_by_level(mz_seq=mz_array, int_seq=int_array)
+            signals = np.array([spec['m/z array'], spec['intensity array']], dtype=np.float32).T
+            
+            # process signals based on parameters and scan level
+            if level == 1:
+                signals = clean_signals(signals, intensity_range=[self.params.ms1_abs_int_tol, np.inf])
+                if self.params.centroid_mz_tol is not None:
+                    signals = centroid_signals(signals, mz_tol=self.params.centroid_mz_tol)
+                precursor_mz = None
                 self.ms1_idx.append(idx)
-
-                # update base peak chromatogram
-                self.bpc_int.append(np.max(int_array))
-                self.ms1_rt_seq.append(scan['time'])
-
-            elif scan['level'] == 2 and read_ms2:
-                temp_scan = Scan(level=2, scan=idx, rt=scan['time'])
-                precursor_mz = scan['precursor_mz']
-                mz_array = np.array(scan['mz'], dtype=np.float64)
-                int_array = np.array([float(x) for x in scan['intensity']], dtype=np.int64)
-                peaks = np.array([mz_array, int_array], dtype=np.float64).T
-                temp_scan.add_info_by_level(precursor_mz=precursor_mz, peaks=peaks)
-                if clean_ms2:
-                    _clean_ms2(temp_scan)
+                self.ms1_time_arr.append(scan_time)
+                self.base_peak_arr.append(signals[np.argmax(signals[:, 1])])
+            else:
+                precursor_mz = spec['precursorMz'][0]['precursorMz']
+                int_upper = max(self.params.ms2_abs_int_tol, np.max(signals[:, 1]) * self.params.ms2_rel_int_tol)
+                signals = clean_signals(signals, mz_range=[0, precursor_mz - self.params.precursor_mz_offset],
+                                        intensity_range=[int_upper, np.inf])
+                if self.params.centroid_mz_tol is not None:
+                    signals = centroid_signals(signals, mz_tol=self.params.centroid_mz_tol)
                 self.ms2_idx.append(idx)
 
-            self.scans.append(temp_scan)
+            self.scans.append(Scan(level=level, id=idx, scan_time=scan_time, signals=signals, 
+                                   precursor_mz=precursor_mz))
+        
+        self.ms1_time_arr = np.array(self.ms1_time_arr)
+        self.base_peak_arr = np.array(self.base_peak_arr)
 
-        self.ms1_rt_seq = np.array(self.ms1_rt_seq)
-    
-    
-    def drop_ion_by_int(self, int_tol=None):
+
+    def drop_ms1_ions_by_intensity(self, int_tol):
         """
-        Function to drop ions by intensity.
+        Function to drop ions in all MS1 scans by intensity threshold.
 
         Parameters
-        ----------------------------------------------------------
+        ----------
         int_tol: int
-            Abolute intensity tolerance. If None, the default value in the params object will be used.
+            Abolute intensity tolerance.
         """
-
-        if int_tol is None:
-            int_tol = self.params.int_tol
 
         for idx in self.ms1_idx:
-            self.scans[idx].mz_seq = self.scans[idx].mz_seq[self.scans[idx].int_seq > int_tol]
-            self.scans[idx].int_seq = self.scans[idx].int_seq[self.scans[idx].int_seq > int_tol]
+            self.scans[idx].signals = self.scans[idx].signals[self.scans[idx].signals[:, 1] > int_tol]
 
+    """
+    For data processing including feature detection, feature segmentation, feature summarization
+    --------------------------------------------------------------------------------------------
+    """
 
-    def find_rois(self):
+    def detect_features(self):
         """
-        Function to find region of interests (ROIs) using MS1 scans.
-        """
-
-        self.rois = find_rois(self)
-
-        for roi in self.rois:
-            # gaussian similarity and asymmetry factor will be calculated later if needed
-            roi.sum_roi(cal_g_score=False, cal_a_score=False)
-        
-        self.rois.sort(key=lambda x: x.mz)
-
-
-    def cut_rois(self):
-        """
-        Function to segment ROIs by edge detection.
+        Run feature detection. Parameters are specified in self.params (Params object).
         """
 
-        self.rois = [cut_roi(r, int_tol=self.params.int_tol) for r in self.rois]
-        tmp = []
-        for roi in self.rois:
-            tmp.extend(roi)
-        self.rois = tmp
+        self.features = detect_features(self)
 
 
-    def summarize_roi(self, cal_g_score=True, cal_a_score=True):
+    def segment_features(self, iteration=2):
         """
-        Function to process ROIs.
+        Function to segment features by edge detection. Parameters are specified in self.params 
+        (Params object).
 
         Parameters
-        ----------------------------------------------------------
+        ----------
+        iteration: int
+            Number of iterations to segment features.
+        """
+
+        distance = int(0.05/np.mean(np.diff(self.ms1_time_arr)))
+
+        for _ in range(iteration):
+            self.features = [segment_feature(feature, peak_height_tol=self.params.ms1_abs_int_tol*3, distance=distance) for feature in self.features]
+            # flatten the list
+            self.features = [item for sublist in self.features for item in sublist]
+
+
+    def summarize_features(self, cal_g_score=True, cal_a_score=True):
+        """
+        Function to process features to calculate the summary statistics.
+
+        Parameters
+        ----------
         cal_g_score: bool
             Whether to calculate Gaussian similarity.
         cal_a_score: bool
             Whether to calculate asymmetry factor.
         """      
 
-        for roi in self.rois:
-            roi.sum_roi(cal_g_score, cal_a_score)
+        for feature in self.features:
+            feature.summarize(g_score=cal_g_score, a_score=cal_a_score)
 
-        # sort rois by m/z
-        self.rois.sort(key=lambda x: x.mz)
+        # sort features by m/z
+        self.features.sort(key=lambda x: x.mz)
 
-        # index the rois
-        for idx in range(len(self.rois)):
-            self.rois[idx].id = idx
+        # index the features
+        for idx in range(len(self.features)):
+            self.features[idx].id = idx
 
-        # extract mz and rt of all rois for further use (feature grouping)
-        self.roi_mz_seq = np.array([roi.mz for roi in self.rois])
-        self.roi_rt_seq = np.array([roi.rt for roi in self.rois])
+        # extract mz and rt of all features for further use (feature grouping)
+        self.feature_mz_arr = np.array([feature.mz for feature in self.features])
+        self.feature_rt_arr = np.array([feature.rt for feature in self.features])
 
-        # allocate ms2 to rois
-        self.allocate_ms2_to_rois()
+        # allocate ms2 to features
+        self.allocate_ms2_to_features()
 
-        # find best ms2 for each roi
-        for roi in self.rois:
-            if len(roi.ms2_seq) > 0:
-                roi.best_ms2 = find_best_ms2(roi.ms2_seq)
-    
+        # find best ms2 for each feature
+        for feature in self.features:
+            if len(feature.ms2_seq) > 0:
+                feature.ms2 = find_best_ms2(feature.ms2_seq)
 
-    def allocate_ms2_to_rois(self):
+
+    def allocate_ms2_to_features(self, mz_tol=0.015):
         """
         Function to allocate MS2 scans to ROIs.
+
+        Parameters
+        ----------
+        mz_tol: float
+            m/z tolerance to match the precursor m/z of MS2 scans to features.
         """
 
         for i in self.ms2_idx:
-            if len(self.scans[i].peaks) == 0:
+            if len(self.scans[i].signals) == 0:
                 continue
-            idx = np.where(np.abs(self.roi_mz_seq - self.scans[i].precursor_mz) < 0.015)[0]
-            matched_rois = []
+            idx = np.where(np.abs(self.feature_mz_arr - self.scans[i].precursor_mz) < mz_tol)[0]
+            matched_features = []
             for j in idx:
-                if self.rois[j].rt_seq[0] < self.scans[i].rt < self.rois[j].rt_seq[-1]:
-                    matched_rois.append(self.rois[j])
-            if len(matched_rois) > 0:
-                # assign ms2 to the roi with the highest peak height
-                matched_rois[np.argmax([roi.peak_height for roi in matched_rois])].ms2_seq.append(self.scans[i])
+                if self.features[j].rt_seq[0] < self.scans[i].time < self.features[j].rt_seq[-1]:
+                    matched_features.append(self.features[j])
+            if len(matched_features) == 1:
+                matched_features[0].ms2_seq.append(self.scans[i])
+            elif len(matched_features) > 1:
+                # assign ms2 to the feature with the highest peak height
+                matched_features[np.argmax([feature.peak_height for feature in matched_features])].ms2_seq.append(self.scans[i])
 
 
-    def drop_rois_without_ms2(self):
+    def drop_features_without_ms2(self):
         """
-        Function to drop ROIs without MS2.
-        """
-
-        self.rois = [roi for roi in self.rois if len(roi.ms2_seq) > 0]
-
-
-    def drop_rois_by_length(self, length=5):
-        """
-        Function to drop ROIs by length.
+        Function to drop features without MS2 scans.
         """
 
-        self.rois = [roi for roi in self.rois if roi.length >= length]
+        self.features = [feature for feature in self.features if len(feature.ms2_seq) > 0]
 
 
-    def discard_isotopes(self):
+    def drop_features_by_length(self, length=5):
         """
-        Function to discard isotope peaks.
+        Function to drop features by length (number of non-zero scans).
         """
 
-        self.rois = [roi for roi in self.rois if not roi.is_isotope]
+        self.features = [feature for feature in self.features if feature.length >= length]
 
-        for idx in range(len(self.rois)):
-            self.rois[idx].id = idx
+
+    def drop_isotope_features(self):
+        """
+        Function to drop features annotated as isotopes.
+        """
+
+        self.features = [feature for feature in self.features if not feature.is_isotope]
     
 
-    def plot_bpc(self, rt_range=None, label_name=False, output_dir=None):
+    def drop_in_source_fragment_features(self):
+        """
+        Function to discard in-source fragments.
+        """
+
+        self.features = [feature for feature in self.features if not feature.is_in_source_fragment]
+    
+
+    """
+    For data visualization and output
+    --------------------------------------------------------------------------------------------
+    """
+
+    def plot_bpc(self, time_range=None, label_name=True, output_dir=None):
         """
         Function to plot base peak chromatogram.
 
         Parameters
-        ----------------------------------------------------------
-        rt_range: list
-            Retention time range [start, end]. The unit is minute.
+        ----------
+        time_range: list
+            Time range [start, end] to plot the BPC. The unit is minute.
         label_name: bool
-            True: show the file name on the plot.
+            Whether to show the file name on the plot.
         output_dir: str
             Output directory of the plot. If specified, the plot will be saved to the directory.
             If None, the plot will be shown.
         """
 
-        if rt_range is not None:
-            x = [rt for rt in self.ms1_rt_seq if rt > rt_range[0] and rt < rt_range[1]]
-            y = [intensity for rt, intensity in zip(self.ms1_rt_seq, self.bpc_int) if rt > rt_range[0] and rt < rt_range[1]]
-
-        else:
-            x = self.ms1_rt_seq
-            y = self.bpc_int
-
         plt.figure(figsize=(10, 3))
         plt.rcParams['font.size'] = 14
         plt.rcParams['font.family'] = 'Arial'
-        plt.plot(x, y, linewidth=1, color="black")
         plt.xlabel("Retention Time (min)", fontsize=18, fontname='Arial')
         plt.ylabel("Intensity", fontsize=18, fontname='Arial')
         plt.xticks(fontsize=14, fontname='Arial')
         plt.yticks(fontsize=14, fontname='Arial')
+
+        if time_range is None:
+            plt.plot(self.ms1_time_arr, self.base_peak_arr[:, 1], linewidth=1, color="black")
+        else:
+            v = (self.ms1_time_arr > time_range[0]) & (self.ms1_time_arr < time_range[1])
+            plt.plot(self.ms1_time_arr[v], self.base_peak_arr[v, 1], linewidth=1, color="black")
+
         if label_name:
-            plt.text(self.ms1_rt_seq[0], np.max(self.bpc_int)*0.9, self.file_name, fontsize=12, fontname='Arial', color="gray")
+            plt.text(self.ms1_time_arr[0], np.max(self.base_peak_arr[:,1])*0.9, self.params.file_name, fontsize=12, fontname='Arial', color="gray")
 
         if output_dir is not None:
             plt.savefig(output_dir, dpi=300, bbox_inches="tight")
             plt.close()
         else:
             plt.show()
-        
-    
-    def output_single_file(self, user_defined_output_path=None):
+
+
+    def output_single_file(self, output_path=None):
         """
-        Function to generate a report for rois in csv format.
+        Function to generate a report for features in csv format.
 
         Parameters
-        ----------------------------------------------------------
-        user_defined_output_path: str
+        ----------
+        output_path: str
             User defined output path.
         """
 
         result = []
 
-        for roi in self.rois:
-            iso_dist = ""
-            for i in range(len(roi.isotope_mz_seq)):
-                iso_dist += str(np.round(roi.isotope_mz_seq[i], decimals=4)) + ";" + str(np.round(roi.isotope_int_seq[i], decimals=0)) + "|"
-            iso_dist = iso_dist[:-1]
-
+        for f in self.features:
+            iso = ""
             ms2 = ""
-            if roi.best_ms2 is not None:
-                for i in range(len(roi.best_ms2.peaks)):
-                    ms2 += str(np.round(roi.best_ms2.peaks[i, 0], decimals=4)) + ";" + str(np.round(roi.best_ms2.peaks[i, 1], decimals=0)) + "|"
+            if f.ms2 is not None:
+                for s in f.ms2.signals:
+                    ms2 += str(np.round(s[0], decimals=4)) + ";" + str(np.round(s[1], decimals=0)) + "|"
                 ms2 = ms2[:-1]
 
-            temp = [roi.id, roi.mz.__round__(4), roi.rt.__round__(3), roi.length, roi.rt_seq[0],
-                    roi.rt_seq[-1], roi.peak_area, roi.peak_height, roi.gaussian_similarity.__round__(2), 
-                    roi.noise_level.__round__(2), roi.asymmetry_factor.__round__(2), roi.charge_state, roi.is_isotope, str(roi.isotope_id_seq)[1:-1], iso_dist,
-                    roi.is_in_source_fragment, roi.isf_parent_roi_id, str(roi.isf_child_roi_id)[1:-1],
-                    roi.adduct_type, roi.adduct_parent_roi_id, str(roi.adduct_child_roi_id)[1:-1],
-                    ]
-            
-            temp.extend([ms2, roi.annotation, roi.formula, roi.similarity, roi.matched_peak_number, roi.smiles, roi.inchikey])
+            temp = [f.feature_group_id, f.id, f.mz.__round__(4), f.rt.__round__(3), f.adduct_type, f.is_isotope, 
+                    f.is_in_source_fragment, f.peak_area, f.peak_height, f.top_average, f.gaussian_similarity.__round__(2), 
+                    f.noise_score.__round__(2), f.asymmetry_factor.__round__(2), f.charge_state, iso, f.rt_seq[0].__round__(3),
+                    f.rt_seq[-1].__round__(3), f.length, ms2, f.matched_ms2, f.search_mode, f.annotation, f.formula, f.similarity,
+                    f.matched_precursor_mz, f.matched_peak_number, f.smiles, f.inchikey]
 
             result.append(temp)
 
         # convert result to a pandas dataframe
-        columns = [ "ID", "m/z", "RT", "length", "RT_start", "RT_end", "peak_area", "peak_height",
-                    "Gaussian_similarity", "noise_level", "asymmetry_factor", "charge", "is_isotope", 
-                    "isotope_IDs", "isotopes", "is_in_source_fragment", "ISF_parent_ID", 
-                    "ISF_child_ID", "adduct", "adduct_base_ID", "adduct_other_ID"]
-                    
-        
-        columns.extend(["MS2", "annotation", "formula", "similarity", "matched_peak_number", "SMILES", "InChIKey"])
+        columns = [ "group_ID", "feature_ID", "m/z", "RT", "adduct", "is_isotope", "is_in_source_fragment", "peak_area", "peak_height", "top_average",
+                    "Gaussian_similarity", "noise_score", "asymmetry_factor", "charge", "isotopes", "RT_start", "RT_end", "total_scans",
+                    "MS2", "matched_MS2", "search_mode", "annotation", "formula", "similarity", "matched_mz", "matched_peak_number", "SMILES", "InChIKey"]
 
         df = pd.DataFrame(result, columns=columns)
         
         # save the dataframe to csv file
-        if user_defined_output_path:
-            path = user_defined_output_path
+        if output_path is None:
+            output_path = self.params.single_file_dir
+        if output_path is not None:
+            path = os.path.join(output_path, self.params.file_name + ".txt")
+            df.to_csv(path, index=False, sep="\t")
         else:
-            path = os.path.join(self.params.single_file_dir)
-            if not os.path.exists(path):
-                os.makedirs(path)
-            path = os.path.join(self.params.single_file_dir, self.file_name + ".txt")
-        df.to_csv(path, index=False, sep="\t")
-    
+            print("No output path for single file report. Please set the output path.")
+
 
     def get_eic_data(self, target_mz, target_rt=None, mz_tol=0.005, rt_tol=0.3, rt_range=None):
         """
@@ -530,102 +502,100 @@ class MSData:
 
         Returns
         -------
-        eic_rt: numpy array
+        eic_time_arr: numpy array
             Retention time of the EIC.
-        eic_int: numpy array
-            Intensity of the EIC.
-        eic_mz: numpy array
-            m/z of the EIC.
-        eic_scan_idx: numpy array
+        eic_signals: numpy array
+            m/z and intensity of the EIC organized as [[m/z, intensity], ...].
+        eic_scan_idx_arr: numpy array
             Scan index of the EIC.
         """
 
-        eic_rt = []
-        eic_int = []
-        eic_mz = []
-        eic_scan_idx = []
+        eic_time_arr = []
+        eic_signals = []
+        eic_scan_idx_arr = []
 
-        if target_rt is not None:
-            rt_range = [target_rt - rt_tol, target_rt + rt_tol]
-        elif rt_range is None:
-            rt_range = [0, np.inf]
+        if rt_range is None:
+            if target_rt is None:
+                rt_range = [0, np.inf]
+            else:
+                rt_range = [target_rt - rt_tol, target_rt + rt_tol]
 
         for i in self.ms1_idx:
-            if self.scans[i].rt > rt_range[0] and self.scans[i].rt < rt_range[1]:
-                mz_diff = np.abs(self.scans[i].mz_seq - target_mz)
-                if len(mz_diff)>0 and np.min(mz_diff) < mz_tol:
-                    eic_rt.append(self.scans[i].rt)
-                    eic_int.append(self.scans[i].int_seq[np.argmin(mz_diff)])
-                    eic_mz.append(self.scans[i].mz_seq[np.argmin(mz_diff)])
-                    eic_scan_idx.append(i)
+            if rt_range[0] < self.scans[i].time < rt_range[1]:
+                mz_diff = np.abs(self.scans[i].signals[:, 0] - target_mz)
+                # if scan is not empty and at least one ion is matched
+                if len(mz_diff) > 0 and np.min(mz_diff) < mz_tol:
+                    eic_time_arr.append(self.scans[i].time)
+                    eic_signals.append(self.scans[i].signals[np.argmin(mz_diff)])
+                    eic_scan_idx_arr.append(i)
                 else:
-                    eic_rt.append(self.scans[i].rt)
-                    eic_int.append(0)
-                    eic_mz.append(0)
-                    eic_scan_idx.append(i)
+                    eic_time_arr.append(self.scans[i].time)
+                    eic_signals.append([target_mz, 0])
+                    eic_scan_idx_arr.append(i)
 
-            if self.scans[i].rt > rt_range[1]:
+            if self.scans[i].time > rt_range[1]:
                 break
         
-        eic_rt = np.array(eic_rt)
-        eic_int = np.array(eic_int)
-        eic_mz = np.array(eic_mz)
-        eic_scan_idx = np.array(eic_scan_idx)
+        eic_time_arr = np.array(eic_time_arr, dtype=np.float32)
+        eic_signals = np.array(eic_signals, dtype=np.float32)
+        eic_scan_idx_arr = np.array(eic_scan_idx_arr, dtype=np.int32)
 
-        return eic_rt, eic_int, eic_mz, eic_scan_idx    
+        return eic_time_arr, eic_signals, eic_scan_idx_arr
     
 
-    def plot_eics(self, target_mz_seq, target_rt=None, mz_tol=0.005, rt_tol=0.3, 
-                 output=None, show_rt_line=True, ylim=None, return_eic_data=False):
+    def plot_eics(self, target_mz_arr, target_rt=None, mz_tol=0.005, rt_tol=0.3, rt_range=None,
+                  output_file_name=None, show_target_rt=True, ylim=None, return_eic_data=False):
         """
-        Function to plot EIC of a target m/z.
+        Function to plot multiple EICs in a single plot.
 
         Parameters
         ----------
-        target_mz: float
-            Target m/z.
+        target_mz_arr: list
+            A list of target m/z.
         target_rt: float
             Target retention time.
         mz_tol: float
             m/z tolerance.
         rt_tol: float
             Retention time tolerance.
-        output: str
+        rt_range: list
+            Retention time range [start, end]. The unit is minute.
+        output_file_name: str
             Output file name. If not specified, the plot will be shown.
-        show_rt_line: bool
-            True: show the target retention time.
-            False: do not show the target retention time.
+        show_target_rt: bool
+            Whether to show the target retention time as a vertical line.
+        ylim: list
+            [min, max] of the y-axis.
         return_eic_data: bool   
-            True: return the EIC data.
-            False: do not return the EIC data.
+            Whether to return the EIC data as a list of [eic_time_arr, eic_signals, eic_scan_idx].
         """
 
         plt.figure(figsize=(10, 3))
         plt.rcParams['font.size'] = 14
         plt.rcParams['font.family'] = 'Arial'
-
-        eic_data = []
-        for target_mz in target_mz_seq:
-        # get the eic data
-            eic_rt, eic_int, _, _ = self.get_eic_data(target_mz, target_rt, mz_tol, rt_tol)
-            plt.plot(eic_rt, eic_int, linewidth=1)
-            eic_data.append({
-                "mz": target_mz,
-                "eic_rt": eic_rt,
-                "eic_int": eic_int
-            })
         plt.xlabel("Retention Time (min)", fontsize=18, fontname='Arial')
         plt.ylabel("Intensity", fontsize=18, fontname='Arial')
-        plt.xticks(fontsize=14, fontname='Arial')
-        plt.yticks(fontsize=14, fontname='Arial')
+
         if ylim is not None:
             plt.ylim(ylim[0], ylim[1])
-        if target_rt is not None and show_rt_line:
+        if target_rt is not None and show_target_rt:
             plt.axvline(x = target_rt, color = 'b', linestyle = '--', linewidth=1)
+        
+        if np.ndim(target_mz_arr) == 1:
+            eic_data = []
+            for target_mz in target_mz_arr:
+                # get the eic data
+                eic_time_arr, eic_signals, eic_scan_idx_arr = self.get_eic_data(target_mz, target_rt, mz_tol, rt_tol, rt_range)
+                plt.plot(eic_time_arr, eic_signals[:, 1], linewidth=1)
+                eic_data.append([eic_time_arr, eic_signals, eic_scan_idx_arr])
+        elif np.ndim(target_mz_arr) == 0:
+            eic_time_arr, eic_signals, eic_scan_idx_arr = self.get_eic_data(target_mz_arr, target_rt, mz_tol, rt_tol, rt_range)
+            plt.plot(eic_time_arr, eic_signals[:, 1], linewidth=1, color="black")
+            eic_data = [eic_time_arr, eic_signals, eic_scan_idx_arr]
 
-        if output is not None:
+        if output_file_name is not None:
             try:
-                plt.savefig(output, dpi=300, bbox_inches="tight")
+                plt.savefig(output_file_name, dpi=300, bbox_inches="tight")
                 plt.close()
             except:
                 print("Invalid output path.")
@@ -634,62 +604,6 @@ class MSData:
 
         if return_eic_data:
             return eic_data
-    
-
-    def plot_eic(self, target_mz, target_rt=None, mz_tol=0.005, rt_tol=0.3, 
-                 output=None, show_rt_line=True, ylim=None, return_eic_data=False):
-        """
-        Function to plot EIC of a target m/z.
-
-        Parameters
-        ----------
-        target_mz: float
-            Target m/z.
-        target_rt: float
-            Target retention time.
-        mz_tol: float
-            m/z tolerance.
-        rt_tol: float
-            Retention time tolerance.
-        output: str
-            Output file name. If not specified, the plot will be shown.
-        show_rt_line: bool
-            True: show the target retention time.
-            False: do not show the target retention time.
-        ylim: list
-            [min, max] of the y-axis.
-        return_eic_data: bool   
-            True: return the EIC data.
-            False: do not return the EIC data.
-        """
-
-        # get the eic data
-        eic_rt, eic_int, _, _ = self.get_eic_data(target_mz, target_rt, mz_tol, rt_tol)
-
-        plt.figure(figsize=(10, 3))
-        plt.rcParams['font.size'] = 14
-        plt.rcParams['font.family'] = 'Arial'
-        plt.plot(eic_rt, eic_int, linewidth=1, color="black")
-        plt.xlabel("Retention Time (min)", fontsize=18, fontname='Arial')
-        plt.ylabel("Intensity", fontsize=18, fontname='Arial')
-        plt.xticks(fontsize=14, fontname='Arial')
-        plt.yticks(fontsize=14, fontname='Arial')
-        if ylim is not None:
-            plt.ylim(ylim[0], ylim[1])
-        if target_rt is not None and show_rt_line:
-            plt.axvline(x = target_rt, color = 'b', linestyle = '--', linewidth=1)
-
-        if output is not None:
-            try:
-                plt.savefig(output, dpi=300, bbox_inches="tight")
-                plt.close()
-            except:
-                print("Invalid output path.")
-        else:
-            plt.show()
-
-        if return_eic_data:
-            return eic_rt, eic_int
         
     
     def find_ms2_by_mzrt(self, mz_target, rt_target, mz_tol=0.01, rt_tol=0.3, return_best=False):
@@ -713,22 +627,12 @@ class MSData:
         matched_ms2 = []
 
         for id in self.ms2_idx:
-            rt = self.scans[id].rt
-
-            if rt < rt_target - rt_tol:
-                continue
-            
-            mz = self.scans[id].precursor_mz
-            
-            if abs(mz - mz_target) < mz_tol and abs(rt - rt_target) < rt_tol:
+            if abs(self.scans[id].time - rt_target) < rt_tol and abs(self.scans[id].precursor_mz - mz_target) < mz_tol:
                 matched_ms2.append(self.scans[id])
-        
-            if rt > rt_target + rt_tol:
-                break
 
         if return_best:
             if len(matched_ms2) > 1:
-                total_ints = [np.sum(ms2.peaks[:,1]) for ms2 in matched_ms2]
+                total_ints = [np.sum(ms2.signals[:,1]) for ms2 in matched_ms2]
                 return matched_ms2[np.argmax(total_ints)]
             elif len(matched_ms2) == 1:
                 return matched_ms2[0]
@@ -738,9 +642,9 @@ class MSData:
             return matched_ms2
         
 
-    def find_roi_by_mzrt(self, mz_target, rt_target=None, mz_tol=0.01, rt_tol=0.3):
+    def find_feature_by_mzrt(self, mz_target, rt_target=None, mz_tol=0.01, rt_tol=0.3):
         """
-        Function to find roi by precursor m/z and retention time.
+        Function to find feature by precursor m/z and retention time.
 
         Parameters
         ----------------------------------------------------------
@@ -755,15 +659,15 @@ class MSData:
         """
 
         if rt_target is None:
-            tmp = np.abs(self.roi_mz_seq - mz_target) < mz_tol
-            found_roi = [self.rois[i] for i in np.where(tmp)[0]]
+            tmp = np.abs(self.feature_mz_arr - mz_target) < mz_tol
+            found_feature = [self.features[i] for i in np.where(tmp)[0]]
         else:
-            tmp1 = np.abs(self.roi_mz_seq - mz_target) < mz_tol
-            tmp2 = np.abs(self.roi_rt_seq - rt_target) < rt_tol
+            tmp1 = np.abs(self.feature_mz_arr - mz_target) < mz_tol
+            tmp2 = np.abs(self.feature_rt_arr - rt_target) < rt_tol
             tmp = np.logical_and(tmp1, tmp2)
-            found_roi = [self.rois[i] for i in np.where(tmp)[0]]
+            found_feature = [self.features[i] for i in np.where(tmp)[0]]
             
-        return found_roi
+        return found_feature
     
 
     def find_ms1_scan_by_rt(self, rt_target):
@@ -776,7 +680,7 @@ class MSData:
             Retention time.
         """
 
-        idx = np.argmin(np.abs(self.ms1_rt_seq - rt_target))
+        idx = np.argmin(np.abs(self.ms1_time_arr - rt_target))
 
         return self.scans[self.ms1_idx[idx]]
     
@@ -791,19 +695,19 @@ class MSData:
             A function to correct retention time.
         """
 
-        all_rts = np.array([s.rt for s in self.scans])
+        all_rts = np.array([s.time for s in self.scans])
         all_rts = f(all_rts)
         for i in range(len(self.scans)):
-            self.scans[i].rt = all_rts[i]
+            self.scans[i].time = all_rts[i]
 
 
-    def plot_roi(self, roi_idx, mz_tol=0.005, rt_range=[0, np.inf], rt_window=None, output=False):
+    def plot_feature(self, feature_idx, mz_tol=0.005, rt_range=[0, np.inf], rt_window=None, output=False):
         """
         Function to plot EIC of a ROI.
 
         Parameters
         ----------
-        roi_idx: int
+        feature_idx: int
             Index of the ROI.
         mz_tol: float
             m/z tolerance.
@@ -816,12 +720,12 @@ class MSData:
         """
 
         if rt_window is not None:
-            rt_range = [self.rois[roi_idx].rt - rt_window, self.rois[roi_idx].rt + rt_window]
+            rt_range = [self.features[feature_idx].rt - rt_window, self.features[feature_idx].rt + rt_window]
 
         # get the eic data
-        eic_rt, eic_int, _, eic_scan_idx = self.get_eic_data(self.rois[roi_idx].mz, mz_tol=mz_tol, rt_range=rt_range)
-        idx_start = np.where(eic_scan_idx == self.rois[roi_idx].scan_idx_seq[0])[0][0]
-        idx_end = np.where(eic_scan_idx == self.rois[roi_idx].scan_idx_seq[-1])[0][0] + 1
+        eic_rt, eic_int, _, eic_scan_idx = self.get_eic_data(self.features[feature_idx].mz, mz_tol=mz_tol, rt_range=rt_range)
+        idx_start = np.where(eic_scan_idx == self.features[feature_idx].scan_idx_seq[0])[0][0]
+        idx_end = np.where(eic_scan_idx == self.features[feature_idx].scan_idx_seq[-1])[0][0] + 1
 
         plt.figure(figsize=(7, 3))
         plt.rcParams['font.size'] = 14
@@ -842,194 +746,248 @@ class MSData:
             return eic_rt[np.argmax(eic_int)], np.max(eic_int), eic_scan_idx[np.argmax(eic_int)]
 
 
+    def output_ms1_to_pickle(self, output_path=None):
+        """
+        Function to output all MS1 scans as an intermediate mzjson file for faster data loading, 
+        if the file needs to be reloaded multiple times.
+        """
+
+        signals = {
+            'time': self.ms1_time_arr,
+            'signals': [scan.signals for scan in self.scans if scan.level == 1]
+        }
+        
+        if output_path is None:
+            output_path = self.params.tmp_file_dir
+        if output_path is not None:
+            with open(os.path.join(output_path, self.params.file_name + ".pkl"), 'wb') as f:
+                pickle.dump(signals, f)
+        else:
+            print("No pickle file for MS1 scans is saved. Please set the temporary file directory.")
+    
+
+    def read_ms1_pickle(self, data):
+        """
+        Function to read pickle file.
+
+        Parameters
+        ----------
+        data: dict
+            Dictionary from a pickle file.
+        """
+
+        self.ms1_time_arr = data['time']
+        self.scans = [Scan(level=1, id=i, scan_time=self.ms1_time_arr[i], 
+                           signals=data['signals'][i]) for i in range(len(data['time']))]
+
 class Scan:
     """
     A class that represents a MS scan.
     """
 
-    def __init__(self, level=None, scan=None, rt=None):
+    def __init__(self, level=None, id=None, scan_time=None, signals=None, precursor_mz=None):
         """
         Function to initiate MS1Scan by precursor mz,
         retention time.
 
         Parameters
-        ----------------------------------------------------------
+        ----------
         level: int
             Level of MS scan.
-        scan: int
-            Scan number.
+        id: int
+            Scan number ordered by time.
         rt: float
             Retention time.
+        signals: numpy array
+            MS signals for a scan as 2D numpy array in float32, organized as [[m/z, intensity], ...].
+        precursor_mz: float
+            Precursor m/z for MS2 scan only.
         """
 
-        self.level = level
-        self.scan = scan
-        self.rt = rt
+        self.level = level                  # level of mass spectrum
+        self.id = id                        # scan number ordered by time
+        self.time = scan_time               # scan time in minute
+        self.signals = signals              # MS signals for a scan as 2D numpy array in float32, organized as [[m/z, intensity], ...]
+        self.precursor_mz = precursor_mz    # for MS2 only
 
-        # for MS1 scans:
-        self.mz_seq = None
-        self.int_seq = None
 
-        # for MS2 scans:
-        self.precursor_mz = None
-        self.peaks = None
-    
-
-    def add_info_by_level(self, **kwargs):
+    def add_signals(self, signals, precursor_mz=None):
         """
-        Function to add scan information by level.
-        """
-
-        if self.level == 1:
-            self.mz_seq = kwargs['mz_seq']
-            self.int_seq = np.int64(kwargs['int_seq'])
-
-        elif self.level == 2:
-            self.precursor_mz = kwargs['precursor_mz']
-            self.peaks = kwargs['peaks']
-
-
-    def show_scan_info(self):
-        """
-        Function to print a scan's information.
+        Function to add peaks and precursor m/z (if applicable) to a scan.
 
         Parameters
-        ----------------------------------------------------------
-        scan: MS1Scan or MS2Scan object
-            A MS1Scan or MS2Scan object.
+        ----------
+        signals: numpy array
+            Peaks data, float32.
+        precursor_mz: float
+            Precursor m/z.
         """
 
-        print("Scan number: " + str(self.scan))
-        print("Retention time: " + str(self.rt))
+        self.signals = signals
+        if precursor_mz is not None:
+            self.precursor_mz = precursor_mz
 
-        if self.level == 1:
-            print("m/z: " + str(np.around(self.mz_seq, decimals=4)))
-            print("Intensity: " + str(np.around(self.int_seq, decimals=0)))
 
-        elif self.level == 2:
-            # keep 4 decimal places for m/z and 0 decimal place for intensity
-            print("Precursor m/z: " + str(np.round(self.precursor_mz, decimals=4)))
-            print(self.peaks)
-    
-
-    def plot_scan(self, mz_range=None, return_data=False):
+    def plot_scan(self, mz_range=None, max_int=None, return_data=False):
         """
         Function to plot a scan.
         
         Parameters
-        ----------------------------------------------------------
+        ----------
+        mz_range: list
+            m/z range [start, end].
+        max_int: float
+            Maximum intensity to plot.
+        return_data: bool
+            Whether to return the scan signals with restricted m/z range.
+
+        Returns
+        -------
+        signals: numpy array
+            Restricted scan signals.
         """
 
-        if self.level == 1:
-            x = self.mz_seq
-            y = self.int_seq
-        elif self.level == 2:
-            x = self.peaks[:, 0]
-            y = self.peaks[:, 1]
-        
-        if mz_range is None:
-            mz_range = [np.min(x)-10, np.max(x)+10]
-        else:
-            y = y[np.logical_and(x > mz_range[0], x < mz_range[1])]
-            x = x[np.logical_and(x > mz_range[0], x < mz_range[1])]
+        signals = self.signals
 
-        max_int = np.max(y)
-        x_left = x[0] - 1
-        x_right = x[-1] + 1
+        if mz_range is None:
+            mz_range = [np.min(signals[:, 0])-10, np.max(signals[:, 0])+10]
+        else:
+            signals = signals[(signals[:, 0] > mz_range[0]) & (signals[:, 0] < mz_range[1])]
+
+        if max_int is None:
+            max_int = np.max(signals[:, 1])
+        
+        # plot the scan
         plt.figure(figsize=(10, 3))
         plt.rcParams['font.size'] = 14
         plt.rcParams['font.family'] = 'Arial'
         plt.ylim(0, max_int*1.2)
-        plt.xlim(x_left, x_right)
-        plt.vlines(x = x, ymin = 0, ymax = y, color="black", linewidth=1.5)
+        plt.xlim(mz_range[0], mz_range[1])
+        plt.vlines(x = signals[:,0], ymin = 0, ymax = signals[:,1], color="black", linewidth=1.5)
         plt.hlines(y = 0, xmin = mz_range[0], xmax = mz_range[1], color="black", linewidth=1.5)
         plt.xlabel("m/z, Dalton", fontsize=18, fontname='Arial')
         plt.ylabel("Intensity", fontsize=18, fontname='Arial')
         plt.xticks(fontsize=14, fontname='Arial')
         plt.yticks(fontsize=14, fontname='Arial')
-
+        plt.text(mz_range[0]+(mz_range[1]-mz_range[0])*0.4, max_int*1.1, 
+                 "Time = {:.3f} min".format(self.time), fontsize=11, fontname='Arial')
         if self.level == 2:
-            plt.text(x_left+1, max_int*1.1, "Precursor m/z = {:.4f}".format(self.precursor_mz), fontsize=11, fontname='Arial')
-        
-        plt.text(x_left+1+(x_right-x_left)*0.3, max_int*1.1, "RT = {:.3f} min".format(self.rt), fontsize=11, fontname='Arial')
-
+            plt.text(mz_range[0]+(mz_range[1]-mz_range[0])*0.05, max_int*1.1, 
+                     "Precursor m/z = {:.4f}".format(self.precursor_mz), fontsize=11, fontname='Arial')
         plt.show()
 
         if return_data:
-            return x, y
+            return signals
 
 
-def _clean_ms2(ms2, offset=2, int_drop_ratio=0.01):
+"""
+Helper functions
+------------------------------------------------------------------------------------------------------------------------
+"""
+
+def clean_signals(signals, mz_range=[0,np.inf], intensity_range=[0,np.inf]):
     """
-    A function to clean MS/MS by
-    1. Drop ions with m/z > (precursor_mz - offset)   
-    2. Drop ions with intensity < 1% of the base peak intensity
+    A function to clean signals in a mass spectrum by m/z and intensity range.
 
     Parameters
     ----------
-    ms2: Scan object
-        A MS2 scan object.
-    offset: float
-        m/z offset for dropping ions.
+    signals: numpy array
+        MS signals for a scan as 2D numpy array in float32, organized as [[m/z, intensity], ...].
+    mz_range: list
+        m/z range [start, end].
+    intensity_range: list
+        Intensity range [start, end].
+
+    Returns
+    -------
+    signals: numpy array
+        Cleaned signals.
     """
     
-    if ms2.peaks.shape[0] > 0:
-        ms2.peaks = ms2.peaks[ms2.peaks[:, 0] < ms2.precursor_mz - offset]
-    if ms2.peaks.shape[0] > 0:
-        ms2.peaks = ms2.peaks[ms2.peaks[:, 1] > int_drop_ratio * np.max(ms2.peaks[:, 1])]
+    return signals[(signals[:, 0] > mz_range[0]) & (signals[:, 0] < mz_range[1]) & 
+                   (signals[:, 1] > intensity_range[0]) & (signals[:, 1] < intensity_range[1])]
 
 
-def centroid_mz_data(mz_seq, int_seq, mz_tol=0.005):
+def centroid_signals(signals, mz_tol=0.005):
     """
-    Function to centroid the m/z and intensity sequences.
+    Function to centroid signals in a mass spectrum.
 
     Parameters
     ----------
-    mz_seq: numpy array or list
-        m/z sequence.
-    int_seq: numpy array or list
-        Intensity sequence.
+    signals: numpy array
+        MS signals for a scan as 2D numpy array in float32, organized as [[m/z, intensity], ...].
     mz_tol: float
-        m/z tolerance for centroiding. Default is 0.005.
+        m/z tolerance for centroiding. Default is 0.005 Da.
+
+    Returns
+    -------
+    signals: numpy array
+        Centroided signals.
     """
 
-    diff = np.diff(mz_seq)
-    tmp = np.where(diff < mz_tol)[0]
+    if mz_tol is None or mz_tol < 1e-6:
+        return signals
 
-    if len(tmp) == 0:
-        return mz_seq, int_seq
+    v = np.diff(signals[:, 0]) < mz_tol
+
+    if np.sum(v) == 0:
+        return signals
     
-    mz_seq = list(mz_seq)
-    int_seq = list(int_seq)
-    for i in tmp[::-1]:
-        mz_seq[i] = (mz_seq[i]*int_seq[i] + mz_seq[i+1]*int_seq[i+1]) / (int_seq[i] + int_seq[i+1])
-        int_seq[i] += int_seq[i+1]
-        mz_seq.pop(i+1)
-        int_seq.pop(i+1)
+    # merge signals with m/z difference less than mz_tol
+    idx_f = 0
+    idx_e = 0
+    new_signals = []
+    for i in range(len(v)):
+        if v[i]:
+            idx_e = i + 1
+            continue
+        else:
+            if idx_f == idx_e:
+                new_signals.append(signals[idx_f])
+            else:
+                # weighted average of m/z and intensity
+                new_signals.append([np.average(signals[idx_f:idx_e+1, 0], weights=signals[idx_f:idx_e+1, 1]), 
+                                    np.sum(signals[idx_f:idx_e+1, 1])])
+            idx_f = i + 1
+            idx_e = i + 1
+    
+    if idx_f == idx_e:
+        new_signals.append(signals[idx_f])
+    else:
+        new_signals.append([np.average(signals[idx_f:idx_e+1, 0], weights=signals[idx_f:idx_e+1, 1]),
+                            np.sum(signals[idx_f:idx_e+1, 1])])
 
-    return np.array(mz_seq), int_seq
+    return np.array(new_signals, dtype=np.float32)
 
 
-def read_raw_file_to_obj(file_name, params=None, int_tol=None, centroid_mz=True, 
-                         read_ms2=True, clean_ms2=False, print_summary=False):
+def read_raw_file_to_obj(file_name, params=None, scan_levels=[1,2], centroid_mz_tol=0.005, 
+                         ms1_abs_int_tol=None, ms2_abs_int_tol=None, ms2_rel_int_tol=0.01, 
+                         precursor_mz_offset=2):
     """
-    Read a raw file to a MSData object.
-    It's a useful function for data visualization or brief data analysis.
+    Read a raw file to a MSData object. It's a useful function for data visualization or 
+    simple data analysis. See the MSData class for detailed parameter settings.
 
     Parameters
     ----------
-    file_name : str
-        The file name of the raw file.
-    params : Params object
+    file_name: str
+        Name of the raw data file. Valid extensions are mzML, mzXML, mzjson and gz.
+    params: Params object
         A Params object that contains the parameters.
-    int_tol : float
-        Intensity tolerance for dropping ions.
-    centroid : bool
-        True: centroid the raw data.
-        False: do not centroid the raw data.
-    print_summary : bool
-        True: print the summary of the raw data.
-        False: do not print the summary of the raw data.
+    scan_levels: list
+        MS levels to read, default is [1, 2] for MS1 and MS2 respectively.
+    centroid_mz_tol: float
+        m/z tolerance for centroiding. Set to None to disable centroiding.
+    ms1_abs_int_tol: int
+        Abolute intensity tolerance for MS1 scans.
+    ms2_abs_int_tol: int
+        Abolute intensity tolerance for MS2 scans. The final tolerance is the maximum of
+        ms2_abs_int_tol and base signal intensity * ms2_rel_int_tol.
+    ms2_rel_int_tol: float
+        Relative intensity cutoff to the base signal for MS2 scans. Default is 0.01.
+        Set to zero to disable this filter.
+    precursor_mz_offset: float
+        To remove the precursor ion from MS2 scan. The m/z upper limit of signals 
+        in MS2 scans is calculated as precursor_mz - precursor_mz_offset.
 
     Returns
     -------
@@ -1037,67 +995,24 @@ def read_raw_file_to_obj(file_name, params=None, int_tol=None, centroid_mz=True,
         A MSData object.
     """
 
-    ms_type, ion_mode, centroid = find_ms_info(file_name)
-
-    if int_tol is None:
-        if ms_type == "orbitrap":
-            dft_int_tol = 30000
-        elif ms_type == "tof":
-            dft_int_tol = 1000
-    else:
-        dft_int_tol = int_tol
-    
     # create a MSData object
     d = MSData()
-    d.centroid = centroid
-
-    # read raw data
-    if params is None:
-        params = Params()
-        params.int_tol = dft_int_tol
-    else:
-        if params.int_tol is None:
-            params.int_tol = dft_int_tol
-    params.ion_mode = ion_mode
-
-    d.read_raw_data(file_name, params=params, read_ms2=read_ms2, clean_ms2=clean_ms2, centroid_mz=centroid_mz)
-
-    d.params = params
-    
-    if print_summary:
-        print("Number of MS1 scans: " + str(len(d.ms1_idx)), "Number of MS2 scans: " + str(len(d.ms2_idx)))
-    
+    d.read_raw_data(file_name, params=params, scan_levels=scan_levels, centroid_mz_tol=centroid_mz_tol,
+                    ms1_abs_int_tol=ms1_abs_int_tol, ms2_abs_int_tol=ms2_abs_int_tol, 
+                    ms2_rel_int_tol=ms2_rel_int_tol, precursor_mz_offset=precursor_mz_offset)
     return d
 
 
-def find_best_ms2(ms2_seq):
+def find_best_ms2(ms2_list):
     """
     Function to find the best MS2 spectrum for a list of MS2 spectra.
     """
 
-    if len(ms2_seq) > 0:
-        total_ints = [np.sum(ms2.peaks[:,1]) for ms2 in ms2_seq]
+    if len(ms2_list) > 0:
+        total_ints = [np.sum(ms2.signals[:,1]) for ms2 in ms2_list]
         if np.max(total_ints) == 0:
             return None
         else:
-            return ms2_seq[max(range(len(total_ints)), key=total_ints.__getitem__)]
+            return ms2_list[max(range(len(total_ints)), key=total_ints.__getitem__)]
     else:
         return None
-
-
-def get_start_time(file_name):
-    """
-    Function to get the start time of the raw data.
-
-    Parameters
-    ----------
-    file_name : str
-        Absolute path of the raw data.
-    """
-
-    with open(file_name, "rb") as f:
-        for l in f:
-            l = str(l)
-            if "startTimeStamp" in str(l):
-                t = l.split("startTimeStamp")[1].split('"')[1]
-                return datetime.strptime(t, "%Y-%m-%dT%H:%M:%SZ")

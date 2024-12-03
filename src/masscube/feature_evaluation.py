@@ -53,7 +53,7 @@ def calculate_gaussian_similarity(x, y):
 
     # if the length of the peak is less than 5, return nan
     if len(x) < 5:
-        return np.nan
+        return 0.0
 
     # Estimate the parameters of the Gaussian function
     # a: amplitude, b: mean, c: standard deviation
@@ -82,20 +82,21 @@ def calculate_gaussian_similarity(x, y):
 
     y_fit = _gaussian(x, a, b, c)
 
-    # use dot product to calculate the similarity
-    similarity = np.dot(y, y_fit) / (np.linalg.norm(y) * np.linalg.norm(y_fit))
+    similarity = np.corrcoef(y, y_fit)[0, 1]
     
     return similarity
 
 
-def calculate_noise_level(y, intensity_threshold=0.05):
+def calculate_noise_score(y, intensity_threshold=0.05):
     """
-    Calculate the noise level of the peak shape
+    Calculate the noise score that reflect the signal fluctuation.
 
     Parameters
     ----------
     y: numpy array
         Intensity
+    intensity_threshold: float
+        The threshold to determine the noise level
     
     Returns
     -------
@@ -135,6 +136,9 @@ def calculate_asymmetry_factor(y):
         asymmetry factor
     """
 
+    if len(y) < 5:
+        return 1.0
+
     idx = np.argmax(y)
 
     if idx == 0:
@@ -158,3 +162,24 @@ def calculate_asymmetry_factor(y):
         right_idx = right_idx[0] + idx
 
     return (right_idx - idx) / (idx - left_idx)
+
+
+def squared_error_to_smoothed_curve(original_signal, fit_signal):
+    """
+    Calculate the sum of squared error between the original signal and the fitted signal.
+
+    Parameters
+    ----------
+    original_signal: numpy array
+        The original signal.
+    fit_signal: numpy array
+        The fitted signal.
+
+    Returns
+    -------
+    float
+        The noise score.
+    """
+
+    diff = (original_signal - fit_signal) / np.max(original_signal)
+    return np.sum(diff**2)
