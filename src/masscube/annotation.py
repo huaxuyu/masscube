@@ -12,6 +12,7 @@ import re
 from tqdm import tqdm
 
 from ms_entropy import read_one_spectrum, FlashEntropySearch
+from .utils_functions import extract_signals_from_string, convert_signals_to_string
 
 def load_ms2_db(path):
     """
@@ -23,7 +24,7 @@ def load_ms2_db(path):
         The path to the MS2 database in MSP format.    
     """
 
-    print("Loading MS2 database...")
+    print("\tLoading MS2 database...")
     # get extension of path
     ext = os.path.splitext(path)[1]
 
@@ -34,19 +35,19 @@ def load_ms2_db(path):
         _correct_db(db)
         entropy_search = FlashEntropySearch()
         entropy_search.build_index(db)
-        print("MS2 database loaded.")
+        print("\tMS2 database has been loaded.")
         return entropy_search
     
     elif ext.lower() == '.pkl':
         entropy_search = pickle.load(open(path, 'rb'))
-        print("MS2 database loaded.")
+        print("\tMS2 database has been loaded.")
         return entropy_search
     
     elif ext.lower() == '.json':
         db = json.load(open(path, 'r'))
         entropy_search = FlashEntropySearch()
         entropy_search.build_index(db)
-        print("MS2 database loaded.")
+        print("\tMS2 database has been loaded.")
         return entropy_search
     else:
         print("The MS2 database format {} is not supported.".format(ext))
@@ -104,7 +105,7 @@ def annotate_aligned_features(features, params, num=5):
             f.search_mode = 'identity_search'
             f.smiles = matched['smiles'] if 'smiles' in matched else None
             f.inchikey = matched['inchikey'] if 'inchikey' in matched else None
-            f.matched_ms2 = _convert_ms2_signals_to_string(matched['peaks'])
+            f.matched_ms2 = convert_signals_to_string(matched['peaks'])
             f.formula = matched['formula'] if 'formula' in matched else None
             f.adduct_type = matched['precursor_type']
             f.matched_mz = matched['precursor_mz']
@@ -121,11 +122,11 @@ def annotate_aligned_features(features, params, num=5):
                 f.similarity = similarity[idx]
                 f.smiles = matched['smiles'] if 'smiles' in matched else None
                 f.inchikey = matched['inchikey'] if 'inchikey' in matched else None
-                f.matched_ms2 = _convert_ms2_signals_to_string(matched['peaks'])
+                f.matched_ms2 = convert_signals_to_string(matched['peaks'])
                 f.formula = matched['formula'] if 'formula' in matched else None
                 f.matched_mz = matched['precursor_mz']
         
-        f.ms2 = _convert_ms2_signals_to_string(f.ms2)
+        f.ms2 = convert_signals_to_string(f.ms2)
 
     return features
 
@@ -183,13 +184,59 @@ def annotate_features(d, sim_tol=None, fuzzy_search=True, ms2_library_path=None)
                 _assign_annotation_results_to_feature(f, score=scores[idx], matched=matched, matched_peak_num=matched_peak_num, 
                                                       search_mode='fuzzy_search')
 
-def annotate_ms2(ms2, seach_engine):
-    pass
+
+def annotate_ms2(ms2, ms2_library_path, sim_tol=0.7, fuzzy_search=True):
+    """
+    Annotate MS2 spectra using MS2 database.
+
+    Parameters
+    ----------
+    ms2 : Scan object
+        MS2 spectrum.
+    ms2_library_path : str
+        The absolute path to the MS2 database. If not specified, the corresponding parameter from 
+        the MS data file will be used.
+    sim_tol : float
+        The similarity threshold for MS2 annotation.
+    fuzzy_search : bool
+        Whether to further annotated the unmatched MS2 using fuzzy search.
+
+    Returns
+    -------
+    score : float
+        The similarity score.
+    matched : dict
+        The matched MS2 spectrum.
+    matched_peak_num : int
+        The number of matched peaks.
+    search_mode : str
+        The search mode, 'identity_search' or 'fuzzy_search'.
+    """
+
+    search_engine = load_ms2_db(ms2_library_path)
+
+    signals = search_engine.clean_spectrum_for_search(precursor_mz=ms2.precursor_mz, peaks=ms2.signals, precursor_ions_removal_da=2.0)
+    scores, peak_nums = search_engine.identity_search(precursor_mz=ms2.precursor_mz, peaks=signals, ms1_tolerance_in_da=0.01, 
+                                                      ms2_tolerance_in_da=0.015, output_matched_peak_number=True)
+    idx = np.argmax(scores)
+    if scores[idx] > sim_tol:
+        matched = search_engine[idx]
+        matched_peak_num = peak_nums[idx]
+        return scores[idx], matched, matched_peak_num, 'identity_search'
+
+    elif fuzzy_search:
+        scores = search_engine.hybrid_search(precursor_mz=ms2.precursor_mz, peaks=signals, ms1_tolerance_in_da=0.01, 
+                                                         ms2_tolerance_in_da=0.015)
+        idx = np.argmax(scores)
+        if scores[idx] > sim_tol:
+            matched = search_engine[idx]
+            matched_peak_num = None
+            return scores[idx], matched, None, 'fuzzy_search'
+    
+    return None, None, None, None
 
 
-
-
-def feature_annotation_mzrt(features, path, default_adduct="[M+H]+", mz_tol=0.01, rt_tol=0.3):
+def feature_annotation_mzrt(features, path, mz_tol=0.01, rt_tol=0.3):
     """
     A function to annotate features based on a mzrt file (only .csv is supported now).
 
@@ -199,8 +246,6 @@ def feature_annotation_mzrt(features, path, default_adduct="[M+H]+", mz_tol=0.01
         A list of features.
     path : str
         The path to the mzrt file in csv format.
-    default_adduct : str
-        The default adduct for annotation.
     mz_tol : float
         The m/z tolerance for matching.
     rt_tol : float
@@ -225,112 +270,13 @@ def feature_annotation_mzrt(features, path, default_adduct="[M+H]+", mz_tol=0.01
         matched_v = np.where(np.logical_and(np.abs(feature_mz - mz) < mz_tol, np.abs(feature_rt - rt) < rt_tol))[0]
         if len(matched_v) > 0:
             matched_idx = matched_v[0]
-            features[matched_idx].adduct = default_adduct
             features[matched_idx].annotation = istd_df.iloc[i,0]
             features[matched_idx].search_mode = "mzrt_match"
 
     return features
-
-
-def annoatate_peaks(peak_list, precursor_mz_list, ms2_library=None, ms2_library_path=None,
-                    search_mode='identity_search', ms1_tol=0.01, ms2_tol=0.015, top_n=1, clean_spec=True):
-    """
-    A function to annotate peaks based on a MS2 database.
-
-    Parameters
-    ----------
-    peak_list : list
-        A list of peaks. Each peak is a list or numpy array with shape (N, 2), 
-        N is the number of peaks. The format of the peaks is [[mz1, intensity1], [mz2, intensity2], ...].
-    precursor_mz_list : list
-        A list of precursor m/z values.
-    ms2_library : FlashEntropySearch object
-        A FlashEntropySearch object.
-    ms2_library_path : str
-        The path to the MS2 database (.pkl, .msp, or .json).
-    search_mode : str
-        The search mode. Options: 'identity_search', 'hybrid_search', or 'all' for both.
-    ms1_tol : float
-        The m/z tolerance for MS1 search.
-    ms2_tol : float
-        The m/z tolerance for MS2 search.
-    top_n : int
-        The number of top MS2 spectra with the highest spectral similarities.
-    clean_spec : bool
-        Whether to automatically clean the spectrum before searching. If you prefer to clean the spectrum using 
-        other methods or parameters, set it to False and clean the spectrum before calling this function.
-        By default, spectrum cleanning will 
-        1. Remove ions > precursor_mz-2.0 Da.
-        2. Remove peaks with intensity less than 1% of the base peak.
-        3. Centroid the spectrum by grouping fragment ions within 0.05 Da.
-    
-    Returns
-    ----------
-    results : list
-        A list of annotations. Each annotation is a dictionary with keys 'identity_search' and 'hybrid_search', 
-        where the values are lists of top_n annotations as dictionaries with keys 'matched_ms2', 'similarity', and 'matched_peak_number'.
-    """
-
-    # check if the length of peak_list and precursor_mz_list are the same
-    if len(peak_list) != len(precursor_mz_list):
-        raise ValueError("The length of peak_list and precursor_mz_list must be the same.")
-    
-    # load the MS2 database
-    if ms2_library is not None:
-        entropy_search = ms2_library
-    elif ms2_library_path is not None:
-        entropy_search = load_ms2_db(ms2_library_path)
-    else:
-        raise ValueError("Please provide the MS2 database.")
-    
-    results = [{'identity_search': [], 'hybrid_search': []} for i in range(len(peak_list))]
-    
-    if search_mode == 'all' or search_mode == 'identity_search':
-        for i in range(len(peak_list)):
-            peaks = peak_list[i]
-            if peaks is not None and len(peaks) > 0:
-                if clean_spec:
-                    peaks = entropy_search.clean_spectrum_for_search(precursor_mz_list[i], peaks, precursor_ions_removal_da=2.0)
-                entropy_similarity, matched_peaks_number = entropy_search.identity_search(precursor_mz=precursor_mz_list[i], peaks=peaks, 
-                                                                                        ms1_tolerance_in_da=ms1_tol, ms2_tolerance_in_da=ms2_tol, output_matched_peak_number=True)
-                matched_idx = np.argsort(entropy_similarity)[::-1][:top_n]
-                for idx in matched_idx:
-                    results[i]['identity_search'].append({
-                        'matched_ms2': entropy_search[idx],
-                        'similarity': entropy_similarity[idx],
-                        'matched_peak_number': matched_peaks_number[idx]
-                    })
-            else:
-                results[i]['identity_search'].append({
-                    'matched_ms2': None,
-                    'similarity': 0,
-                    'matched_peak_number': None
-                })
-    
-    if search_mode == 'all' or search_mode == 'hybrid_search':
-        for i in range(len(peak_list)):
-            peaks = peak_list[i]
-            if peaks is not None and len(peaks) > 0:
-                if clean_spec:
-                    peaks = entropy_search.clean_spectrum_for_search(precursor_mz_list[i], peaks, precursor_ions_removal_da=2.0)
-                entropy_similarity = entropy_search.hybrid_search(precursor_mz=precursor_mz_list[i], peaks=peaks, 
-                                                                ms1_tolerance_in_da=ms1_tol, ms2_tolerance_in_da=ms2_tol)
-                matched_idx = np.argsort(entropy_similarity)[::-1][:top_n]
-                for idx in matched_idx:
-                    results[i]['hybrid_search'].append({
-                        'matched_ms2': entropy_search[idx],
-                        'similarity': entropy_similarity[idx]
-                    })
-            else:
-                results[i]['hybrid_search'].append({
-                    'matched_ms2': 0,
-                    'similarity': None
-                })
-    
-    return results
           
 
-def feature_to_feature_search(feature_list, sim_tol=0.7):
+def feature_to_feature_search(feature_list):
     """
     A function to calculate the MS2 similarity between features using hybrid search.
 
@@ -338,31 +284,29 @@ def feature_to_feature_search(feature_list, sim_tol=0.7):
     ----------
     feature_list : list
         A list of AlignedFeature objects.
-    sim_tol : float
-        The similarity threshold for feature-to-feature search.
     
     Returns
-    ----------
+    -------
     similarity_matrix : pandas.DataFrame
         similarity matrix between features.
     """
 
-    results = []
-
     entropy_search = index_feature_list(feature_list)
+    dim = len(entropy_search.precursor_mz_array)
+    ref_id = [item['id'] for item in entropy_search]
+    results = np.zeros((dim, dim))
 
-    for f in feature_list:
-
+    for i, f in enumerate(feature_list):
         similarities = entropy_search.search(precursor_mz=f.mz, peaks=f.best_ms2.peaks)["hybrid_search"]
-        for i, s in enumerate(similarities):
-            if s > sim_tol and f.id != entropy_search[i]["id"]:
-                results.append([f.network_name, entropy_search[i]["name"], s, f.id, entropy_search[i]["id"]])
+        matched = np.argmax(similarities)
+        results[i, matched] = similarities[matched]
 
-    df = pd.DataFrame(results, columns=['feature_name_1', 'feature_name_2', 'similarity','feature_id_1', 'feature_id_2'])
+    df = pd.DataFrame(results, index=ref_id, columns=ref_id)
+    
     return df
 
 
-def index_feature_list(feature_list, return_db=False):
+def index_feature_list(feature_list):
     """
     A function to index a list of features for spectrum entropy search.
 
@@ -374,23 +318,19 @@ def index_feature_list(feature_list, return_db=False):
     
     db = []
     for f in feature_list:
-        if f.best_ms2 is not None:
+        if f.ms2 is not None:
             tmp = {
                 "id": f.id,
-                "name": f.network_name,
-                "mode": f.annotation_mode,
+                "name": f.annotation,
                 "precursor_mz": f.mz,
-                "peaks": f.best_ms2.peaks
+                "peaks": f.ms2.signals
             }
             db.append(tmp)
 
     entropy_search = FlashEntropySearch()
     entropy_search.build_index(db)
 
-    if return_db:
-        return entropy_search, db
-    else:
-        return entropy_search
+    return entropy_search
 
 
 def output_ms2_to_msp(feature_table, output_path):
@@ -446,56 +386,6 @@ def _correct_db(db):
             a['precursor_mz'] = float(a.pop(similar_key[0]))
 
 
-def extract_signals_from_string(ms2):
-    """
-    Extract signals from MS2 spectrum in string format.
-
-    Parameters
-    ----------
-    ms2 : str
-        MS2 spectrum in string format. Format: "mz1;intensity1|mz2;intensity2|..."
-        example: "100.0;1000.0|200.0;2000.0|300.0;3000.0|"
-    
-    returns
-    ----------
-    peaks : numpy.array
-        Peaks in numpy array format.
-    """
-    
-    # Use findall function to extract all numbers matching the pattern
-    numbers = re.findall(r'\d+\.\d+', ms2)
-    
-    # Convert the extracted numbers from strings to floats
-    numbers = [float(num) for num in numbers]
-    
-    numbers = np.array(numbers).reshape(-1, 2)
-
-    return numbers
-
-
-def _convert_ms2_signals_to_string(signals):
-    """
-    Convert peaks to string format.
-
-    Parameters
-    ----------
-    signals : numpy.array
-        MS2 signals organized as [[mz1, intensity1], [mz2, intensity2], ...]
-
-    Returns
-    -------
-    ms2 : str
-        MS2 spectrum in string format: "mz1;intensity1|mz2;intensity2|..."
-    """
-    
-    ms2 = ""
-    for i in range(len(signals)):
-        ms2 += str(np.round(signals[i, 0], decimals=4)) + ";" + str(np.round(signals[i, 1], decimals=4)) + "|"
-    ms2 = ms2[:-1]
-    
-    return ms2
-
-
 def _assign_annotation_results_to_feature(f, score, matched, matched_peak_num, search_mode):
     """
     Assign annotation results to a feature.
@@ -521,6 +411,8 @@ def _assign_annotation_results_to_feature(f, score, matched, matched_peak_num, s
     f.matched_peak_number = matched_peak_num
     f.smiles = matched['smiles'] if 'smiles' in matched else None
     f.inchikey = matched['inchikey'] if 'inchikey' in matched else None
-    f.matched_ms2 = _convert_ms2_signals_to_string(matched['peaks'])
+    f.matched_ms2 = convert_signals_to_string(matched['peaks'])
     f.matched_precursor_mz = matched['precursor_mz']
     f.matched_adduct_type = matched['precursor_type']
+    if search_mode == 'identity_search':
+        f.adduct_type = matched['precursor_type']

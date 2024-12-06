@@ -11,10 +11,11 @@ from tqdm import tqdm
 from scipy.interpolate import interp1d
 from scipy.stats import zscore
 import pickle
+from copy import deepcopy
 
 from .raw_data_utils import read_raw_file_to_obj
 from .params import Params
-from .feature_grouping import group_features_after_alignment
+from .utils_functions import convert_signals_to_string, extract_signals_from_string
 
 
 """
@@ -60,7 +61,7 @@ class AlignedFeature:
         self.mz = 0.0                               # m/z
         self.rt = 0.0                               # retention time
         self.reference_file = None                  # the reference file with the highest peak height
-        self.reference_idx = None                   # the index of the reference file
+        self.reference_scan_idx = None              # the scan index of the peak apex from the reference file
         self.highest_intensity = 0.0                # the highest peak height from individual files (which is the reference file)
         self.ms2 = None                             # representative MS2 spectrum
         self.ms2_reference_file = None              # the reference file for the representative MS2 spectrum
@@ -123,9 +124,14 @@ def feature_alignment(path: str, params: Params):
         # remove those files from sample metadata
         params.sample_metadata = params.sample_metadata[~params.sample_metadata['file_name'].isin(not_found_files)]
     
-    # find anchors to correct tetention times
+    # find anchors for retention time correction
     if params.correct_rt:
-        mz_ref, rt_ref = rt_anchor_selection(names[:20])
+        intensities = []
+        for n in names:
+            df = pd.read_csv(n, sep="\t", low_memory=False)
+            intensities.append(np.sum(df["peak_height"]))
+        anchor_selection_name = names[np.argmax(intensities)]
+        mz_ref, rt_ref = rt_anchor_selection(anchor_selection_name)
         rt_cor_functions = {}
     
     # STEP 2: read individual feature tables and align features
@@ -147,8 +153,7 @@ def feature_alignment(path: str, params: Params):
         # retention time correction
         if params.correct_rt and params.sample_metadata['is_blank'][i] == False:
             rt_arr = current_table["RT"].values
-            rt_max = np.max(rt_arr)
-            rt_arr, model = retention_time_correction(mz_ref, rt_ref, current_table["m/z"].values, rt_arr, rt_max=rt_max, return_model=True)
+            rt_arr, model = retention_time_correction(mz_ref, rt_ref, current_table["m/z"].values, rt_arr)
             current_table["RT"] = rt_arr
             rt_cor_functions[file_name] = model
 
@@ -180,6 +185,19 @@ def feature_alignment(path: str, params: Params):
         with open(os.path.join(params.project_file_dir, "rt_correction_models.pkl"), "wb") as f:
             pickle.dump(rt_cor_functions, f)
     
+    # choose the best ms2
+    for f in features:
+        if len(f.ms2_seq) == 0:
+            continue
+        parsed_ms2 = []
+        for file_name, ms2 in f.ms2_seq:
+            signals = extract_signals_from_string(ms2)
+            parsed_ms2.append([file_name, signals])
+        # sort parsed ms2 by summed intensity
+        parsed_ms2.sort(key=lambda x: np.sum(x[1][:, 1]), reverse=True)
+        f.ms2_reference_file = parsed_ms2[0][0]
+        f.ms2 = convert_signals_to_string(parsed_ms2[0][1])
+    
     # STEP 3: calculate the detection rate and drop features using the detection rate cutoff
     v = ~params.sample_metadata['is_blank']
     for f in features:
@@ -191,14 +209,12 @@ def feature_alignment(path: str, params: Params):
         features = merge_features(features, params)
 
     # STEP 5: gap filling
+    print("\tFilling gaps...")
     if params.fill_gaps:
         features = gap_filling(features, params)
     
-    # # STEP 6: annotate feature groups
-    # if params.group_features_after_alignment:
-    #     group_features_after_alignment(features, params)
-    
-    # STEP 7: index the features
+    # STEP 6: index the features
+    features.sort(key=lambda x: x.highest_intensity, reverse=True)
     for i, f in enumerate(features):
         f.id = i
 
@@ -233,9 +249,9 @@ def gap_filling(features, params: Params):
             rt_cor_functions = None
 
         for i, file_name in enumerate(tqdm(params.sample_names)):
-            n = os.path.join(params.tmp_file_dir, file_name + ".pkl")
-            if os.path.exists(n):
-                d = read_raw_file_to_obj(n)
+            fn = os.path.join(params.tmp_file_dir, file_name + ".mzpkl")
+            if os.path.exists(fn):
+                d = read_raw_file_to_obj(fn)
                 # correct retention time if model is available
                 if rt_cor_functions is not None and file_name in rt_cor_functions.keys():
                     f = rt_cor_functions[file_name]
@@ -244,14 +260,16 @@ def gap_filling(features, params: Params):
 
                 for f in features:
                     if f.feature_id_arr[i] == -1:
-                        _, eic_signals, _ = d.get_eic_data(f.mz, f.rt, params.mz_tol_alignment, 0.05)
+                        eic_time_arr, eic_signals, _ = d.get_eic_data(f.mz, f.rt, params.mz_tol_alignment, params.gap_filling_rt_window)
                         if len(eic_signals) > 0:
-                            f.peak_height_seq[i] = np.max(eic_signals[:, 1])
+                            f.peak_height_arr[i] = np.max(eic_signals[:, 1])
+                            f.peak_area_arr[i] = int(np.trapz(y=eic_signals[:, 1], x=eic_time_arr))
+                            f.top_average_arr[i] = np.mean(np.sort(eic_signals[:, 1])[-3:])
     
     # calculate the detection rate after gap filling (blank samples are not included)
     v = ~params.sample_metadata['is_blank']
     for f in features:
-        f.detection_rate_gap_filled = np.sum(f.feature_id_arr[v] != -1) / np.sum(v)
+        f.detection_rate_gap_filled = np.sum(f.peak_height_arr[v] > 0) / np.sum(v)
     
     return features
 
@@ -274,40 +292,54 @@ def merge_features(features: list, params: Params):
     """
 
     features = sorted(features, key=lambda x: x.mz)
+    features_cleaned = []
 
-    mz_groups = []
-    mz_groups_tmp = [0]
-
-    for i, f in enumerate(features):
-        if i == 0:
-            continue
-        if np.abs(f.mz - features[i-1].mz) < params.mz_tol_merge_features:
-            mz_groups_tmp.append(i)
+    tmp = [features[0]]
+    features_rest = []
+    for i in range(1, len(features)):
+        if features[i].mz - features[i-1].mz < params.mz_tol_merge_features:
+            tmp.append(features[i])
         else:
-            mz_groups.append(mz_groups_tmp)
-            mz_groups_tmp = [i]
-    mz_groups.append(mz_groups_tmp)
+            if len(tmp) == 1:
+                features_cleaned.append(tmp[0])
+            else:
+                features_rest.append(tmp)
+            tmp = [features[i]]
+    if len(tmp) == 1:
+        features_cleaned.append(tmp[0])
+    else:
+        features_rest.append(tmp)
 
-    cleaned_idx = []
-    for group in mz_groups:
-        if len(group) == 1:
-            cleaned_idx.append(group[0])
-        else:
-            group = sorted(group, key=lambda x: features[x].rt)
-            rt_groups = []
-            rt_groups_tmp = [group[0]]
-            for i in range(1, len(group)):
-                if np.abs(features[group[i]].rt - features[group[i-1]].rt) < params.rt_tol_merge_features:
-                    rt_groups_tmp.append(group[i])
+    for g in features_rest:
+        g = sorted(g, key=lambda x: x.rt)
+        tmp = [g[0]]
+        for i in range(1, len(g)):
+            if g[i].rt - g[i-1].rt < params.rt_tol_merge_features:
+                tmp.append(g[i])
+            else:
+                if len(tmp) == 1:
+                    features_cleaned.append(tmp[0])
                 else:
-                    rt_groups.append(rt_groups_tmp)
-                    rt_groups_tmp = [group[i]]
-            rt_groups.append(rt_groups_tmp)
-            for rt_group in rt_groups:
-                rt_group = sorted(rt_group, key=lambda x: features[x].highest_intensity, reverse=True)
-                cleaned_idx.append(rt_group[0])
-    
-    return [features[i] for i in cleaned_idx]
+                    tmp.sort(key=lambda x: x.highest_intensity, reverse=True)
+                    merged_f = deepcopy(tmp[0])
+                    merged_f.peak_height_arr = np.max([f.peak_height_arr for f in tmp], axis=0)
+                    merged_f.peak_area_arr = np.max([f.peak_area_arr for f in tmp], axis=0)
+                    merged_f.top_average_arr = np.max([f.top_average_arr for f in tmp], axis=0)
+                    features_cleaned.append(merged_f)
+                tmp = [g[i]]
+        if len(tmp) == 1:
+            features_cleaned.append(tmp[0])
+        else:
+            tmp.sort(key=lambda x: x.highest_intensity, reverse=True)
+            merged_f = deepcopy(tmp[0])
+            merged_f.peak_height_arr = np.max([f.peak_height_arr for f in tmp], axis=0)
+            merged_f.peak_area_arr = np.max([f.peak_area_arr for f in tmp], axis=0)
+            merged_f.top_average_arr = np.max([f.top_average_arr for f in tmp], axis=0)
+            features_cleaned.append(merged_f)
+
+    features_cleaned.sort(key=lambda x: x.highest_intensity, reverse=True)
+
+    return features_cleaned
 
 
 def output_feature_table(feature_table, output_path):
@@ -333,8 +365,8 @@ def output_feature_table(feature_table, output_path):
     feature_table.to_csv(output_path, index=False, sep="\t")
 
 
-def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, rt_max=50, mode='linear_interpolation', mz_tol=0.015, 
-                              rt_tol=2.0, found_marker_ratio=0.4, return_model=False):
+def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, mz_tol=0.01, rt_tol=2.0, mode='linear_interpolation', 
+                              rt_max=None):
     """
     To correct retention times for feature alignment.
 
@@ -346,25 +378,31 @@ def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, rt_max=50, mode='l
     Parameters
     ----------
     mz_ref: np.array
-        The m/z values of the reference features.
+        The m/z values of the selected anchors from another reference file.
     rt_ref: np.array
-        The retention times of the reference features.
+        The retention times of the selected anchors from another reference file.
     mz_arr: np.array
-        The m/z values of the features to be corrected.
+        Feature m/z values in the current file.
     rt_arr: np.array
-        The retention times of the features to be corrected.
-    mode: str
-        The mode for retention time correction.
-        'linear_interpolation': linear interpolation for retention time correction.
+        Feature retention times in the current file.
     mz_tol: float
         The m/z tolerance for selecting anchors.
     rt_tol: float
         The retention time tolerance for selecting anchors.
+    mode: str
+        The mode for retention time correction. Not used now.
+        'linear_interpolation': linear interpolation for retention time correction.
+    rt_max: float
+        End of the retention time range.
+    return_model: bool
+        Whether to return the model for retention time correction.
     
     Returns
     -------
-    rt_corr: np.array
+    rt_arr: np.array
         The corrected retention times.
+    f: interp1d
+        The model for retention time correction.
     """
 
     mz_matched = []
@@ -380,11 +418,8 @@ def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, rt_max=50, mode='l
             idx_matched.append(i)
     rt_ref = rt_ref[idx_matched]
     
-    if len(idx_matched) < found_marker_ratio*len(mz_ref):
-        if return_model:
-            return rt_arr, None
-        else:
-            return rt_arr
+    if len(idx_matched) < 5:
+        return rt_arr, None
     
     # remove outliers
     v = rt_ref - np.array(rt_matched)
@@ -394,37 +429,33 @@ def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, rt_max=50, mode='l
         rt_ref = np.delete(rt_ref, outliers)
         rt_matched = np.delete(rt_matched, outliers)
 
-    if len(rt_matched) < 3:
-        if return_model:
-            return rt_arr, None
-        else:
-            return rt_arr
+    if len(rt_matched) < 5:
+        return rt_arr, None
 
-    if mode == 'linear_interpolation':
-        # add zero and rt_max to the beginning and the end
-        rt_matched = np.concatenate(([0], rt_matched, [rt_max+rt_matched[-1]-rt_ref[-1]]))
-        rt_ref = np.concatenate(([0], rt_ref, [rt_max]))
-        f = interp1d(rt_matched, rt_ref, fill_value='extrapolate')
-        if return_model:
-            return f(rt_arr), f
-        else:
-            return f(rt_arr)
+    # add zero and rt_max to the beginning and the end
+    if rt_max is None:
+        rt_max = np.max(rt_matched) + 0.1
+    rt_matched = np.concatenate(([0], rt_matched, [rt_max+rt_matched[-1]-rt_ref[-1]]))
+    rt_ref = np.concatenate(([0], rt_ref, [rt_max]))
+    f = interp1d(rt_matched, rt_ref, fill_value='extrapolate')
+    
+    return f(rt_arr), f
 
 
-def rt_anchor_selection(data_list, num=50, noise_tol=0.3, mz_tol=0.01, return_all_anchor=False):
+def rt_anchor_selection(data_path, num=50, noise_score_tol=0.1, mz_tol=0.01):
     """
-    To select anchors for retention time correction. The anchors are commonly detected in the provided
-    data, of high intensity, with good peak shape, and equally distributed in the analysis time.
+    Retention time anchors have unique m/z values and low noise scores. From all candidate features, 
+    the top *num* features with the highest peak heights are selected as anchors.
 
     The number of anchors
 
     Parameters
     ----------
-    data_list: list
-        A list of MSData objects or file names of the ouput .txt files.
-    num: int
+    data_path : str
+        Absolute directory to the feature tables.
+    num : int
         The number of anchors to be selected.
-    noise_tol: float
+    noise_tol : float
         The noise level for the anchors. Suggestions: 0.3 or lower.
 
     Returns
@@ -433,40 +464,24 @@ def rt_anchor_selection(data_list, num=50, noise_tol=0.3, mz_tol=0.01, return_al
         A list of anchors (dict) for retention time correction.
     """
 
-    if isinstance(data_list[0], str):
-        # check files and choose the one with the highest total intensity as reference files
-        total_int = []
-        for file in data_list:
-            table = pd.read_csv(file, sep="\t", low_memory=False)
-            total_int.append(np.sum(table["peak_height"]))
-        ref_idx = np.argmax(total_int)
-
-        table = pd.read_csv(data_list[ref_idx], sep="\t", low_memory=False)
-        table = table.sort_values(by="m/z")
-        mzs = table["m/z"].values
-        n_scores = table["noise_score"].values
-        v = [False]
-        for i in range(1, len(mzs)-1):
-            if mzs[i]-mzs[i-1] > mz_tol and mzs[i+1] - mzs[i] > mz_tol and n_scores[i] < noise_tol:
-                v.append(True)
-            else:
-                v.append(False)
-        v.append(False)
-        valid_mzs = mzs[v]
-        valid_rts = table["RT"].values[v]
-        valid_ints = table["peak_height"].values[v]
-        valid_mzs = valid_mzs[np.argsort(valid_ints)[-num:]]
-        valid_rts = valid_rts[np.argsort(valid_ints)[-num:]]
-        # sort the results by retention time
-        valid_mzs = valid_mzs[np.argsort(valid_rts)]
-        valid_rts = valid_rts[np.argsort(valid_rts)]
-
-
-        train_idx, test_idx = _split_to_train_test(valid_rts)
-        if return_all_anchor:
-            return valid_mzs, valid_rts, train_idx, test_idx
-        else:
-            return valid_mzs[train_idx], valid_rts[train_idx]
+    df = pd.read_csv(data_path, sep="\t", low_memory=False)
+    # sort by m/z
+    df = df.sort_values(by="m/z")
+    df.index = range(len(df))
+    mzs = df["m/z"].values
+    candidates = []
+    diff = np.diff(mzs)
+    for i in range(1, len(mzs)-1):
+        if diff[i-1] > mz_tol and diff[i] > mz_tol and df["noise_score"][i] < noise_score_tol:
+            candidates.append(i)
+    candidates = np.array(candidates)
+    candidates = candidates[np.argsort(df["peak_height"].values[candidates])[-num:]]
+    # reverse the order
+    candidates = candidates[::-1]
+    valid_mzs = mzs[candidates]
+    valid_rts = df["RT"].values[candidates]
+    
+    return valid_mzs, valid_rts
 
 
 """
@@ -532,6 +547,7 @@ def _assign_value_to_feature(f, df, i, p, file_name):
     f.gaussian_similarity_arr[i] = df.loc[p, "Gaussian_similarity"]
     f.noise_score_arr[i] = df.loc[p, "noise_score"]
     f.asymmetry_factor_arr[i] = df.loc[p, "asymmetry_factor"]
+    f.scan_idx_arr[i] = df.loc[p, "scan_idx"]
     if df.loc[p, "MS2"] == df.loc[p, "MS2"]:
         f.ms2_seq.append([file_name, df.loc[p, "MS2"]])
 
@@ -557,7 +573,7 @@ def _assign_reference_values(f, df, i, p, file_name):
     f.mz = df.loc[p, "m/z"]
     f.rt = df.loc[p, "RT"]
     f.reference_file = file_name
-    f.reference_idx = i
+    f.reference_scan_idx = df.loc[p, "scan_idx"]
     f.highest_intensity = df.loc[p, "peak_height"]
     f.gaussian_similarity = df.loc[p, "Gaussian_similarity"]
     f.noise_score = df.loc[p, "noise_score"]

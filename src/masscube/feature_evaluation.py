@@ -84,7 +84,7 @@ def calculate_gaussian_similarity(x, y):
 
     similarity = np.corrcoef(y, y_fit)[0, 1]
     
-    return similarity
+    return np.max([0, similarity])
 
 
 def calculate_noise_score(y, intensity_threshold=0.05):
@@ -110,15 +110,18 @@ def calculate_noise_score(y, intensity_threshold=0.05):
         return 0.0
 
     diff = np.diff(y)
-    signs = np.sign(diff)
-    counter = -1
-    for i in range(1, len(diff)):
-        if signs[i] != signs[i-1]:
-            counter += 1
-    if counter == -1:
-        return 0.0
+    score = np.sum(np.abs(diff)) / np.max(y) / 2 - 1
+    return np.max([0, score])
+
+    # signs = np.sign(diff)
+    # counter = -1
+    # for i in range(1, len(diff)):
+    #     if signs[i] != signs[i-1]:
+    #         counter += 1
+    # if counter == -1:
+    #     return 0.0
     
-    return counter / (len(y)-2)
+    # return counter / (len(y)-2)
 
 
 def calculate_asymmetry_factor(y):

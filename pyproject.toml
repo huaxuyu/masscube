@@ -34,9 +34,8 @@ dependencies = [
 
 [project.scripts]
 untargeted-metabolomics = "masscube:untargeted_metabolomics_workflow"
+batch-processing = "masscube:batch_file_processing"
 generate-sample-table = "masscube:generate_sample_table"
-get-timestamps = "masscube:get_timestamps"
-process-files = "masscube:batch_file_processing"
 find-outliers = "masscube:run_evaluation"
 build-classifier = "masscube:build_classifier"
 

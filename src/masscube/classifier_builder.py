@@ -161,7 +161,7 @@ def evaluate_model(predictions, y_test):
     return accuracy
 
 
-def build_classifier(path=None, feature_num=None, gaussian_cutoff=0.6, fill_percentage_cutoff=0.9, fill_ratio=0.5,
+def build_classifier(path=None, by_metadata=None, feature_num=None, gaussian_cutoff=0.6, fill_percentage_cutoff=0.9, fill_ratio=0.5,
                      cross_validation_k=5, data_processed=False):
     """
     To build classifier from raw data.
@@ -182,20 +182,20 @@ def build_classifier(path=None, feature_num=None, gaussian_cutoff=0.6, fill_perc
         The number of folds for cross-validation. Default is 5.
     """
 
+    if by_metadata is None:
+        raise ValueError('Please provide the name of metadata column for classification.')
+
     if path is None:
         path = os.getcwd()
 
     # process the raw data
     if not data_processed and not os.path.exists(os.path.join(path, 'aligned_feature_table.txt')):
-        untargeted_metabolomics_workflow(path)
+        _, params = untargeted_metabolomics_workflow(path, return_results=True)
 
     # load the processed data
     df = pd.read_csv(os.path.join(path, 'aligned_feature_table.txt'), sep='\t', low_memory=False)
-    sample_table = pd.read_csv(os.path.join(path, 'sample_table.csv'))
-    sample_names = sample_table.iloc[:,0].values[(sample_table.iloc[:,1].values != "blank") & (sample_table.iloc[:,1].values != "qc")]
-    sample_groups = sample_table.iloc[:,1].values[(sample_table.iloc[:,1].values != "blank") & (sample_table.iloc[:,1].values != "qc")]
-    sample_names = sample_table.iloc[:,0].values[(sample_table.iloc[:,1].values != "blank") & (sample_table.iloc[:,1].values != "qc")]
-    sample_groups = sample_table.iloc[:,1].values[(sample_table.iloc[:,1].values != "blank") & (sample_table.iloc[:,1].values != "qc")]
+    sub_medadata = params.sample_metadata[(~params.sample_metadata['is_blank']) & (~params.sample_metadata['is_qc'])]
+    reg_samples = sub_medadata['sample_name'].values
     
     # preprocess data by
     selected_feature_numbers = [len(df)]
@@ -214,12 +214,10 @@ def build_classifier(path=None, feature_num=None, gaussian_cutoff=0.6, fill_perc
     df = df.drop_duplicates(subset='annotation', keep='first')
     selected_feature_numbers.append(len(df))
     # 5. only keep the samples that are not blank or qc
-    keep_columns = df.columns[:22].tolist() + sample_names.tolist()
-    df = df[keep_columns]
-    df['fill_percentage'] = df.iloc[:, 22:].astype(bool).sum(axis=1)/len(sample_names)
-    df = df[df['fill_percentage'] > fill_percentage_cutoff]
+    df = df[df['detection_rate'] > fill_percentage_cutoff]
     selected_feature_numbers.append(len(df))
-    X = df.iloc[:, 22:].values
+    
+    X = df[reg_samples].values
     for i in X:
         i[i == 0] = np.min(i[i != 0]) * fill_ratio
     X = X.T
@@ -227,7 +225,7 @@ def build_classifier(path=None, feature_num=None, gaussian_cutoff=0.6, fill_perc
     scaler = StandardScaler()
     X = scaler.fit_transform(X)
     # factorize y
-    y = sample_groups
+    y = sub_medadata[by_metadata].values
     y, fac_id = np.array(pd.factorize(y)[0]), np.array(pd.factorize(y)[1])
 
     X_new, selected_features = feature_selection(X, y, k=feature_num)

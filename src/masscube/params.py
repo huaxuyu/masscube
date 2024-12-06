@@ -69,7 +69,9 @@ class Params:
         # feature grouping
         self.group_features_single_file = False     # whether to group features in a single file, default is False
         self.scan_scan_cor_tol = 0.7                # scan-to-scan correlation tolerance for feature grouping, default is 0.7
-        self.valid_charge_states = [1, 2]           # valid charge states for feature grouping, list of integers
+        self.mz_tol_feature_grouping = 0.015        # m/z tolerance for feature grouping, default is 0.01
+        self.rt_tol_feature_grouping = 0.1          # RT tolerance for feature grouping, default is 0.2
+        self.valid_charge_states = [1]              # valid charge states for feature grouping, list of integers
 
         # feature alignment
         self.mz_tol_alignment = 0.01                # m/z tolerance for alignment, default is 0.01
@@ -79,10 +81,11 @@ class Params:
         self.detection_rate_cutoff = 0.1            # features detected need to be >rate*(qc+sample), default rate is 0.1
         self.merge_features = True                  # whether to merge features with almost the same m/z and RT, default is True
         self.mz_tol_merge_features = 0.01           # m/z tolerance for merging features, default is 0.01
-        self.rt_tol_merge_features = 0.05           # RT tolerance for merging features, default is 0.2
+        self.rt_tol_merge_features = 0.05           # RT tolerance for merging features, default is 0.05
         self.group_features_after_alignment = True  # whether to group features after alignment, default is False
         self.fill_gaps = True                       # whether to fill the gaps in the aligned features, default is True
         self.gap_filling_method = "local_maximum"   # method for gap filling, default is "local_maximum", string
+        self.gap_filling_rt_window = 0.05           # RT window for finding local maximum, default is 0.05 minutes
 
         # feature annotation
         self.ms2_library_path = None        # path to the MS2 library (.msp or .pickle), character string
@@ -257,42 +260,6 @@ class Params:
         self.output_single_file = True      # output the processed individual files to a txt file
         self.output_ms1_scans = True        # for faster data reloading in gap filling
         self.output_aligned_file = True     # output the aligned features to a txt file
-
-
-    def _batch_processing_preparation(self):
-        """
-        Prepare the parameters for the batch processing.
-        """
-    
-        # STEP 1: check if the project directory exists
-        if not os.path.exists(self.project_dir):
-            raise ValueError("The project directory does not exist. Please create the directory first.")
-        
-        self.sample_dir = os.path.join(self.project_dir, "data")
-        self.single_file_dir = os.path.join(self.project_dir, "single_files")
-        self.bpc_dir = os.path.join(self.project_dir, "chromatograms")
-
-        # STEP 2: check if the required files are prepared
-        #         three items are required: raw MS data, sample table, parameter file
-        if not os.path.exists(self.sample_dir) or len(os.listdir(self.sample_dir)) == 0:
-            raise ValueError("No raw MS data is found in the project directory.")
-        if not os.path.exists(os.path.join(self.project_dir, "parameters.csv")):
-            print("No parameter file is found in the project directory. Default parameters will be used.")
-
-        # STEP 3: create the output directories if not exist
-        if not os.path.exists(self.single_file_dir):
-            os.makedirs(self.single_file_dir)
-        if not os.path.exists(self.bpc_dir):
-            os.makedirs(self.bpc_dir)
-        
-        # STEP 4: read the parameters from csv file or use default values
-        if os.path.exists(os.path.join(self.project_dir, "parameters.csv")):
-            self.read_parameters_from_csv(os.path.join(self.project_dir, "parameters.csv"))
-        else:
-            print("Using default parameters...")
-            self.plot_bpc = False
-
-        self.output_single_file = True
 
 
     def set_default(self, ms_type, ion_mode):

@@ -8,13 +8,10 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 import pandas as pd
-from datetime import datetime
-import json
-import gzip
-import pickle
 
 from .params import Params, find_ms_info
 from .feature_detection import detect_features, segment_feature
+from .mzpkl import convert_MSData_to_mzpkl, read_mzpkl_to_MSData
 
 
 """
@@ -70,9 +67,9 @@ class MSData:
             in MS2 scans is calculated as precursor_mz - precursor_mz_offset.
         """
 
-        if file_name.lower().endswith(".pkl"):
-            data = pickle.load(open(file_name, "rb"))
-            self.read_ms1_pickle(data)
+        if file_name.lower().endswith(".mzpkl"):
+            self.params = Params()
+            read_mzpkl_to_MSData(self, file_name)
             return None
 
         # priority for parameter setting:
@@ -122,16 +119,6 @@ class MSData:
                 with mzxml.MzXML(file_name) as reader:
                     self.extract_scan_mzxml(scans=reader)
                     self.params.file_format = "mzxml"
-            elif base_name.lower().endswith(".mzjson"):
-                with open(file_name, 'r') as f:
-                    data = json.load(f)
-                    self.read_mzjson(data)
-                    self.params.file_format = "mzjson"
-            elif base_name.lower().endswith(".gz"):
-                with gzip.open(file_name, 'rt') as f:
-                    data = json.load(f)
-                    self.read_mzjson(data)
-                    self.params.file_format = "mzjson.gz"
             else:
                 raise ValueError("Unsupported raw data format. " +
                                  "Raw data must be mzML, mzXML, mzjson or mzjson.gz.")
@@ -459,7 +446,7 @@ class MSData:
                 ms2 = ms2[:-1]
 
             temp = [f.feature_group_id, f.id, f.mz.__round__(4), f.rt.__round__(3), f.adduct_type, f.is_isotope, 
-                    f.is_in_source_fragment, f.peak_area, f.peak_height, f.top_average, f.gaussian_similarity.__round__(2), 
+                    f.is_in_source_fragment, f.scan_idx, f.peak_area, f.peak_height, f.top_average, f.gaussian_similarity.__round__(2), 
                     f.noise_score.__round__(2), f.asymmetry_factor.__round__(2), f.charge_state, iso, f.rt_seq[0].__round__(3),
                     f.rt_seq[-1].__round__(3), f.length, ms2, f.matched_ms2, f.search_mode, f.annotation, f.formula, f.similarity,
                     f.matched_precursor_mz, f.matched_peak_number, f.smiles, f.inchikey]
@@ -467,7 +454,7 @@ class MSData:
             result.append(temp)
 
         # convert result to a pandas dataframe
-        columns = [ "group_ID", "feature_ID", "m/z", "RT", "adduct", "is_isotope", "is_in_source_fragment", "peak_area", "peak_height", "top_average",
+        columns = [ "group_ID", "feature_ID", "m/z", "RT", "adduct", "is_isotope", "is_in_source_fragment", "scan_idx", "peak_area", "peak_height", "top_average",
                     "Gaussian_similarity", "noise_score", "asymmetry_factor", "charge", "isotopes", "RT_start", "RT_end", "total_scans",
                     "MS2", "matched_MS2", "search_mode", "annotation", "formula", "similarity", "matched_mz", "matched_peak_number", "SMILES", "InChIKey"]
 
@@ -477,8 +464,7 @@ class MSData:
         if output_path is None:
             output_path = self.params.single_file_dir
         if output_path is not None:
-            path = os.path.join(output_path, self.params.file_name + ".txt")
-            df.to_csv(path, index=False, sep="\t")
+            df.to_csv(output_path, index=False, sep="\t")
         else:
             print("No output path for single file report. Please set the output path.")
 
@@ -544,7 +530,7 @@ class MSData:
     
 
     def plot_eics(self, target_mz_arr, target_rt=None, mz_tol=0.005, rt_tol=0.3, rt_range=None,
-                  output_file_name=None, show_target_rt=True, ylim=None, return_eic_data=False):
+                  output_file_name=None, show_target_rt=True, ylim: list=None, return_eic_data=False):
         """
         Function to plot multiple EICs in a single plot.
 
@@ -746,27 +732,25 @@ class MSData:
             return eic_rt[np.argmax(eic_int)], np.max(eic_int), eic_scan_idx[np.argmax(eic_int)]
 
 
-    def output_ms1_to_pickle(self, output_path=None):
+    def convert_to_mzpkl(self):
         """
         Function to output all MS1 scans as an intermediate mzjson file for faster data loading, 
         if the file needs to be reloaded multiple times.
+
+        Parameters
+        ----------
+        output_path: str
+            Output path of the pickle file.
         """
 
-        signals = {
-            'time': self.ms1_time_arr,
-            'signals': [scan.signals for scan in self.scans if scan.level == 1]
-        }
+        if self.params.tmp_file_dir is None:
+            return None
         
-        if output_path is None:
-            output_path = self.params.tmp_file_dir
-        if output_path is not None:
-            with open(os.path.join(output_path, self.params.file_name + ".pkl"), 'wb') as f:
-                pickle.dump(signals, f)
-        else:
-            print("No pickle file for MS1 scans is saved. Please set the temporary file directory.")
+        output_path = os.path.join(self.params.tmp_file_dir, self.params.file_name + ".mzpkl")
+        convert_MSData_to_mzpkl(self, output_path)
     
 
-    def read_ms1_pickle(self, data):
+    def read_mzpkl(self, data):
         """
         Function to read pickle file.
 
@@ -775,7 +759,8 @@ class MSData:
         data: dict
             Dictionary from a pickle file.
         """
-
+        
+        self.ms1_idx = [i for i in range(len(data['time']))]
         self.ms1_time_arr = data['time']
         self.scans = [Scan(level=1, id=i, scan_time=self.ms1_time_arr[i], 
                            signals=data['signals'][i]) for i in range(len(data['time']))]

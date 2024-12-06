@@ -25,7 +25,7 @@ Modules:
 """
 
 
-def sample_normalization(feature_table, sample_groups=None, method='pqn', feature_selection=True):
+def sample_normalization(feature_table, sample_metadata=None, method='pqn', feature_selection=True):
     """
     A normalization function that takes a feature table as input and returns a normalized feature table.
 
@@ -33,8 +33,8 @@ def sample_normalization(feature_table, sample_groups=None, method='pqn', featur
     ----------
     feature_table : pandas DataFrame
         The feature table.
-    sample_groups : list
-        A list of groups of individual samples. Blank samples will be skipped.
+    sample_metadata : pd.DataFrame
+        DataFrame containing sample metadata. See params module for details.
     method : str
         The method to find the normalization factors.
         'pqn': probabilistic quotient normalization.
@@ -53,35 +53,30 @@ def sample_normalization(feature_table, sample_groups=None, method='pqn', featur
         Normalized feature table.
     """
 
-    # STEP 1: data preparation
-    # 1. check the length of the sample groups
-    if sample_groups is None:
-        sample_groups = ['sample'] * (feature_table.shape[1]-22)
-    if len(sample_groups) != (feature_table.shape[1]-22):
-        print("Normalization failed: the length of the sample groups does not match the number of samples.")
+    if sample_metadata is None:
+        print("\tSample normalization failed: sample metadata is required.")
         return feature_table
-    sample_groups = np.array(sample_groups, dtype=str)
-    # 2. separate the data array from the feature table
-    data = feature_table.iloc[:, 22:].values
 
-    # STEP 2: select high-quality features for normalization
+    data = feature_table[sample_metadata.iloc[:, 0]].values
+
     if feature_selection:
-        hq_data = high_quality_feature_selection(data, sample_groups)
+        hq_data = high_quality_feature_selection(data, is_qc=sample_metadata['is_qc'], is_blank=sample_metadata['is_blank'])
     else:
         hq_data = data
     
     # drop blank samples for normalization
-    data = data[:, sample_groups!='blank']
-    hq_data = hq_data[:, sample_groups!='blank']
+    data_to_norm = data[:, ~sample_metadata['is_blank']]
+    hq_data_to_norm = hq_data[:, ~sample_metadata['is_blank']]
 
     # STEP 3: find the normalization factors
-    v = find_normalization_factors(hq_data, method=method)
+    v = find_normalization_factors(hq_data_to_norm, method=method)
 
     # STEP 4: normalize samples by factors
-    data = sample_normalization_by_factors(data, v)
+    data_to_norm = sample_normalization_by_factors(data_to_norm, v)
+    data[:, ~sample_metadata['is_blank']] = data_to_norm
 
     # STEP 5: update the feature table
-    feature_table.iloc[:, 22:(22+data.shape[1])] = data
+    feature_table[sample_metadata.iloc[:, 0]] = data
 
     return feature_table
 
@@ -167,8 +162,7 @@ def find_reference_sample(array, method='median_intensity'):
         return np.argmax(np.median(array, axis=0))
 
 
-def high_quality_feature_selection(array, sample_groups, by_blank=True, by_qc=True,
-                                   blank_ratio_tol=0.5, qc_rsd_tol=0.25, return_idx=False):
+def high_quality_feature_selection(array, is_qc=None, is_blank=None, blank_ratio_tol=0.5, qc_rsd_tol=0.25):
     """
     Select high-quality features based on provided criteria for normalization.
     High-quality features have (default):
@@ -180,44 +174,44 @@ def high_quality_feature_selection(array, sample_groups, by_blank=True, by_qc=Tr
     ----------
     array : numpy array
         The data to be normalized. Samples are in columns and features are in rows.
-    sample_groups : numpy array or list
-        A list of groups of individual samples. 'blank' for blank samples, 'qc' for quality control samples.
+    is_qc : numpy array
+        Boolean array indicating whether a sample is a quality control sample.
+    is_blank : numpy array
+        Boolean array indicating whether a sample is a blank sample.
+    blank_ratio_tol : float
+        The tolerance of the ratio of the average intensity in blank samples to the average intensity in QC and biological samples.
+    qc_rsd_tol : float
+        The tolerance of the relative standard deviation (RSD) in QC samples.
 
     Returns
     -------
     numpy array
         High-quality features. Features are in rows and samples are in columns.
+    numpy array
+        The index of the selected features.
     """
 
     # 1. filter features based on blank samples
-    sample_groups = list(sample_groups)
-    if by_blank and 'blank' in sample_groups:
-        blank_idx = np.array(sample_groups) == 'blank'
-        blank_avg = np.mean(array[:, blank_idx], axis=1)
-        sample_ave = np.mean(array[:, ~blank_idx], axis=1)
-        # simple imputation for zero division
-        sample_ave[sample_ave == 0] = 1
+    if is_blank is not None:
+        blank_avg = np.mean(array[:, is_blank], axis=1)
+        sample_ave = np.mean(array[:, ~is_blank], axis=1)
+        sample_ave[sample_ave == 0] = 1     # avoid division by zero
         blank_pass = blank_avg / sample_ave < blank_ratio_tol
     else:
         blank_pass = np.ones(array.shape[0], dtype=bool)
 
-    # 2. filter features based on QC samples
-    # at least three qc samples are required
-    if by_qc and sample_groups.count('qc') > 2:
-        qc_idx = np.array(sample_groups) == 'qc'
-        sd = np.std(array[:, qc_idx], axis=1, ddof=1) 
-        mean = np.mean(array[:, qc_idx], axis=1)
+    # 2. filter features based on QC samples (3 QC samples are required)
+    if is_qc is not None and np.sum(is_qc) > 2:
+        sd = np.std(array[:, is_qc], axis=1, ddof=1) 
+        mean = np.mean(array[:, is_qc], axis=1)
         rsd = np.array([s/m if m != 0 else 99 for s, m in zip(sd, mean)])
         qc_pass = rsd < qc_rsd_tol
     else:
         qc_pass = np.ones(array.shape[0], dtype=bool)
 
-    print(str(np.sum(np.logical_and(blank_pass, qc_pass))) + " features are selected for determining normalization factors.")
+    idxes = np.logical_and(blank_pass, qc_pass)
 
-    if return_idx:
-        return array[np.logical_and(blank_pass, qc_pass)], np.logical_and(blank_pass, qc_pass)
-    else:
-        return array[np.logical_and(blank_pass, qc_pass)]
+    return array[idxes]
 
 
 """
@@ -229,8 +223,7 @@ Provides
     2. Standard-free QC-based normalization.
 """
 
-def signal_normalization(feature_table, sample_groups, analytical_order, method='lowess',
-                         batch_idx=None):
+def signal_normalization(feature_table, sample_metadata, method='lowess', batch_idx=None):
     """
     A function to normalize MS signal drifts based on analytical order.
 
@@ -238,10 +231,8 @@ def signal_normalization(feature_table, sample_groups, analytical_order, method=
     ----------
     feature_table : pandas DataFrame
         The feature table.
-    sample_groups : list
-        A list of groups of individual samples. Blank samples will be skipped.
-    analytical_order : list
-        The order of the samples. It should have the same length as the number of samples.
+    sample_metadata : pd.DataFrame
+        DataFrame containing sample metadata. See params module for details.
     method : str
         The method to find the normalization factors.
         'lowess': locally weighted scatterplot smoothing.
@@ -255,26 +246,23 @@ def signal_normalization(feature_table, sample_groups, analytical_order, method=
         Normalized feature table.
     """
 
-    # STEP 1: data preparation
-    # 1. check the length of the sample groups
-    if len(sample_groups) != (feature_table.shape[1]-22):
-        print("Normalization failed: the length of the sample groups does not match the number of samples.")
+    if np.sum(sample_metadata['is_qc']) < 3:
+        print("\tSignal normalization failed: at least three QC samples are required.")
         return feature_table
-    sample_groups = np.array(sample_groups, dtype=str)
-    # 2. separate the data array from the feature table
-    data = feature_table.iloc[:, 22:].values
 
-    # STEP 2: perform normalization
+    data = feature_table[sample_metadata.iloc[:, 0]].values
+
     if method == 'lowess':
-        data_corr, _ = lowess_normalization(data, sample_groups, analytical_order, batch_idx)
+        data_corr = lowess_normalization(array=data, is_qc=sample_metadata['is_qc'], 
+                                         analytical_order=sample_metadata['analytical_order'], batch_idx=batch_idx)
     
     # STEP 3: update the feature table
-    feature_table.iloc[:, 22:] = data_corr
+    feature_table[sample_metadata.iloc[:, 0]] = data_corr
 
     return feature_table
 
 
-def lowess_normalization(array, sample_groups, analytical_order, batch_idx=None):
+def lowess_normalization(array, is_qc, analytical_order, batch_idx=None):
     """
     A function to normalize samples using quality control samples.
 
@@ -282,8 +270,8 @@ def lowess_normalization(array, sample_groups, analytical_order, batch_idx=None)
     ----------
     array : numpy array
         The data to be normalized. Samples are in columns and features are in rows.
-    sample_groups : numpy array or list
-        A list of groups of individual samples. 'blank' for blank samples, 'qc' for quality control samples.
+    is_qc : numpy array
+        Boolean array indicating whether a sample is a quality control sample.
     analytical_order : numpy array or list
         The order of the samples.
     batch_idx : numpy array or list
@@ -298,8 +286,8 @@ def lowess_normalization(array, sample_groups, analytical_order, batch_idx=None)
 
     # 1. reorder the data array
     array = array[:, np.argsort(analytical_order)]
-    sample_groups = np.array(sample_groups)[np.argsort(analytical_order)]
-    qc_idx = np.where(sample_groups == 'qc')[0]
+    is_qc = is_qc[np.argsort(analytical_order)]
+    qc_idx = np.where(is_qc)[0]
 
     # 2. feature-wise normalization
     data_corr = []
@@ -326,6 +314,6 @@ def lowess_normalization(array, sample_groups, analytical_order, batch_idx=None)
 
     data_corr = np.array(data_corr)
     # sort the data back to the original order
-    data_corr = data_corr[:, analytical_order]
+    data_corr = data_corr[:, np.argsort(analytical_order)]
 
-    return data_corr, corrected_arr
+    return data_corr

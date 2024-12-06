@@ -9,6 +9,7 @@ from tqdm import tqdm
 from pyteomics import mass
 from pyteomics.mass.mass import isotopologues, calculate_mass
 from datetime import datetime
+import re
 
 
 def generate_sample_table(path=None, output=True):
@@ -50,7 +51,7 @@ def generate_sample_table(path=None, output=True):
         file_names = [os.path.splitext(f)[0] for f in os.listdir(path_data) if f.lower().endswith('.mzml') or f.lower().endswith('.mzxml')]
         file_names = [f for f in file_names if not f.startswith(".")]   # for Mac OS
         file_names = sorted(file_names)
-        sample_table = pd.DataFrame({'Sample': file_names, "Groups": [None]*len(file_names)})
+        sample_table = pd.DataFrame({'Sample': file_names, "is_qc": [None]*len(file_names), "is_blank": [None]*len(file_names)})
     else:
         raise FileNotFoundError(f"The path {path_data} does not exist.")
     
@@ -206,3 +207,56 @@ def get_start_time(file_name):
                 if "startTimeStamp" in str(l):
                     t = l.split("startTimeStamp")[1].split('"')[1]
                     return datetime.strptime(t, "%Y-%m-%dT%H:%M:%SZ")
+
+
+def extract_signals_from_string(ms2):
+    """
+    Extract signals from MS2 spectrum in string format.
+
+    Parameters
+    ----------
+    ms2 : str
+        MS2 spectrum in string format. Format: "mz1;intensity1|mz2;intensity2|..."
+        example: "100.0;1000.0|200.0;2000.0|300.0;3000.0|"
+    
+    returns
+    ----------
+    peaks : numpy.array
+        Peaks in numpy array format.
+    """
+    
+    # Use findall function to extract all numbers matching the pattern
+    numbers = re.findall(r'\d+\.\d+', ms2)
+    
+    # Convert the extracted numbers from strings to floats
+    numbers = [float(num) for num in numbers]
+    
+    numbers = np.array(numbers).reshape(-1, 2)
+
+    return numbers
+
+
+def convert_signals_to_string(signals):
+    """
+    Convert peaks to string format.
+
+    Parameters
+    ----------
+    signals : numpy.array
+        MS2 signals organized as [[mz1, intensity1], [mz2, intensity2], ...]
+
+    Returns
+    -------
+    string : str
+        Converted signals in string format. Format: "mz1;intensity1|mz2;intensity2|..."
+    """
+
+    if signals is None:
+        return None
+    
+    string = ""
+    for i in range(len(signals)):
+        string += str(np.round(signals[i, 0], decimals=4)) + ";" + str(np.round(signals[i, 1], decimals=4)) + "|"
+    string = string[:-1]
+    
+    return string

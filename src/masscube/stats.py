@@ -6,10 +6,15 @@ import numpy as np
 import os
 from scipy.stats import ttest_ind, f_oneway
 from sklearn.decomposition import PCA
+from umap import UMAP
+from sklearn.preprocessing import StandardScaler
+import matplotlib.pyplot as plt
+import random
 
 from .visualization import plot_pca
 
-def statistical_analysis(feature_table, params, before_norm=False):
+
+def full_statistical_analysis(feature_table, params, include_qc=False):
     """
     1. Univariate analysis (t-test and p-value adjustment for two groups; ANOVA and p-value adjustment for multiple groups)
     2. Multivariate analysis (PCA)
@@ -26,31 +31,34 @@ def statistical_analysis(feature_table, params, before_norm=False):
     feature_table : pandas DataFrame
     """
     
-    v = [params.sample_names[i] for i in range(len(params.individual_sample_groups)) if params.individual_sample_groups[i] not in ['qc', 'blank']]
-    data_array = np.array(feature_table[v], dtype=np.int64)
+    # UMAP analysis
+    umap_analysis(feature_table, params)
+    
+    # v = [params.sample_names[i] for i in range(len(params.individual_sample_groups)) if params.individual_sample_groups[i] not in ['qc', 'blank']]
+    # data_array = np.array(feature_table[v], dtype=np.int64)
 
-    s = len(params.sample_groups) - 2
-    v = np.array([i for i in params.individual_sample_groups if i not in ['qc', 'blank']])
+    # s = len(params.sample_groups) - 2
+    # v = np.array([i for i in params.individual_sample_groups if i not in ['qc', 'blank']])
 
-    if s == 2:
-        p_values = t_test(data_array, v)
-    elif s > 2:
-        p_values = anova(data_array, v)
+    # if s == 2:
+    #     p_values = t_test(data_array, v)
+    # elif s > 2:
+    #     p_values = anova(data_array, v)
 
-    elif s == 1 and before_norm==False:
-        print("No statistical analysis is performed since only one group is found.")
+    # elif s == 1 and before_norm==False:
+    #     print("No statistical analysis is performed since only one group is found.")
 
-    # for PCA analysis, the QC samples should also be included
-    v = [params.sample_names[i] for i in range(len(params.individual_sample_groups)) if params.individual_sample_groups[i] not in ['blank']]
-    data_array = feature_table[v].values
-    v = np.array([i for i in params.individual_sample_groups if i not in ['blank']])
+    # # for PCA analysis, the QC samples should also be included
+    # v = [params.sample_names[i] for i in range(len(params.individual_sample_groups)) if params.individual_sample_groups[i] not in ['blank']]
+    # data_array = feature_table[v].values
+    # v = np.array([i for i in params.individual_sample_groups if i not in ['blank']])
 
-    pca_analysis(data_array, v, output_dir=params.statistics_dir, before_norm=before_norm)
+    # pca_analysis(data_array, v, output_dir=params.statistics_dir, before_norm=before_norm)
 
-    if s == 2:
-        feature_table['t_test_p'] = p_values
-    elif s > 2:
-        feature_table['ANOVA_p'] = p_values
+    # if s == 2:
+    #     feature_table['t_test_p'] = p_values
+    # elif s > 2:
+    #     feature_table['ANOVA_p'] = p_values
     
     return feature_table
 
@@ -182,3 +190,105 @@ def pca_analysis(data_array, individual_sample_groups, scaling=True, transformat
     plot_pca(vecPC1, vecPC2, var_PC1, var_PC2, individual_sample_groups, output_dir=output_dir)
 
     return vecPC1, vecPC2, var_PC1, var_PC2
+
+
+def umap_analysis(feature_table, params):
+    """
+    Perform UMAP analysis.
+
+    Parameters
+    ----------
+    feature_table : pandas DataFrame
+        The feature table.
+    params : Params object
+        The parameters for the experiment.
+    include_qc : bool
+        Whether to include the QC samples.
+    """
+
+    if params.sample_metadata is None:
+        print("No sample metadata. UMAP analysis is not performed.")
+        return None
+    if params.statistics_dir is None:
+        print("No statistics directory. UMAP analysis is not performed.")
+        return None
+    
+    df = params.sample_metadata
+    df = df[(~df['is_qc']) & (~df['is_blank'])]
+    n = df.iloc[:, 0].values
+    data_arr = feature_table[n].values  # samples in columns and features in rows
+    keys = [i for i in df.columns[1:] if i not in ['is_qc', 'is_blank', 'analytical_order', 'time']]
+
+    # UMAP analysis
+    data_arr = data_arr.T
+    data_arr = StandardScaler().fit_transform(data_arr)
+    
+    # set random seed
+    n_samples = data_arr.shape[0]
+    n_neighbors = min(15, n_samples - 1)
+    reducer = UMAP(n_neighbors=n_neighbors, random_state=42, n_jobs=1)
+    embedding = reducer.fit_transform(data_arr)
+
+    # by different metadata
+    for color_by in keys:
+        # convert the corresponding metadata to numerical values
+        g = df[color_by].values
+        ug = list(set(g))
+        colors = generate_random_color(len(ug))
+        metadata_to_color = {ug[i]: colors[i] for i in range(len(ug))}
+        
+        color_list = [metadata_to_color[i] for i in g]
+        
+        # plot the UMAP
+        plt.figure(figsize=(10, 10))
+        plt.rcParams['font.size'] = 20
+        plt.rcParams['font.family'] = 'Arial'
+        # remove frame, x and y axis
+        plt.box(False)
+        plt.xticks([])
+        plt.yticks([])
+        plt.scatter(embedding[:, 0], embedding[:, 1], c=color_list, s=100, edgecolors='black', linewidths=0.4)
+        # set data point transparency
+        plt.setp(plt.gca().collections, alpha=0.75)
+        plt.gca().set_aspect('equal', 'datalim')
+        plt.title(f"UMAP colored by {color_by}")
+        # show legend
+        for i in range(len(ug)):
+            plt.scatter([], [], c=colors[i], label=ug[i])
+        plt.legend(loc='upper right', fontsize=20)
+        plt.savefig(os.path.join(params.statistics_dir, f"UMAP_{color_by}.png"))
+        plt.close()
+
+
+def generate_random_color(num):
+    """
+    Randomly generate colors.
+    
+    Parameters
+    ----------
+    num : int
+        The number of colors to generate.
+    
+    Returns
+    -------
+    colors : list
+        A list of hex colors.
+    """
+
+    if num < 10:
+        return COLORS[:num]
+    
+    else:
+        colors = [c for c in COLORS]
+        for _ in range(num - 10):
+            r = random.randint(0, 255)
+            g = random.randint(0, 255)
+            b = random.randint(0, 255)
+
+            # convert to hex
+            colors.append('#%02X%02X%02X' % (r, g, b))
+
+        return colors
+
+
+COLORS = ["#FF5050", "#0078F0", "#00B050", "#FFC000", "#7030A0", "#FF00FF", "#00B0F0", "#FF0000", "#00FF00", "#0000FF"]
