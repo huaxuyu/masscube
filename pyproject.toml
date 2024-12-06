@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "masscube"
-version = "1.1.0"
+version = "1.1.1"
 authors = [
   { name="Huaxu Yu", email="yhxchem@outlook.com" },
 ]
@@ -14,6 +14,7 @@ maintainers = [
 description = "Accurate and fast data processing for metabolomics"
 readme = "README.md"
 requires-python = ">=3.8"
+license = { text = "CC BY-NC 4.0" }
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: Other/Proprietary License",

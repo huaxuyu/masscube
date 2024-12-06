@@ -15,7 +15,7 @@ It provides:
 - High performance feature detection based on signal clustering.
 - Comprehensive feature quality evaluation.
 - Confident annotation of isotopes, adducts, and in-source fragments.
-- Ultra-fast annotation of MS/MS spectra supported by [Flash Entropy Search](https://github.com/YuanyueLi/MSEntropy)
+- Ultra-fast annotation of MS/MS spectra.
 
 ## Installation
 
