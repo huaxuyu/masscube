@@ -196,8 +196,7 @@ def untargeted_metabolomics_workflow(path=None, return_results=False):
     # annotation (using mzrt list)
     if os.path.exists(os.path.join(params.project_dir, "mzrt_list.csv")):
         print("\tAnnotating features using the extra mzrt list...")
-        default_adduct = "[M+H]+" if params.ion_mode == "positive" else "[M-H]-"
-        features = feature_annotation_mzrt(features, os.path.join(params.project_dir, "mzrt_list.csv"), params.align_mz_tol, params.align_rt_tol)
+        features = feature_annotation_mzrt(features, os.path.join(params.project_dir, "mzrt_list.csv"), params.mz_tol_alignment, params.rt_tol_alignment)
         print("\tmz/rt annotation is completed.")
     # annotate feature groups
     print("\tAnnotating feature groups...")

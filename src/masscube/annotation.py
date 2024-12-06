@@ -258,20 +258,25 @@ def feature_annotation_mzrt(features, path, mz_tol=0.01, rt_tol=0.3):
     """
 
     # load the mzrt file
-    istd_df = pd.read_csv(path)
-
+    df = pd.read_csv(path)
+    features.sort(key=lambda x: x.highest_intensity, reverse=True)
+    
     # match and annotate features
     feature_mz = np.array([f.mz for f in features])
     feature_rt = np.array([f.rt for f in features])
 
-    for i in range(len(istd_df)):
-        mz = istd_df.iloc[i,1]
-        rt = istd_df.iloc[i,2]
+    if 'adduct' not in df.columns:
+        df['adduct'] = None
+
+    for i in range(len(df)):
+        mz = df.iloc[i,1]
+        rt = df.iloc[i,2]
         matched_v = np.where(np.logical_and(np.abs(feature_mz - mz) < mz_tol, np.abs(feature_rt - rt) < rt_tol))[0]
         if len(matched_v) > 0:
             matched_idx = matched_v[0]
-            features[matched_idx].annotation = istd_df.iloc[i,0]
+            features[matched_idx].annotation = df.iloc[i,0]
             features[matched_idx].search_mode = "mzrt_match"
+            features[matched_idx].adduct_type = df['adduct'][i]
 
     return features
           
@@ -406,13 +411,13 @@ def _assign_annotation_results_to_feature(f, score, matched, matched_peak_num, s
 
     f.search_mode = search_mode
     f.similarity = score
-    f.annotation = matched['name']
+    f.annotation = matched['name'] if 'name' in matched else None
     f.formula = matched['formula'] if 'formula' in matched else None
     f.matched_peak_number = matched_peak_num
     f.smiles = matched['smiles'] if 'smiles' in matched else None
     f.inchikey = matched['inchikey'] if 'inchikey' in matched else None
     f.matched_ms2 = convert_signals_to_string(matched['peaks'])
-    f.matched_precursor_mz = matched['precursor_mz']
-    f.matched_adduct_type = matched['precursor_type']
+    f.matched_precursor_mz = matched['precursor_mz'] if 'precursor_mz' in matched else None
+    f.matched_adduct_type = matched['precursor_type'] if 'precursor_type' in matched else None
     if search_mode == 'identity_search':
-        f.adduct_type = matched['precursor_type']
+        f.adduct_type = matched['precursor_type'] if 'precursor_type' in matched else None

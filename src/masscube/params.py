@@ -6,7 +6,6 @@
 import pandas as pd
 import os
 import json
-import gzip
 from importlib.metadata import version
 import numpy as np
 

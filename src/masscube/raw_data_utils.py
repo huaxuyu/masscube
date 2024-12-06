@@ -462,11 +462,9 @@ class MSData:
         
         # save the dataframe to csv file
         if output_path is None:
-            output_path = self.params.single_file_dir
+            df.to_csv(os.path.join(self.params.single_file_dir, self.params.file_name + ".txt"), index=False, sep="\t")
         if output_path is not None:
             df.to_csv(output_path, index=False, sep="\t")
-        else:
-            print("No output path for single file report. Please set the output path.")
 
 
     def get_eic_data(self, target_mz, target_rt=None, mz_tol=0.005, rt_tol=0.3, rt_range=None):
