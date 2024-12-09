@@ -1,8 +1,8 @@
 # Author: Hauxu Yu
 
-# A module for feature/peak detection
+# A module for feature detection
 
-# Import modules
+# imports
 import numpy as np
 from scipy.signal import find_peaks
 from scipy.ndimage import gaussian_filter1d
@@ -97,6 +97,19 @@ class Feature:
         """
 
         return 3 * np.std(self.signals[:, 0])
+    
+
+    def get_rt_error(self):
+        """
+        Function to calculate the 3*sigma error of the feature's retention time.
+
+        Returns
+        -------
+        float
+            The 3*sigma error of the feature's retention time.
+        """
+
+        return 3 * np.std(self.rt_seq)
 
 
     def summarize(self, ph=True, pa=True, ta=True, g_score=True, n_score=True, a_score=True):

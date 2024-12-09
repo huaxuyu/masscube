@@ -1,33 +1,15 @@
 # Author: Hauxu Yu
 
-# A module to load a trained model to predict the quality of features
-# Prediction is based on peak shape
+# Evaluate feature quality by chromatographic peak shapes, mz errors, rt errors, etc.
 
-# Import modules
+# imports
 import numpy as np
-from scipy.optimize import curve_fit
-from scipy.stats import spearmanr
-import warnings
 
 
-# calculate the Gaussian similarity
-def _gaussian(x, a, b, c):
-    """
-    Gaussian function
-
-    Parameters
-    ----------
-    x: numpy array
-        Retention time
-    a: float
-        Amplitude
-    b: float
-        Mean
-    c: float
-        Standard deviation
-    """
-    return a * np.exp(-0.5 * ((x - b) / c) ** 2)
-
+"""
+Functions
+------------------------------------------------------------------------------------------------------------------------
+"""
 
 def calculate_gaussian_similarity(x, y):
     """
@@ -51,7 +33,7 @@ def calculate_gaussian_similarity(x, y):
     if type(y) is not np.ndarray:
         y = np.array(y)
 
-    # if the length of the peak is less than 5, return nan
+    # if the length of the peak is less than 5, return 0
     if len(x) < 5:
         return 0.0
 
@@ -87,7 +69,7 @@ def calculate_gaussian_similarity(x, y):
     return np.max([0, similarity])
 
 
-def calculate_noise_score(y, intensity_threshold=0.05):
+def calculate_noise_score(y, rel_int_tol=0.05):
     """
     Calculate the noise score that reflect the signal fluctuation.
 
@@ -95,8 +77,8 @@ def calculate_noise_score(y, intensity_threshold=0.05):
     ----------
     y: numpy array
         Intensity
-    intensity_threshold: float
-        The threshold to determine the noise level
+    rel_int_tol: float
+        Relative intensity tolerance.
     
     Returns
     -------
@@ -104,7 +86,7 @@ def calculate_noise_score(y, intensity_threshold=0.05):
         noise level
     """
 
-    y = y[y > np.max(y) * intensity_threshold]
+    y = y[y > np.max(y) * rel_int_tol]
 
     if len(y) < 5:
         return 0.0
@@ -112,16 +94,6 @@ def calculate_noise_score(y, intensity_threshold=0.05):
     diff = np.diff(y)
     score = np.sum(np.abs(diff)) / np.max(y) / 2 - 1
     return np.max([0, score])
-
-    # signs = np.sign(diff)
-    # counter = -1
-    # for i in range(1, len(diff)):
-    #     if signs[i] != signs[i-1]:
-    #         counter += 1
-    # if counter == -1:
-    #     return 0.0
-    
-    # return counter / (len(y)-2)
 
 
 def calculate_asymmetry_factor(y):
@@ -186,3 +158,27 @@ def squared_error_to_smoothed_curve(original_signal, fit_signal):
 
     diff = (original_signal - fit_signal) / np.max(original_signal)
     return np.sum(diff**2)
+
+
+"""
+Helper functions
+------------------------------------------------------------------------------------------------------------------------
+"""
+
+# calculate the Gaussian similarity
+def _gaussian(x, a, b, c):
+    """
+    Gaussian function
+
+    Parameters
+    ----------
+    x: numpy array
+        Retention time
+    a: float
+        Amplitude
+    b: float
+        Mean
+    c: float
+        Standard deviation
+    """
+    return a * np.exp(-0.5 * ((x - b) / c) ** 2)

@@ -1,11 +1,8 @@
 """
 classifier_builder.py - Build a random forest classification model from raw data.
-
-It provides:
-
 """
 
-# Import modules
+# imports
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import SelectKBest
 from sklearn.model_selection import train_test_split, cross_val_score, KFold
@@ -161,8 +158,8 @@ def evaluate_model(predictions, y_test):
     return accuracy
 
 
-def build_classifier(path=None, by_metadata=None, feature_num=None, gaussian_cutoff=0.6, fill_percentage_cutoff=0.9, fill_ratio=0.5,
-                     cross_validation_k=5, data_processed=False):
+def build_classifier(path=None, by_group=None, feature_num=None, gaussian_cutoff=0.6, detection_rate_cutoff=0.9, fill_ratio=0.5,
+                     cross_validation_k=5):
     """
     To build classifier from raw data.
 
@@ -182,20 +179,19 @@ def build_classifier(path=None, by_metadata=None, feature_num=None, gaussian_cut
         The number of folds for cross-validation. Default is 5.
     """
 
-    if by_metadata is None:
-        raise ValueError('Please provide the name of metadata column for classification.')
-
     if path is None:
         path = os.getcwd()
 
     # process the raw data
-    if not data_processed and not os.path.exists(os.path.join(path, 'aligned_feature_table.txt')):
-        _, params = untargeted_metabolomics_workflow(path, return_results=True)
+    _, params = untargeted_metabolomics_workflow(path, return_results=True)
+
+    if by_group is None:
+        by_group = params.by_group_name
 
     # load the processed data
     df = pd.read_csv(os.path.join(path, 'aligned_feature_table.txt'), sep='\t', low_memory=False)
     sub_medadata = params.sample_metadata[(~params.sample_metadata['is_blank']) & (~params.sample_metadata['is_qc'])]
-    reg_samples = sub_medadata['sample_name'].values
+    reg_samples = sub_medadata.iloc[:,0].values
     
     # preprocess data by
     selected_feature_numbers = [len(df)]
@@ -214,7 +210,7 @@ def build_classifier(path=None, by_metadata=None, feature_num=None, gaussian_cut
     df = df.drop_duplicates(subset='annotation', keep='first')
     selected_feature_numbers.append(len(df))
     # 5. only keep the samples that are not blank or qc
-    df = df[df['detection_rate'] > fill_percentage_cutoff]
+    df = df[df['detection_rate'] > detection_rate_cutoff]
     selected_feature_numbers.append(len(df))
     
     X = df[reg_samples].values
@@ -225,7 +221,7 @@ def build_classifier(path=None, by_metadata=None, feature_num=None, gaussian_cut
     scaler = StandardScaler()
     X = scaler.fit_transform(X)
     # factorize y
-    y = sub_medadata[by_metadata].values
+    y = sub_medadata[by_group].values
     y, fac_id = np.array(pd.factorize(y)[0]), np.array(pd.factorize(y)[1])
 
     X_new, selected_features = feature_selection(X, y, k=feature_num)

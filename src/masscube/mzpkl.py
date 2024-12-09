@@ -1,3 +1,5 @@
+# Author: Hauxu Yu
+
 """
 mzpkl.py - pickle utilities for MassCube
 
@@ -7,6 +9,8 @@ This module defines the pkl format the raw files in MassCube:
 2. Convert the raw data to pickle file.
 """
 
+
+# imports
 import pickle
 
 

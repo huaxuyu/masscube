@@ -2,17 +2,22 @@
 
 # A module for data visualization.
 
-import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
+
+# imports
 import random
 import numpy as np
 import os
 import re
 from tqdm import tqdm
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+import matplotlib.transforms as transforms
+from matplotlib.patches import Ellipse
 
 from .annotation import extract_signals_from_string
 
-def plot_bpcs(data_list=None, output=None, autocolor=False, show_legend=True):
+
+def plot_bpcs(data_list=None, autocolor=False, show_legend=True, output_path=None):
     """
     A function to plot the base peak chromatograms (overlapped) of a list of data.
     
@@ -20,6 +25,12 @@ def plot_bpcs(data_list=None, output=None, autocolor=False, show_legend=True):
     ----------
     data_list : list of MSData objects
         A list of data to be plotted.
+    autocolor : bool
+        Whether to automatically assign colors to the data.
+    show_legend : bool
+        Whether to show the legend.
+    output : str
+        The output file name.
     """
 
     if data_list is not None:
@@ -40,22 +51,13 @@ def plot_bpcs(data_list=None, output=None, autocolor=False, show_legend=True):
             plt.yticks(fontsize=14, fontname='Arial')
         
         if show_legend:
-            plt.legend([d.file_name for d in data_list], fontsize=10)
+            plt.legend([d.params.file_name for d in data_list], fontsize=10)
         
-        if output:
-            plt.savefig(output, dpi=600, bbox_inches="tight")
+        if output_path is not None:
+            plt.savefig(output_path, dpi=600, bbox_inches="tight")
             plt.close()
         else:
             plt.show()
-
-
-def random_color_generator():
-    # set seed
-    color = random.choice(list(mcolors.CSS4_COLORS.keys()))
-    return color
-
-
-_color_list = ["red", "blue", "green", "orange", "purple", "brown", "pink", "gray", "olive", "cyan"]
 
 
 def plot_feature(d, feature, mz_tol=0.005, rt_tol=0.3, rt_range=None, output=False, break_scan=None):
@@ -126,30 +128,45 @@ def plot_feature(d, feature, mz_tol=0.005, rt_tol=0.3, rt_range=None, output=Fal
         plt.show()
 
 
-def plot_hist(arr, bins, x_label, y_label):
-
-    plt.figure(figsize=(6, 3))
-    plt.rcParams['font.size'] = 14
-    plt.rcParams['font.family'] = 'Arial'
-    plt.hist(arr, bins=bins, color='lightgrey', edgecolor='black', linewidth=0.5)
-    plt.xlabel(x_label, fontsize=18, fontname='Arial')
-    plt.ylabel(y_label, fontsize=18, fontname='Arial')
-    plt.xticks(fontsize=14, fontname='Arial')
-    plt.yticks(fontsize=14, fontname='Arial')
-
-    plt.show()
-
-
-def mirror_ms2_from_scans(scan1, scan2, output=False):
+def mirror_ms2_signals(s1, s2, output_path=None):
     """
     Plot a mirror image of two MS2 spectra for comparison.
+
+    Parameters
+    ----------
+    s1 : Scan object
+        The first MS2 spectrum.
+    s2 : Scan object
+        The second MS2 spectrum.
+    output_path : str
+        The output file name.
     """
 
-    if scan1.level == 2 and scan2.level == 2:
-        mirror_ms2(precursor_mz1=scan1.precursor_mz, precursor_mz2=scan2.precursor_mz, peaks1=scan1.peaks, peaks2=scan2.peaks, output=output)
+    if s1.level == 2 and s2.level == 2:
+        mirror_ms2(precursor_mz1=s1.precursor_mz, precursor_mz2=s2.precursor_mz, signals1=s1.signals, signals2=s2.signals, output=output_path)
 
 
-def mirror_ms2(precursor_mz1, precursor_mz2, peaks1, peaks2, annotation=None, score=None, output=False):
+def mirror_ms2(precursor_mz1, precursor_mz2, signals1, signals2, annotation=None, score=None, output_path=None):
+    """
+    Plot a mirror image of two MS2 spectra for comparison.
+
+    Parameters
+    ----------
+    precursor_mz1 : float
+        The precursor m/z of the first MS2 spectrum.
+    precursor_mz2 : float
+        The precursor m/z of the second MS2 spectrum.
+    signals1 : numpy array
+        The signals of the first MS2 spectrum: [[mz1, int1], [mz2, int2], ...].
+    signals2 : numpy array
+        The signals of the second MS2 spectrum: [[mz1, int1], [mz2, int2], ...].
+    annotation : str
+        The annotation of the MS2 spectra.
+    score : float
+        The similarity score between the two MS2 spectra.
+    output_path : str
+        The output file name.
+    """
 
     plt.figure(figsize=(10, 3))
     plt.rcParams['font.size'] = 14
@@ -159,8 +176,8 @@ def mirror_ms2(precursor_mz1, precursor_mz2, peaks1, peaks2, annotation=None, sc
     plt.vlines(x = precursor_mz2, ymin = 0, ymax = -1, color="lightcoral", linewidth=1.5, linestyles='dashed')
 
     # plot fragment ions
-    plt.vlines(x = peaks1[:, 0], ymin = 0, ymax = peaks1[:, 1] / np.max(peaks1[:, 1]), color="blue", linewidth=1.5)
-    plt.vlines(x = peaks2[:, 0], ymin = 0, ymax = -peaks2[:, 1] / np.max(peaks2[:, 1]), color="red", linewidth=1.5)
+    plt.vlines(x = signals1[:, 0], ymin = 0, ymax = signals1[:, 1] / np.max(signals1[:, 1]), color="blue", linewidth=1.5)
+    plt.vlines(x = signals2[:, 0], ymin = 0, ymax = -signals2[:, 1] / np.max(signals2[:, 1]), color="red", linewidth=1.5)
 
     xmax = max([precursor_mz1, precursor_mz2])*1.2
     # plot zero line
@@ -178,47 +195,8 @@ def mirror_ms2(precursor_mz1, precursor_mz2, peaks1, peaks2, annotation=None, sc
     if annotation is not None:
         plt.text(0, -0.95, annotation, fontsize=12, fontname='Arial', color="black")
 
-    if output:
-        plt.savefig(output, dpi=600, bbox_inches="tight")
-        plt.close()
-    else:
-        plt.show()
-
-
-def mirror_ms2_db(f, output=False):
-
-    precursor_mz1 = f.mz
-    precursor_mz2 = f.matched_precursor_mz
-    peaks1 = f.best_ms2.peaks
-    peaks2 = f.matched_peaks
-
-    plt.figure(figsize=(10, 3))
-    plt.rcParams['font.size'] = 14
-    plt.rcParams['font.family'] = 'Arial'
-    # plot precursor
-    plt.vlines(x = precursor_mz1, ymin = 0, ymax = 1, color="cornflowerblue", linewidth=1.5, linestyles='dashed')
-    plt.vlines(x = precursor_mz2, ymin = 0, ymax = -1, color="lightcoral", linewidth=1.5, linestyles='dashed')
-
-    # plot fragment ions
-    plt.vlines(x = peaks1[:, 0], ymin = 0, ymax = peaks1[:, 1] / np.max(peaks1[:, 1]), color="blue", linewidth=1.5)
-    plt.vlines(x = peaks2[:, 0], ymin = 0, ymax = -peaks2[:, 1] / np.max(peaks2[:, 1]), color="red", linewidth=1.5)
-
-    xmax = max([precursor_mz1, precursor_mz2])*1.2
-    # plot zero line
-    plt.hlines(y = 0, xmin = 0, xmax = xmax, color="black", linewidth=1.5)
-    plt.xlabel("m/z, Dalton", fontsize=18, fontname='Arial')
-    plt.ylabel("Intensity", fontsize=18, fontname='Arial')
-    plt.xticks(fontsize=14, fontname='Arial')
-    plt.yticks(fontsize=14, fontname='Arial')
-
-    # note name and similarity score
-    plt.text(xmax*0.9, 0.9, "Experiment", fontsize=12, fontname='Arial', color="grey")
-    plt.text(xmax*0.9, -0.9, "Database", fontsize=12, fontname='Arial', color="grey")
-    plt.text(0, 0.9, "similarity = {:.3f}".format(f.similarity), fontsize=12, fontname='Arial', color="blue")
-    plt.text(0, -0.95, f.annotation.lower(), fontsize=12, fontname='Arial', color="black")
-
-    if output:
-        plt.savefig(output, dpi=600, bbox_inches="tight")
+    if output_path is not None:
+        plt.savefig(output_path, dpi=600, bbox_inches="tight")
         plt.close()
     else:
         plt.show()
@@ -306,9 +284,6 @@ def plot_pca(vecPC1, vecPC2, var_PC1, var_PC2, group_names, colors=None, plot_or
         plt.show()
 
 
-import matplotlib.transforms as transforms
-from matplotlib.patches import Ellipse
-
 def confidence_ellipse(x, y, ax, n_std=3.0, facecolor='none', **kwargs):
     """
     Create a plot of the covariance confidence ellipse of *x* and *y*.
@@ -362,11 +337,11 @@ def confidence_ellipse(x, y, ax, n_std=3.0, facecolor='none', **kwargs):
     return ax.add_patch(ellipse)
 
 
-def plot_intensity_trend():
-    pass
-
 
 COLORS = ["#FF5050", "#0078F0", "#00B050", "#FFC000", "#7030A0", "#FF00FF", "#00B0F0", "#FF0000", "#00FF00", "#0000FF"]
+_color_list = ["red", "blue", "green", "orange", "purple", "brown", "pink", "gray", "olive", "cyan"]
 
-
-
+def random_color_generator():
+    # set seed
+    color = random.choice(list(mcolors.CSS4_COLORS.keys()))
+    return color

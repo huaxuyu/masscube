@@ -2,26 +2,27 @@
 
 # A module to annotate metabolites based on their MS2 spectra
 
-# Import modules
+# imports
 import os
 import pickle
 import numpy as np
-import json
 import pandas as pd
+import json
 import re
 from tqdm import tqdm
-
 from ms_entropy import read_one_spectrum, FlashEntropySearch
+
 from .utils_functions import extract_signals_from_string, convert_signals_to_string
+
 
 def load_ms2_db(path):
     """
-    A function to load the MS2 database in MSP format or pickle format.
+    A function to load the MS2 database in pickle, msp, or json format.
 
     Parameters
     ----------
     path : str
-        The path to the MS2 database in MSP format.    
+        The path to the MS2 database.
     """
 
     print("\tLoading MS2 database...")
@@ -101,14 +102,8 @@ def annotate_aligned_features(features, params, num=5):
 
         if matched is not None:
             matched = {k.lower():v for k,v in matched.items()}
-            f.annotation = matched['name']
-            f.search_mode = 'identity_search'
-            f.smiles = matched['smiles'] if 'smiles' in matched else None
-            f.inchikey = matched['inchikey'] if 'inchikey' in matched else None
-            f.matched_ms2 = convert_signals_to_string(matched['peaks'])
-            f.formula = matched['formula'] if 'formula' in matched else None
-            f.adduct_type = matched['precursor_type']
-            f.matched_mz = matched['precursor_mz']
+            _assign_annotation_results_to_feature(f, score=f.similarity, matched=matched, matched_peak_num=f.matched_peak_number, 
+                                                  search_mode='identity_search')
 
         else:
             similarity = entropy_search.hybrid_search(precursor_mz=f.mz, peaks=f.ms2, ms1_tolerance_in_da=params.mz_tol_ms1, 
@@ -117,14 +112,8 @@ def annotate_aligned_features(features, params, num=5):
             if similarity[idx] > params.ms2_sim_tol:
                 matched = entropy_search[idx]
                 matched = {k.lower():v for k,v in matched.items()}
-                f.annotation = matched['name']
-                f.search_mode = 'hybrid_search'
-                f.similarity = similarity[idx]
-                f.smiles = matched['smiles'] if 'smiles' in matched else None
-                f.inchikey = matched['inchikey'] if 'inchikey' in matched else None
-                f.matched_ms2 = convert_signals_to_string(matched['peaks'])
-                f.formula = matched['formula'] if 'formula' in matched else None
-                f.matched_mz = matched['precursor_mz']
+                _assign_annotation_results_to_feature(f, score=similarity[idx], matched=matched, 
+                                                      matched_peak_num=None, search_mode='fuzzy_search')
         
         f.ms2 = convert_signals_to_string(f.ms2)
 

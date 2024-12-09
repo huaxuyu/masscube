@@ -34,32 +34,6 @@ def full_statistical_analysis(feature_table, params, include_qc=False):
     # UMAP analysis
     umap_analysis(feature_table, params)
     
-    # v = [params.sample_names[i] for i in range(len(params.individual_sample_groups)) if params.individual_sample_groups[i] not in ['qc', 'blank']]
-    # data_array = np.array(feature_table[v], dtype=np.int64)
-
-    # s = len(params.sample_groups) - 2
-    # v = np.array([i for i in params.individual_sample_groups if i not in ['qc', 'blank']])
-
-    # if s == 2:
-    #     p_values = t_test(data_array, v)
-    # elif s > 2:
-    #     p_values = anova(data_array, v)
-
-    # elif s == 1 and before_norm==False:
-    #     print("No statistical analysis is performed since only one group is found.")
-
-    # # for PCA analysis, the QC samples should also be included
-    # v = [params.sample_names[i] for i in range(len(params.individual_sample_groups)) if params.individual_sample_groups[i] not in ['blank']]
-    # data_array = feature_table[v].values
-    # v = np.array([i for i in params.individual_sample_groups if i not in ['blank']])
-
-    # pca_analysis(data_array, v, output_dir=params.statistics_dir, before_norm=before_norm)
-
-    # if s == 2:
-    #     feature_table['t_test_p'] = p_values
-    # elif s > 2:
-    #     feature_table['ANOVA_p'] = p_values
-    
     return feature_table
 
 

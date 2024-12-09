@@ -21,8 +21,7 @@ from .annotation import annotate_aligned_features, annotate_features, feature_an
 from .normalization import sample_normalization, signal_normalization
 from .visualization import plot_ms2_matching_from_feature_table
 from .stats import full_statistical_analysis
-from .feature_table_utils import convert_features_to_df, output_feature_to_msp
-from .utils_functions import convert_signals_to_string
+from .utils_functions import convert_signals_to_string, convert_features_to_df, output_feature_to_msp
 
 
 # 1. Untargeted feature detection for a single file
@@ -179,6 +178,11 @@ def untargeted_metabolomics_workflow(path=None, return_results=False):
     
     # STEP 3. Feature alignment
     print("Step 3: Aligning features...")
+    if os.path.exists(params.project_dir + "/aligned_feature_table.txt"):
+        if return_results:
+            return None, params
+        else:
+            return None
     features = feature_alignment(params.single_file_dir, params)
     metadata[3]["status"] = "completed"
     print("\tFeature alignment is completed.")

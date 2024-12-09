@@ -1,7 +1,6 @@
 # Author: Hauxu Yu
 
-# A module to align features (characterized by unique m/z and retention time) 
-# from different files. 
+# A module to align features (characterized by unique m/z and retention time) from different files. 
 
 # imports
 import numpy as np

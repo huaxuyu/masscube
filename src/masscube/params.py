@@ -11,7 +11,7 @@ import numpy as np
 
 from .utils_functions import get_start_time
 
-# Define a class to store the parameters
+
 class Params:
     """
     Parameters for the project and individual files.
@@ -103,6 +103,9 @@ class Params:
         # visualization
         self.plot_bpc = False               # whether to plot base peak chromatograms
         self.plot_ms2 = False               # whether to plot mirror plots for MS2 matching
+
+        # classifier building
+        self.by_group_name = None           # only used for building classification model: group name for classifier building, string
 
         # output
         self.output_single_file = False     # whether to output the processed individual files to a csv file
