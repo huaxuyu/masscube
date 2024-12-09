@@ -154,11 +154,11 @@ class Params:
         self.sample_names = list(df.iloc[:, 0])
         df.columns = [col.lower() if col.lower() in ['is_qc', 'is_blank'] else col for col in df.columns]
 
-        if 'is_qc' in df.columns:
+        if 'is_qc' in df.columns and type(df['is_qc'][0]) == str:
             df['is_qc'] = df['is_qc'].apply(lambda x: True if x.lower() == 'yes' else False)
         else:
             df['is_qc'] = False
-        if 'is_blank' in df.columns:
+        if 'is_blank' in df.columns and type(df['is_blank'][0]) == str:
             df['is_blank'] = df['is_blank'].apply(lambda x: True if x.lower() == 'yes' else False)
         else:
             df['is_blank'] = False

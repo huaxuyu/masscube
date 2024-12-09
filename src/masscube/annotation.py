@@ -264,6 +264,7 @@ def feature_annotation_mzrt(features, path, mz_tol=0.01, rt_tol=0.3):
     # match and annotate features
     feature_mz = np.array([f.mz for f in features])
     feature_rt = np.array([f.rt for f in features])
+    to_anno = np.ones(len(features), dtype=bool)
 
     if 'adduct' not in df.columns:
         df['adduct'] = None
@@ -271,12 +272,15 @@ def feature_annotation_mzrt(features, path, mz_tol=0.01, rt_tol=0.3):
     for i in range(len(df)):
         mz = df.iloc[i,1]
         rt = df.iloc[i,2]
-        matched_v = np.where(np.logical_and(np.abs(feature_mz - mz) < mz_tol, np.abs(feature_rt - rt) < rt_tol))[0]
+        v1 = np.abs(feature_mz - mz) < mz_tol
+        v2 = np.abs(feature_rt - rt) < rt_tol
+        matched_v = np.where(v1 & v2 & to_anno)[0]
         if len(matched_v) > 0:
             matched_idx = matched_v[0]
             features[matched_idx].annotation = df.iloc[i,0]
             features[matched_idx].search_mode = "mzrt_match"
             features[matched_idx].adduct_type = df['adduct'][i]
+            to_anno[matched_idx] = False
 
     return features
           
