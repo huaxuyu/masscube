@@ -36,7 +36,7 @@ class Params:
         self.project_file_dir = None        # directory for the project files, string
         self.normalization_dir = None       # directory for the normalization output, string
         self.statistics_dir = None          # directory for the statistical analysis output, string
-        self.problematic_files = None       # problematic files, dictionary: {file_name: error_message}
+        self.problematic_files = {}         # problematic files, dictionary: {file_name: error_message}
 
         # raw data reading and cleaning
         self.file_name = None               # file name of the raw data, string
@@ -257,6 +257,7 @@ class Params:
                                  (f.lower().endswith(".mzml") or f.lower().endswith(".mzxml"))]
             self.sample_abs_paths = [os.path.join(self.sample_dir, f) for f in self.sample_names]
             self.sample_names = [f.split(".")[0] for f in self.sample_names]
+            self.sample_metadata = pd.DataFrame({'sample_name': self.sample_names, 'is_qc': False, 'is_blank': False})
 
         # STEP 6: set output
         self.output_single_file = True      # output the processed individual files to a txt file

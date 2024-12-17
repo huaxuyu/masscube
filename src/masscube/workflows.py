@@ -56,57 +56,62 @@ def process_single_file(file_name, params=None, segment_feature=True, group_feat
         An MSData object containing the processed data.
     """
 
-    # STEP 1. data reading, parsing, and parameter preparation
-    d = read_raw_file_to_obj(file_name, params=params)
-    # check if the file is centroided
-    if not d.params.is_centroid:
-        print("File: " + file_name + " is not centroided and skipped.")
-        return None
-    # set ms2 library path
-    if ms2_library_path is not None:
-        d.params.ms2_library_path = ms2_library_path
-
-    # STEP 2. feature detection and segmentation
-    d.detect_features()
-    if segment_feature:
-        d.segment_features()
-
-    # STEP 3. feature evaluation
-    if evaluate_peak_shape:
-        d.summarize_features(cal_g_score=True, cal_a_score=True)
-    else:
-        d.summarize_features(cal_g_score=False, cal_a_score=False)
-
-    # STEP 4. MS2 annotation
-    if annotate_ms2:
-        if ms2_library_path is None:
-            ms2_library_path = d.params.ms2_library_path
+    try:
+        # STEP 1. data reading, parsing, and parameter preparation
+        d = read_raw_file_to_obj(file_name, params=params)
+        # check if the file is centroided
+        if not d.params.is_centroid:
+            print("File: " + file_name + " is not centroided and skipped.")
+            return None
+        # set ms2 library path
         if ms2_library_path is not None:
-            annotate_features(d=d, sim_tol=d.params.ms2_sim_tol, fuzzy_search=True, ms2_library_path=ms2_library_path)
+            d.params.ms2_library_path = ms2_library_path
 
-    # STEP 5. feature grouping
-    if group_features:
-        group_features_single_file(d)
+        # STEP 2. feature detection and segmentation
+        d.detect_features()
+        if segment_feature:
+            d.segment_features()
 
-    # STEP 6. Visualization and output
-    if d.params.plot_bpc and d.params.bpc_dir is not None:
-        d.plot_bpc(output_dir=os.path.join(d.params.bpc_dir, d.params.file_name + "_bpc.png"))
-    
-    if output_dir is not None:
-        d.output_single_file(os.path.join(output_dir, d.params.file_name + ".txt"))
-    
-    elif d.params.output_single_file and d.params.single_file_dir is not None:
-        d.output_single_file()
+        # STEP 3. feature evaluation
+        if evaluate_peak_shape:
+            d.summarize_features(cal_g_score=True, cal_a_score=True)
+        else:
+            d.summarize_features(cal_g_score=False, cal_a_score=False)
+
+        # STEP 4. MS2 annotation
+        if annotate_ms2:
+            if ms2_library_path is None:
+                ms2_library_path = d.params.ms2_library_path
+            if ms2_library_path is not None:
+                annotate_features(d=d, sim_tol=d.params.ms2_sim_tol, fuzzy_search=True, ms2_library_path=ms2_library_path)
+
+        # STEP 5. feature grouping
+        if group_features:
+            group_features_single_file(d)
+
+        # STEP 6. Visualization and output
+        if d.params.plot_bpc and d.params.bpc_dir is not None:
+            d.plot_bpc(output_dir=os.path.join(d.params.bpc_dir, d.params.file_name + "_bpc.png"))
         
-    # for faster data reloading
-    if d.params.tmp_file_dir is not None:
-        d.convert_to_mzpkl()
+        if output_dir is not None:
+            d.output_single_file(os.path.join(output_dir, d.params.file_name + ".txt"))
+        
+        elif d.params.output_single_file and d.params.single_file_dir is not None:
+            d.output_single_file()
+            
+        # for faster data reloading
+        if d.params.tmp_file_dir is not None:
+            d.convert_to_mzpkl()
 
-    return d
+        return d
+    
+    except:
+        print("Error occurred during processing file: " + file_name)
+        return None
 
 
 # 2. Untargeted metabolomics workflow
-def untargeted_metabolomics_workflow(path=None, return_results=False):
+def untargeted_metabolomics_workflow(path=None, return_results=False, only_process_single_files=False):
     """
     The untargeted metabolomics workflow. See the documentation for details.
 
@@ -166,7 +171,7 @@ def untargeted_metabolomics_workflow(path=None, return_results=False):
         if len(to_be_processed) - i < params.batch_size:
             print("\tProcessing files from " + str(i) + " to " + str(len(to_be_processed)))
         else:
-            print("\tProcessing files from " + str(i) + " to " + str(i+len(to_be_processed)))
+            print("\tProcessing files from " + str(i) + " to " + str(i+params.batch_size))
         p = multiprocessing.Pool(workers)
         p.starmap(process_single_file, [(f, params) for f in to_be_processed[i:i+params.batch_size]])
         p.close()
@@ -175,6 +180,12 @@ def untargeted_metabolomics_workflow(path=None, return_results=False):
     metadata[2]["status"] = "completed"
     print("\tIndividual file processing is completed.")
     print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+    
+    if only_process_single_files:
+        with open(os.path.join(params.project_file_dir, "project.masscube"), "wb") as f:
+            pickle.dump(params, f)
+        if return_results:
+            return None, params
     
     # STEP 3. Feature alignment
     print("Step 3: Aligning features...")
