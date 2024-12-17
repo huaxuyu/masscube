@@ -423,7 +423,7 @@ def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, mz_tol=0.01, rt_to
     # remove outliers
     v = rt_ref - np.array(rt_matched)
     z = zscore(v)
-    outliers = np.where(np.logical_and(np.abs(z) > 1, np.abs(v) > 0.1))[0]
+    outliers = np.where(np.logical_and(np.abs(z) > 1, np.abs(v) > 0.05))[0]
     if len(outliers) > 0:
         rt_ref = np.delete(rt_ref, outliers)
         rt_matched = np.delete(rt_matched, outliers)
@@ -433,8 +433,8 @@ def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, mz_tol=0.01, rt_to
 
     # add zero and rt_max to the beginning and the end
     if rt_max is None:
-        rt_max = np.max(rt_matched) + 0.1
-    rt_matched = np.concatenate(([0], rt_matched, [rt_max+rt_matched[-1]-rt_ref[-1]]))
+        rt_max = np.max(rt_arr) + 0.1
+    rt_matched = np.concatenate(([0], rt_matched, [rt_max]))
     rt_ref = np.concatenate(([0], rt_ref, [rt_max]))
     f = interp1d(rt_matched, rt_ref, fill_value='extrapolate')
     
@@ -488,7 +488,7 @@ Internal Functions
 ------------------------------------------------------------------------------------------------------------------------
 """
 
-def _split_to_train_test(array, interval=0.3):
+def _split_to_train_test(array, interval=0.1):
     """
     To split the selected anchors into training and testing sets.
 
@@ -507,13 +507,12 @@ def _split_to_train_test(array, interval=0.3):
         The indices of the testing set.
     """
 
-    train_idx = [0]
-    test_idx = []
+    train_idx = [0, len(array)-1]
     for i in range(1, len(array)):
-        if array[i] - array[train_idx[-1]] < interval:
-            test_idx.append(i)
-        else:
+        if array[i] - array[train_idx[-1]] > interval:
             train_idx.append(i)
+    train_idx.sort()
+    test_idx = [i for i in range(len(array)) if i not in train_idx]
 
     return train_idx, test_idx
 

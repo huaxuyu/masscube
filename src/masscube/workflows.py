@@ -166,7 +166,7 @@ def untargeted_metabolomics_workflow(path=None, return_results=False):
         if len(to_be_processed) - i < params.batch_size:
             print("\tProcessing files from " + str(i) + " to " + str(len(to_be_processed)))
         else:
-            print("\tProcessing files from " + str(i) + " to " + str(i+to_be_processed))
+            print("\tProcessing files from " + str(i) + " to " + str(i+len(to_be_processed)))
         p = multiprocessing.Pool(workers)
         p.starmap(process_single_file, [(f, params) for f in to_be_processed[i:i+params.batch_size]])
         p.close()
@@ -277,7 +277,7 @@ def untargeted_metabolomics_workflow(path=None, return_results=False):
         return features, params
 
 
-# 4. Evaluate the data quality of the raw files
+# 3. Evaluate the data quality of the raw files
 def run_evaluation(path=None, zscore_threshold=-2):
     """
     Evaluate the run and report the problematic files.
@@ -333,7 +333,7 @@ def run_evaluation(path=None, zscore_threshold=-2):
         print("No problematic files are found.")
 
 
-# 5. Batch file processing
+# 4. Batch file processing
 def batch_file_processing(path=None, segment_feature=True, group_features=False, evaluate_peak_shape=True,
                          annotate_ms2=True, ms2_library_path=None, cpu_ratio=0.8, batch_size=100):
     """

@@ -269,7 +269,7 @@ class Params:
         Set the parameters by the type of MS.
         --------------------------------------
         ms_type: character string
-            The type of MS, "orbitrap" or "tof".
+            The type of MS, "orbitrap" or "qtof".
         ion_mode: character string
             The ionization mode, "positive" or "negative".
         """
@@ -342,22 +342,33 @@ def find_ms_info(file_name):
         The ion mode.
     """
 
-    ms_type = 'tof'
-    ion_mode = 'positive'
+    ms_type = None
+    ion_mode = None
     centroid = False
 
     # for mzml and mzxml
     if file_name.lower().endswith('.mzml') or file_name.lower().endswith('.mzxml'):
+        text = ""
         with open(file_name, 'r') as f:
             for i, line in enumerate(f):
-                if 'orbitrap' in line.lower() or 'q exactive' in line.lower():
-                    ms_type = 'orbitrap'
-                if 'negative' in line.lower():
-                    ion_mode = 'negative'
-                if "centroid spectrum" in line.lower() or 'centroided="1"' in line.lower():
-                    centroid = True
+                text += line
                 if i > 200:
                     break
+        text = text.lower()
+        if 'orbitrap' in text or 'q exactive' in text:
+            ms_type = 'orbitrap'
+        elif 'tripletof' in text:
+            ms_type = 'tripletof'
+        elif 'tof' in text:
+            ms_type = 'qtof'
+        
+        if 'positive' in text:
+            ion_mode = 'positive'
+        elif 'negative' in text:
+            ion_mode = 'negative'
+
+        if "centroid spectrum" in text or 'centroided="1"' in text:
+            centroid = True
 
     return ms_type, ion_mode, centroid
 
