@@ -35,14 +35,19 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
-      # Step 3: Upload only the "set_parameters" folder
+      # Step 3: Copy `set_parameters` folder into a subdirectory for deployment
+      - name: Prepare deployment folder
+        run: |
+          mkdir -p public/set_parameters
+          cp -r ./set_parameters/* public/set_parameters
+
+      # Step 4: Upload the deployment folder
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # Upload only the "set_parameters" folder for deployment
-          path: './set_parameters'
+          path: './public'
 
-      # Step 4: Deploy to GitHub Pages
+      # Step 5: Deploy to GitHub Pages
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
