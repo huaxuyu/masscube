@@ -145,7 +145,7 @@ class Feature:
         self.length = np.sum(self.signals[:, 1] > 0)
 
         if ph:
-            self.peak_height = self.signals[apx, 1]
+            self.peak_height = int(self.signals[apx, 1])
         if pa:
             self.peak_area = int(np.trapz(y=self.signals[:, 1], x=self.rt_seq) * 60)
         if ta:

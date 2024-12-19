@@ -182,10 +182,7 @@ def untargeted_metabolomics_workflow(path=None, return_results=False, only_proce
     print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
     
     if only_process_single_files:
-        with open(os.path.join(params.project_file_dir, "project.masscube"), "wb") as f:
-            pickle.dump(params, f)
-        if return_results:
-            return None, params
+        return None
     
     # STEP 3. Feature alignment
     print("Step 3: Aligning features...")

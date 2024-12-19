@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MassCube Parameters</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 20px;
+      }
+
+      .table-container {
+        width: 100%;
+        overflow-x: auto; /* Enables scrolling for smaller screens */
+        display: flex;
+        justify-content: center; /* Centers the table horizontally */
+      }
+
+      table {
+        width: 200%; /* Keeps the table wide */
+        max-width: 1200px; /* Optional max width */
+        border-collapse: collapse;
+        margin-bottom: 20px;
+      }
+
+      table,
+      th,
+      td {
+        border: 1px solid black;
+      }
+
+      th {
+        text-align: center; /* Center-aligns header row */
+      }
+
+      td {
+        text-align: left; /* Left-aligns other rows */
+      }
+
+      th,
+      td {
+        padding: 8px;
+      }
+
+      button {
+        padding: 10px 20px;
+        background-color: #4caf50;
+        color: white;
+        border: none;
+        cursor: pointer;
+      }
+
+      button:hover {
+        background-color: #45a049;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Set Parameters for MassCube</h1>
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Parameter</th>
+            <th>Value</th>
+            <th>Explanation</th>
+          </tr>
+        </thead>
+        <tbody id="parametersTable">
+          <tr>
+            <td>ion_mode</td>
+            <td><input type="text" value="positive" /></td>
+            <td>MS ion mode, "positive" or "negative"</td>
+          </tr>
+          <tr>
+            <td>ms_type</td>
+            <td><input type="text" value="orbitrap" /></td>
+            <td>type of MS, "orbitrap", "qtof", "tripletof" or "others"</td>
+          </tr>
+          <tr>
+            <td>is_centroid</td>
+            <td><input type="text" value="yes" /></td>
+            <td>whether the raw data is centroid data, "yes" or "no"</td>
+          </tr>
+          <tr>
+            <td>mz_lower_limit</td>
+            <td><input type="text" value="0" /></td>
+            <td>lower limit of m/z in Da</td>
+          </tr>
+          <tr>
+            <td>mz_upper_limit</td>
+            <td><input type="text" value="3000" /></td>
+            <td>upper limit of m/z in Da</td>
+          </tr>
+          <tr>
+            <td>rt_lower_limit</td>
+            <td><input type="text" value="0" /></td>
+            <td>lower limit of retention time in minutes</td>
+          </tr>
+          <tr>
+            <td>rt_upper_limit</td>
+            <td><input type="text" value="100" /></td>
+            <td>upper limit of retention time in minutes</td>
+          </tr>
+          <tr>
+            <td>ms1_abs_int_tol</td>
+            <td><input type="text" value="3000" /></td>
+            <td>
+              absolute intensity threshold for MS1, recommend 30000 for Orbitrap
+              and 1000 for QTOF
+            </td>
+          </tr>
+          <tr>
+            <td>ms2_abs_int_tol</td>
+            <td><input type="text" value="1000" /></td>
+            <td>
+              absolute intensity threshold for MS2, recommend 10000 for Orbitrap
+              and 500 for QTOF
+            </td>
+          </tr>
+          <tr>
+            <td>mz_tol_ms1</td>
+            <td><input type="text" value="0.01" /></td>
+            <td>m/z tolerance for MS1, default is 0.01</td>
+          </tr>
+          <tr>
+            <td>mz_tol_ms2</td>
+            <td><input type="text" value="0.015" /></td>
+            <td>m/z tolerance for MS2, default is 0.015</td>
+          </tr>
+          <tr>
+            <td>scan_scan_cor_tol</td>
+            <td><input type="text" value="0.7" /></td>
+            <td>
+              scan-to-scan correlation tolerance for feature grouping, default
+              is 0.7
+            </td>
+          </tr>
+          <tr>
+            <td>mz_tol_alignment</td>
+            <td><input type="text" value="0.01" /></td>
+            <td>m/z tolerance for alignment, default is 0.01</td>
+          </tr>
+          <tr>
+            <td>rt_tol_alignment</td>
+            <td><input type="text" value="0.3" /></td>
+            <td>RT tolerance for alignment, default is 0.2</td>
+          </tr>
+          <tr>
+            <td>correct_rt</td>
+            <td><input type="text" value="yes" /></td>
+            <td>whether to perform RT correction</td>
+          </tr>
+          <tr>
+            <td>merge_features</td>
+            <td><input type="text" value="yes" /></td>
+            <td>
+              whether to clean feature table by merging features with almost the
+              same m/z and RT
+            </td>
+          </tr>
+          <tr>
+            <td>ms2_library_path</td>
+            <td>
+              <input type="text" value="/Users/database/positive.pkl" />
+            </td>
+            <td>path to the MS2 library (.msp or .pickle)</td>
+          </tr>
+          <tr>
+            <td>ms2_sim_tol</td>
+            <td><input type="text" value="0.7" /></td>
+            <td>MS2 similarity tolerance</td>
+          </tr>
+          <tr>
+            <td>fuzzy_search</td>
+            <td><input type="text" value="yes" /></td>
+            <td>whether to perform fuzzy search</td>
+          </tr>
+          <tr>
+            <td>sample_normalization</td>
+            <td><input type="text" value="no" /></td>
+            <td>
+              whether to normalize the data based on total sample
+              amount/concentration
+            </td>
+          </tr>
+          <tr>
+            <td>signal_normalization</td>
+            <td><input type="text" value="no" /></td>
+            <td>
+              whether to run feature-wised normalization to correct systematic
+              signal drift
+            </td>
+          </tr>
+          <tr>
+            <td>run_statistics</td>
+            <td><input type="text" value="no" /></td>
+            <td>whether to perform statistical analysis</td>
+          </tr>
+          <tr>
+            <td>plot_bpc</td>
+            <td><input type="text" value="yes" /></td>
+            <td>whether to plot base peak chromatograms</td>
+          </tr>
+          <tr>
+            <td>plot_ms2</td>
+            <td><input type="text" value="yes" /></td>
+            <td>whether to plot mirror plots for MS2 matching</td>
+          </tr>
+          <tr>
+            <td>quant_method</td>
+            <td><input type="text" value="peak_height" /></td>
+            <td>
+              value for quantification and output, "peak_height", "peak_area" or
+              "top_average"
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <button onclick="downloadCSV()">Download as CSV</button>
+
+    <script>
+      // Function to download the table data as a CSV file
+      function downloadCSV() {
+        const rows = [["Parameter", "Value", "Explanation"]];
+        const tableRows = document.querySelectorAll("#parametersTable tr");
+
+        tableRows.forEach((row) => {
+          const parameterName = row.querySelectorAll("td")[0].innerText.trim();
+          const inputValue = row.querySelector("input").value.trim();
+          const explanation = row.querySelectorAll("td")[2].innerText.trim();
+          rows.push([parameterName, inputValue, explanation]);
+        });
+
+        const csvContent = rows.map((row) => row.join(",")).join("\n");
+        const blob = new Blob([csvContent], { type: "text/csv" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "parameters_with_explanations.csv";
+        link.click();
+        URL.revokeObjectURL(link.href);
+      }
+    </script>
+  </body>
+</html>

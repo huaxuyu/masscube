@@ -168,7 +168,10 @@ class MSData:
                 precursor_mz = None
                 self.ms1_idx.append(idx)
                 self.ms1_time_arr.append(scan_time)
-                self.base_peak_arr.append(signals[np.argmax(signals[:, 1])])
+                if len(signals) > 0:
+                    self.base_peak_arr.append(signals[np.argmax(signals[:, 1])])
+                else:
+                    self.base_peak_arr.append([0, 0])
             else:
                 precursor_mz = spec['precursorList']['precursor'][0]['selectedIonList']['selectedIon'][0]['selected ion m/z']
                 if len(signals) == 0:
@@ -227,7 +230,10 @@ class MSData:
                 precursor_mz = None
                 self.ms1_idx.append(idx)
                 self.ms1_time_arr.append(scan_time)
-                self.base_peak_arr.append(signals[np.argmax(signals[:, 1])])
+                if len(signals) > 0:
+                    self.base_peak_arr.append(signals[np.argmax(signals[:, 1])])
+                else:
+                    self.base_peak_arr.append([0, 0])
             else:
                 precursor_mz = spec['precursorMz'][0]['precursorMz']
                 int_upper = max(self.params.ms2_abs_int_tol, np.max(signals[:, 1]) * self.params.ms2_rel_int_tol)

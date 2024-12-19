@@ -297,6 +297,7 @@ class Params:
                 setattr(self, key, PARAMETER_DEFAULT[key])
         if not os.path.exists(str(self.ms2_library_path)):
             self.ms2_library_path = None
+        self.batch_size = int(self.batch_size)
 
 
     def output_parameters(self, path, format="json"):
