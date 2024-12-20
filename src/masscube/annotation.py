@@ -159,10 +159,10 @@ def annotate_features(d, sim_tol=None, fuzzy_search=True, ms2_library_path=None)
         idx = np.argmax(scores)
         if scores[idx] > sim_tol:
             matched = search_engine[idx]
+            matched = {k.lower():v for k,v in matched.items()}
             matched_peak_num = peak_nums[idx]
             _assign_annotation_results_to_feature(f, score=scores[idx], matched=matched, matched_peak_num=matched_peak_num,
                                                   search_mode='identity_search')
-
         elif fuzzy_search:
             scores = search_engine.hybrid_search(precursor_mz=f.mz, peaks=signals, ms1_tolerance_in_da=d.params.mz_tol_ms1, 
                                                              ms2_tolerance_in_da=d.params.mz_tol_ms2)

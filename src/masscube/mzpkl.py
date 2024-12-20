@@ -18,8 +18,8 @@ def convert_MSData_to_mzpkl(d, output_dir: str = None):
     """
     Convert the MSData object to pickle format.
 
-    params
-    ------
+    Parameters
+    ----------
     d: MSData
         The MSData object.
     output_dir: str
@@ -47,8 +47,8 @@ def read_mzpkl_to_MSData(d, file_path: str):
     """
     Read the pickle file to MSData object.
 
-    params
-    ------
+    Parameters
+    ----------
     d: MSData
         The MSData object
     file_path: str
