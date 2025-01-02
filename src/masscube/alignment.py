@@ -107,7 +107,7 @@ def feature_alignment(path: str, params: Params):
     Returns
     -------
     features: list
-        A list of aligned features.
+        A list of AlignedFeature objects.
     """
 
     # STEP 1: preparation
@@ -222,7 +222,7 @@ def feature_alignment(path: str, params: Params):
 
 def gap_filling(features, params: Params):
     """
-    A function to fill the gaps in the aligned feature table.
+    Fill the gaps for aligned features.
 
     Parameters
     ----------------------------------------------------------
@@ -275,7 +275,7 @@ def gap_filling(features, params: Params):
 
 def merge_features(features: list, params: Params):
     """
-    Clean features by merging the features with almost the same m/z and retention time.
+    Clean features by merging features with almost the same m/z and retention time.
 
     Parameters
     ----------
@@ -343,7 +343,7 @@ def merge_features(features: list, params: Params):
 
 def output_feature_table(feature_table, output_path):
     """
-    A function to output the aligned feature table.
+    Output the aligned feature table.
 
     Parameters
     ----------------------------------------------------------
@@ -446,8 +446,6 @@ def rt_anchor_selection(data_path, num=50, noise_score_tol=0.1, mz_tol=0.01):
     Retention time anchors have unique m/z values and low noise scores. From all candidate features, 
     the top *num* features with the highest peak heights are selected as anchors.
 
-    The number of anchors
-
     Parameters
     ----------
     data_path : str
@@ -456,6 +454,8 @@ def rt_anchor_selection(data_path, num=50, noise_score_tol=0.1, mz_tol=0.01):
         The number of anchors to be selected.
     noise_tol : float
         The noise level for the anchors. Suggestions: 0.3 or lower.
+    mz_tol : float
+        The m/z tolerance for selecting anchors.
 
     Returns
     -------
@@ -488,9 +488,9 @@ Internal Functions
 ------------------------------------------------------------------------------------------------------------------------
 """
 
-def _split_to_train_test(array, interval=0.1):
+def split_to_train_test(array, interval=0.1):
     """
-    To split the selected anchors into training and testing sets.
+    Split the selected anchors into training and testing sets.
 
     Parameters
     ----------

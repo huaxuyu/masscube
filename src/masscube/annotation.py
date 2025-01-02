@@ -17,12 +17,17 @@ from .utils_functions import extract_signals_from_string, convert_signals_to_str
 
 def load_ms2_db(path):
     """
-    A function to load the MS2 database in pickle, msp, or json format.
+    Load MS2 database in pickle, msp, or json format.
 
     Parameters
     ----------
     path : str
         The path to the MS2 database.
+
+    Returns
+    -------
+    entropy_search : FlashEntropySearch object
+        The MS2 database.
     """
 
     print("\tLoading MS2 database...")
@@ -67,6 +72,11 @@ def annotate_aligned_features(features, params, num=5):
         The parameters for the workflow.
     num : int
         The number of top MS2 spectra to search.
+
+    Returns
+    -------
+    features : list
+        A list of AlignedFeature objects with MS2 annotation.
     """
 
     entropy_search = load_ms2_db(params.ms2_library_path)
@@ -227,7 +237,7 @@ def annotate_ms2(ms2, ms2_library_path, sim_tol=0.7, fuzzy_search=True):
 
 def feature_annotation_mzrt(features, path, mz_tol=0.01, rt_tol=0.3):
     """
-    A function to annotate features based on a mzrt file (only .csv is supported now).
+    Annotate features based on a mzrt file (only .csv is supported now).
 
     parameters
     ----------
@@ -242,8 +252,8 @@ def feature_annotation_mzrt(features, path, mz_tol=0.01, rt_tol=0.3):
 
     returns
     ----------
-    feature_table : pandas.DataFrame
-        A DataFrame containing features with annotations.
+    features : list
+        A list of features with annotation.
     """
 
     # load the mzrt file
@@ -276,7 +286,7 @@ def feature_annotation_mzrt(features, path, mz_tol=0.01, rt_tol=0.3):
 
 def feature_to_feature_search(feature_list):
     """
-    A function to calculate the MS2 similarity between features using hybrid search.
+    A function to calculate the MS2 similarity between features using fuzzy search.
 
     Parameters
     ----------
@@ -306,12 +316,17 @@ def feature_to_feature_search(feature_list):
 
 def index_feature_list(feature_list):
     """
-    A function to index a list of features for spectrum entropy search.
+    A helper function to index a list of features for spectrum entropy search.
 
     Parameters
     ----------
     feature_list : list
         A list of AlignedFeature objects.
+
+    Returns
+    -------
+    entropy_search : FlashEntropySearch object
+        The indexed feature list.
     """
     
     db = []

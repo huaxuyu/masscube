@@ -8,7 +8,7 @@ import os
 from tqdm import tqdm
 from datetime import datetime
 import re
-from pyteomics import mass
+from collections import Counter
 from pyteomics.mass.mass import isotopologues, calculate_mass
 
 
@@ -124,40 +124,60 @@ def get_timestamps(path=None, output=True):
         return df
 
 
-# Note: this function is not used in the current version of the package
-def cal_ion_mass(formula, adduct, charge):
+def formula_to_mz(formula, adduct, charge):
     """
-    A function to calculate the ion mass of a given formula, adduct and charge.
+    Calculate the m/z value of a molecule given its chemical formula, adduct and charge.
 
     Parameters
     ----------
-    formula: str
-        The chemical formula of the ion.
-    adduct: str
-        Adduct of the ion.
-    charge: int
-        Charge of the ion. 
-        Use signs for specifying ion modes: +1 for positive mode and -1 for negative mode.
+    formula : str
+        Chemical formula of the molecule.
+    adduct : str
+        Adduct of the molecule. The first character should be '+' or '-'. In particular, 
+        for adduct like [M-H-H2O]-, use '-H3O' or '-H2OH'.
+    charge : int
+        Charge of the molecule. Positive for cations and negative for anions.
 
     Returns
     -------
-    ion_mass: float
-        The ion mass of the given formula, adduct and charge.
+    mz : float
+        The m/z value of the molecule.
+
+    Examples
+    --------
+    >>> formula_to_mz("C6H12O6", "+H", 1)
+    181.070665
+    >>> formula_to_mz("C9H14N3O8P", "-H2OH", -1)
+    304.034010
     """
 
-    # if there is a D in the formula, and not followed by a lowercase letter, replace it with H[2]
-    if 'D' in formula and not formula[formula.find('D') + 1].islower():
-        formula = formula.replace('D', 'H[2]')
+    mz = 0
 
-    # calculate the ion mass
-    final_formula = formula + adduct
-    ion_mass = (mass.calculate_mass(formula=final_formula) - charge * _ELECTRON_MASS) / abs(charge)
-    return ion_mass
+    # original molecule
+    formula_matches = re.findall(r'([A-Z][a-z]*)(\d*)', formula)
+    atom_counts = Counter()
+    for element, count in formula_matches:
+        atom_counts[element] += int(count) if count else 1
 
-_ELECTRON_MASS = 0.00054858
+    mz += sum(ATOM_MASSES[element] * count for element, count in atom_counts.items())
+
+    # adduct
+    adduct_matches = re.findall(r'([A-Z][a-z]*)(\d*)', adduct[1:])
+    adduct_counts = Counter()
+    for element, count in adduct_matches:
+        adduct_counts[element] += int(count) if count else 1
+
+    if adduct[0] == '+':
+        mz += sum(ATOM_MASSES[element] * count for element, count in adduct_counts.items())
+    elif adduct[0] == '-':
+        mz -= sum(ATOM_MASSES[element] * count for element, count in adduct_counts.items())
+
+    # charge
+    mz = (mz - ELECTRON_MASS * charge) / abs(charge)
+
+    return mz
 
 
-# Note: this function is not used in the current version of the package
 def calculate_isotope_distribution(formula, mass_resolution=10000, intensity_threshold=0.001):
 
     mass = []
@@ -351,3 +371,43 @@ def convert_features_to_df(features, sample_names, quant_method="peak_height"):
     feature_table = pd.DataFrame(results, columns=columns)
     
     return feature_table
+
+
+def simplify_chemical_formula(formula):
+    # Match elements and their counts (e.g., H2, C, O)
+    matches = re.findall(r'([A-Z][a-z]*)(\d*)', formula)
+    print(matches)
+    atom_counts = Counter()
+    
+    for element, count in matches:
+        # If count is empty, default to 1
+        atom_counts[element] += int(count) if count else 1
+    
+    # Sort elements alphabetically and create the simplified formula
+    simplified_formula = ''.join(f"{element}{(count if count > 1 else '')}" 
+                                  for element, count in sorted(atom_counts.items()))
+    return simplified_formula
+
+
+ATOM_MASSES = {
+    'H': 1.00782503207,
+    'D': 2.01410177812,
+    'C': 12.0,
+    'N': 14.0030740052,
+    'O': 15.9949146221,
+    'F': 18.998403163,
+    'Na': 22.989769282,
+    'Mg': 23.985041697,
+    'P': 30.973761998,
+    'S': 31.97207069,
+    'Cl': 34.968852682,
+    'K': 38.96370649,
+    'Ca': 39.96259098,
+    'Fe': 55.93493633,
+    'Cu': 62.92959772,
+    'Zn': 63.92914201,
+    'Br': 78.9183376,
+    'I': 126.904473,
+}
+
+ELECTRON_MASS = 0.00054857990946
