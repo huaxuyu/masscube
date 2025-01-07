@@ -16,12 +16,12 @@ import time
 from .raw_data_utils import read_raw_file_to_obj
 from .params import Params
 from .feature_grouping import group_features_after_alignment, group_features_single_file
-from .alignment import feature_alignment, output_feature_table
+from .alignment import feature_alignment, output_feature_table, convert_features_to_df, output_feature_to_msp
 from .annotation import annotate_aligned_features, annotate_features, feature_annotation_mzrt
 from .normalization import sample_normalization, signal_normalization
 from .visualization import plot_ms2_matching_from_feature_table
 from .stats import full_statistical_analysis
-from .utils_functions import convert_signals_to_string, convert_features_to_df, output_feature_to_msp
+from .utils_functions import convert_signals_to_string
 
 
 # 1. Untargeted feature detection for a single file
@@ -155,7 +155,7 @@ def untargeted_metabolomics_workflow(path=None, return_results=False, only_proce
         metadata[1][key] = value
     print("\tWorkflow is prepared.")
     print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-
+    return params
     # STEP 2. Process individual files
     print("Step 2: Processing individual files for feature detection...")
     processed_files = [f.split(".")[0] for f in os.listdir(params.single_file_dir) if f.lower().endswith(".txt")]

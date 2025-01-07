@@ -138,8 +138,8 @@ class Feature:
         self.rt_seq = self.rt_seq[first:last]
         self.scan_idx_seq = self.scan_idx_seq[first:last]
         
-        self.mz = np.mean(self.signals[:, 0])
         apx = np.argmax(self.signals[:, 1])
+        self.mz = self.signals[apx, 0]
         self.rt = self.rt_seq[apx]
         self.scan_idx = self.scan_idx_seq[apx]
         self.length = np.sum(self.signals[:, 1] > 0)

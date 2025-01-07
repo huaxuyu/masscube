@@ -1,6 +1,6 @@
 # MassCube
 
-[![Generic badge](https://img.shields.io/badge/masscube-ver_1.0.17-%3CCOLOR%3E.svg)](https://github.com/huaxuyu/masscube/)
+[![Generic badge](https://img.shields.io/badge/masscube-ver_1.1.19-%3CCOLOR%3E.svg)](https://github.com/huaxuyu/masscube/)
 ![Maintainer](https://img.shields.io/badge/maintainer-Huaxu_Yu-blue)
 [![PyPI Downloads](https://img.shields.io/pypi/dm/bago.svg?label=PyPI%20downloads)](https://pypi.org/project/masscube/)
 
@@ -12,18 +12,20 @@
 
 It provides:
 
-- High performance feature detection based on signal clustering.
+- Highly accurate nontargeted peak detection and segmentation.
 - Comprehensive feature quality evaluation.
-- Confident annotation of isotopes, adducts, and in-source fragments.
-- Ultra-fast annotation of MS/MS spectra.
+- Confident annotation of feature groups including isotopes, adducts and in-source fragments.
+- Annotation of MS/MS spectra via identity search and fuzzy search (i.e. analog search).
 
 ## Installation
+
+To install **masscube**, open a terminal and run:
 
 ```bash
 pip install masscube
 ```
 
-To upgrade **masscube** to the latest version:
+To upgrade **masscube** to the latest version, run:
 
 ```bash
 pip install masscube --upgrade
@@ -31,7 +33,7 @@ pip install masscube --upgrade
 
 ## Quick start
 
-Start your untargeted metabolomics data processing from [here](https://huaxuyu.github.io/masscubedocs/docs/quickstart/)
+Start your nontargeted metabolomics data processing from [here](https://huaxuyu.github.io/masscubedocs/docs/quickstart/)
 
 ## Contribute to masscube
 

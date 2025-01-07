@@ -244,6 +244,75 @@ def plot_ms2_matching_from_feature_table(feature_table, params=None, output_dir=
         mirror_ms2(mz[i], mz[i], peaks1, peaks2, annotations[i], score[i], output)
 
 
+def plot_lowess_normalization(arr, fit_curve, arr_new, sample_idx, qc_idx, n, id=None, output_dir=None):
+    """
+    Plot the lowess normalization results by highlighting the QC samples, smoothing curve, and 95% confidence interval.
+
+    Parameters
+    ----------
+    arr : numpy array
+        The original intensity array.
+    fit_curve : numpy array
+        The smoothed curve by LOWESS.
+    arr_new : numpy array
+        The normalized intensity array.
+    sample_idx : numpy array of bool
+        Blank samples are false, while qc and real samples are true. It's length is n.
+    qc_idx : numpy array
+        QC samples are true, while blank and real samples are false. It's length is n.
+    n : int
+        The number of features.
+    id : int
+        The feature ID.
+    output_dir : str
+        The output directory.
+    """
+    
+    v = np.arange(n)
+    
+    plt.rcParams['font.size'] = 20
+    plt.rcParams['font.family'] = 'Arial'
+    plt.figure(figsize=(20,8))
+
+    plt.subplot(2, 1, 1)
+    plt.title("Before normalization")
+    plt.ylabel("Intensity", fontname='Arial')
+    plt.plot(v[sample_idx], arr[sample_idx], 'o', markersize=4, color='grey')
+    plt.plot(v[qc_idx], arr[qc_idx], 'o', markersize=6, color='red')
+    plt.plot(v, fit_curve, '--', color='blue', linewidth=2)
+    plt.legend(["Sample", "QC", "LOWESS"])
+    plt.ylim(-300, np.max(arr[qc_idx]) * 1.1)
+    plt.xlim(-n*0.01, n*1.2)
+    plt.text(n*0.1, np.max(arr[qc_idx]) * 1.15, "Feature ID: %d" % id, color='grey')
+    rsd = np.std(arr[qc_idx]) / np.mean(arr[qc_idx]) * 100
+    plt.text(n, np.max(arr[qc_idx]) * 1.15, "QC RSD: %.2f%%" % rsd, color='grey')
+
+    plt.subplot(2, 1, 2)
+    plt.title("After normalization")
+    plt.xlabel("Analytical order", fontname='Arial')
+    plt.ylabel("Intensity", fontname='Arial')
+    plt.plot(v[sample_idx], arr_new[sample_idx], 'o', markersize=4, color='grey')
+    plt.plot(v[qc_idx], arr_new[qc_idx], 'o', markersize=6, color='red')
+    plt.ylim(-300, np.max(arr_new[qc_idx]) * 1.1)
+    # use color band to show the 95% confidence interval
+    y_up = np.median(arr_new[qc_idx]) + 1.96 * np.std(arr_new[qc_idx])
+    y_down = np.median(arr_new[qc_idx]) - 1.96 * np.std(arr_new[qc_idx])
+    plt.fill_between(v, y_down, y_up, color='lightblue', alpha=0.5)
+    rsd = np.std(arr_new[qc_idx]) / np.mean(arr_new[qc_idx]) * 100
+    plt.text(n, np.max(arr_new[qc_idx]) * 1.15, "QC RSD: %.2f%%" % rsd, color='grey')
+    plt.legend(["Sample", "QC", "95% CI"])
+    plt.xlim(-n*0.01, n*1.2)
+
+    plt.subplots_adjust(hspace=0.5)
+    
+    if output_dir is not None:
+        file_name = os.path.join(output_dir, "feature_{}_normalization.png".format(id))
+        plt.savefig(file_name, dpi=200, bbox_inches="tight")
+        plt.close()
+    else:
+        plt.show()
+
+
 def plot_pca(vecPC1, vecPC2, var_PC1, var_PC2, group_names, colors=None, plot_order=None, output_dir=None):
     
     fig, ax = plt.subplots(figsize=(10,10))

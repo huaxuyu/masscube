@@ -558,6 +558,11 @@ class MSData:
             [min, max] of the y-axis.
         return_eic_data: bool   
             Whether to return the EIC data as a list of [eic_time_arr, eic_signals, eic_scan_idx].
+
+        Returns
+        -------
+        eic_data: list
+            A list of EIC data: [[eic_time_arr, eic_signals, eic_scan_idx], ...].
         """
 
         plt.figure(figsize=(10, 3))

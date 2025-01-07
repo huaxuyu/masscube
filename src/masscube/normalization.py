@@ -9,6 +9,9 @@
 # imports
 import numpy as np
 from statsmodels.nonparametric.smoothers_lowess import lowess
+from tqdm import tqdm
+
+from .visualization import plot_lowess_normalization
 
 """
 Sample normalization
@@ -94,6 +97,10 @@ def find_normalization_factors(array, method='pqn'):
     method : str
         The method to find the normalization factors.
         'pqn': probabilistic quotient normalization.
+        'total_intensity': total intensity normalization.
+        'median_intensity': median intensity normalization.
+        'quantile': quantile normalization.
+        'mdfc': maximum density fold change normalization.
 
     Returns
     -------
@@ -111,6 +118,19 @@ def find_normalization_factors(array, method='pqn'):
             a = array[:, i]
             common = np.logical_and(a > 0, ref_arr > 0)
             factors.append(np.median(a[common] / ref_arr[common]))
+    elif method == 'total_intensity':
+        # to be implemented
+        pass
+    elif method == 'median_intensity':
+        # to be implemented
+        pass
+    elif method == 'quantile':
+        # to be implemented
+        pass
+    elif method == 'mdfc':
+        # to be implemented
+        pass
+
     return np.array(factors)
     
 
@@ -225,7 +245,7 @@ Provides
     2. Standard-free QC-based normalization.
 """
 
-def signal_normalization(feature_table, sample_metadata, method='lowess', batch_idx=None):
+def signal_normalization(feature_table, sample_metadata, method='lowess', output_plot_path=None):
     """
     A function to normalize MS signal drifts based on analytical order.
 
@@ -238,9 +258,8 @@ def signal_normalization(feature_table, sample_metadata, method='lowess', batch_
     method : str
         The method to find the normalization factors.
         'lowess': locally weighted scatterplot smoothing.
-    batch_idx : list
-        Not used now. The index of the batches. It should have the same length as the number of samples.
-        e.g., [1, 1,..., 2, 2,..., 3, 3,...]
+    output_plot_path : str
+        The path to save the normalization plot. If none, no visualization will be generated.
     
     Returns
     -------
@@ -248,37 +267,52 @@ def signal_normalization(feature_table, sample_metadata, method='lowess', batch_
         Normalized feature table.
     """
 
+    # STEP 1: check if 3 or more QC samples are available
     if np.sum(sample_metadata['is_qc']) < 3:
-        print("\tSignal normalization failed: at least three QC samples are required.")
+        print("\tSignal normalization failed: at least three quality control samples are required.")
         return feature_table
-
-    data = feature_table[sample_metadata.iloc[:, 0]].values
-
-    if method == 'lowess':
-        data_corr = lowess_normalization(array=data, is_qc=sample_metadata['is_qc'], 
-                                         analytical_order=sample_metadata['analytical_order'], batch_idx=batch_idx)
     
-    # STEP 3: update the feature table
-    feature_table[sample_metadata.iloc[:, 0]] = data_corr
+    # STEP 2: get analytical order
+    tmp = sample_metadata.sort_values(by="analytical_order")
+    samples = tmp.iloc[:, 0].values
+    qc_idx = tmp['is_qc'].values
+    sample_idx = ~tmp['is_blank'].values
+
+    arr = feature_table.loc[:, samples].values
+    n = len(samples)
+
+    # STEP 3: normalize samples
+    if method == 'lowess':
+        print("\tSignal normalization is running: lowess normalization.")
+        for id, a in enumerate(tqdm(arr)):
+            r = lowess_normalization(a, qc_idx)
+            if r['fit_curve'] is not None:
+                # visualization
+                if output_plot_path is not None:
+                    plot_lowess_normalization(arr=a, fit_curve=r['fit_curve'], arr_new=r['normed_arr'], 
+                                              sample_idx=sample_idx, qc_idx=qc_idx, n=n, id=id, output_dir=output_plot_path)
+                arr[id] = r['normed_arr']
+    
+    feature_table.loc[:, samples] = arr
 
     return feature_table
 
 
-def lowess_normalization(array, is_qc, analytical_order, batch_idx=None):
+def lowess_normalization(array, qc_idx, frac=0.05, it=3):
     """
     A function to normalize samples using quality control samples.
 
     Parameters
     ----------
     array : numpy array
-        The data to be normalized. Samples are in columns and features are in rows.
-    is_qc : numpy array
-        Boolean array indicating whether a sample is a quality control sample.
-    analytical_order : numpy array or list
-        The order of the samples.
-    batch_idx : numpy array or list
-        The index of the batches. It should have the same length as the number of samples.
-        e.g., [1, 1,..., 2, 2,..., 3, 3,...]
+        The data to be normalized.
+    qc_idx : numpy array of bool
+        Boolean array indicating whether a sample is a quality control sample. It's length 
+        should be the same as the length of array.
+    frac : float
+        The fraction of the data used when estimating each y-value (used in lowess). See statsmodels package for details.
+    it : int
+        The number of residual-based reweightings to perform (used in lowess). See statsmodels package for details.
 
     Returns
     -------
@@ -286,36 +320,20 @@ def lowess_normalization(array, is_qc, analytical_order, batch_idx=None):
         Normalized data.
     """
 
-    # 1. reorder the data array
-    array = array[:, np.argsort(analytical_order)]
-    is_qc = is_qc[np.argsort(analytical_order)]
-    qc_idx = np.where(is_qc)[0]
+    # only use qc data > 0 for normalization
+    valid_idx = qc_idx & (array > 0)
+    qc_arr = array[valid_idx]
 
-    # 2. feature-wise normalization
-    data_corr = []
-    corrected_arr = []
-    for int_arr in array:
-        # build loess model using qc samples
-        qc_arr = int_arr[qc_idx]
-        # only keep the positive values
-        qc_idx_tmp = qc_idx[qc_arr > 0]
-        qc_arr = qc_arr[qc_arr > 0]
+    # if there are more than 2 QC samples
+    if len(qc_arr) > 2:
+        x = np.arange(len(array))
+        model = lowess(qc_arr, x[valid_idx], frac=frac, it=it)
+        y = np.interp(x, model[:, 0], model[:, 1])
+        y[y < 0] = 0
+        int_arr_corr = array / y * np.max(y)
+    else:
+        int_arr_corr = array
+        y = None
+        model = None
 
-        if len(qc_arr) > 2:
-            model = lowess(qc_arr, qc_idx_tmp, frac=0.09, it=0)
-            x_new = np.arange(len(int_arr))
-            y_new = np.interp(x_new, model[:, 0], model[:, 1])
-            y_new[y_new < 0] = np.min(y_new[y_new > 0])
-            int_arr_corr = int_arr / y_new * np.min(y_new)
-            corrected_arr.append(True)
-        else:
-            int_arr_corr = int_arr
-            corrected_arr.append(False)
-
-        data_corr.append(int_arr_corr)
-
-    data_corr = np.array(data_corr)
-    # sort the data back to the original order
-    data_corr = data_corr[:, np.argsort(analytical_order)]
-
-    return data_corr
+    return {'model': model, 'fit_curve': y, 'normed_arr': int_arr_corr}
