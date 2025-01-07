@@ -103,6 +103,7 @@ class Params:
         # visualization
         self.plot_bpc = False               # whether to plot base peak chromatograms
         self.plot_ms2 = False               # whether to plot mirror plots for MS2 matching
+        self.plot_normalization = False     # whether to plot the normalization results
 
         # classifier building
         self.by_group_name = None           # only used for building classification model: group name for classifier building, string

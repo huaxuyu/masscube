@@ -214,6 +214,8 @@ def detect_features(d):
     for ms1_idx in d.ms1_idx[1:]:
 
         s = d.scans[ms1_idx]                                  # The current MS1 scan
+        if len(s.signals) == 0:
+            continue
         avlb_signals = np.ones(len(s.signals), dtype=bool)    # available signals to assign to features
         avlb_features = np.ones(len(features), dtype=bool)    # available features to take new signals
         to_be_moved = []                                      # features to be moved to final_features

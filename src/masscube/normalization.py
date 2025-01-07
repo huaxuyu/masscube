@@ -287,11 +287,12 @@ def signal_normalization(feature_table, sample_metadata, method='lowess', output
         for id, a in enumerate(tqdm(arr)):
             r = lowess_normalization(a, qc_idx)
             if r['fit_curve'] is not None:
+                arr[id] = r['normed_arr']
                 # visualization
                 if output_plot_path is not None:
                     plot_lowess_normalization(arr=a, fit_curve=r['fit_curve'], arr_new=r['normed_arr'], 
                                               sample_idx=sample_idx, qc_idx=qc_idx, n=n, id=id, output_dir=output_plot_path)
-                arr[id] = r['normed_arr']
+
     
     feature_table.loc[:, samples] = arr
 

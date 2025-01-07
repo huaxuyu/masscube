@@ -155,7 +155,7 @@ def untargeted_metabolomics_workflow(path=None, return_results=False, only_proce
         metadata[1][key] = value
     print("\tWorkflow is prepared.")
     print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-    return params
+
     # STEP 2. Process individual files
     print("Step 2: Processing individual files for feature detection...")
     processed_files = [f.split(".")[0] for f in os.listdir(params.single_file_dir) if f.lower().endswith(".txt")]
@@ -231,7 +231,10 @@ def untargeted_metabolomics_workflow(path=None, return_results=False, only_proce
     # STEP 5. signal normalization
     if params.signal_normalization:
         print("Step 5: Running signal normalization...")
-        feature_table = signal_normalization(feature_table, params.sample_metadata, params.signal_norm_method)
+        if params.plot_normalization:
+            feature_table = signal_normalization(feature_table, params.sample_metadata, params.signal_norm_method, output_plot_path=params.normalization_dir)
+        else:
+            feature_table = signal_normalization(feature_table, params.sample_metadata, params.signal_norm_method)
         metadata[5]["status"] = "completed"
         print("\tMS signal drift normalization is completed.")
     else:
