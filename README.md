@@ -1,6 +1,6 @@
 # MassCube
 
-[![Generic badge](https://img.shields.io/badge/masscube-ver_1.1.19-%3CCOLOR%3E.svg)](https://github.com/huaxuyu/masscube/)
+[![Generic badge](https://img.shields.io/badge/masscube-ver_1.1.9-%3CCOLOR%3E.svg)](https://github.com/huaxuyu/masscube/)
 ![Maintainer](https://img.shields.io/badge/maintainer-Huaxu_Yu-blue)
 [![PyPI Downloads](https://img.shields.io/pypi/dm/bago.svg?label=PyPI%20downloads)](https://pypi.org/project/masscube/)
 
