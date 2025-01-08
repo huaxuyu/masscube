@@ -1,6 +1,6 @@
 # Author: Hauxu Yu
 
-# A module to annotate metabolites based on their MS2 spectra
+# A module to annotate metabolites based on their m/z, retention time and MS2 spectra
 
 # imports
 import os

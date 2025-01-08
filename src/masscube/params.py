@@ -340,9 +340,11 @@ def find_ms_info(file_name):
     Returns
     -------
     ms_type : str
-        The type of MS.
+        The type of MS, "orbitrap", "qtof", "tripletof" or "others".
     ion_mode : str
-        The ion mode.
+        The ion mode, "positive" or "negative".
+    centroid : bool
+        Whether the data is centroid data.
     """
 
     ms_type = None

@@ -18,7 +18,7 @@ import shutil
 from .workflows import untargeted_metabolomics_workflow
 
 """
-Helper functions
+Functions
 """
 
 # Feature selection

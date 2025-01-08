@@ -144,6 +144,11 @@ def sample_normalization_by_factors(array, v):
         The data to be normalized.
     v : numpy array
         The normalization factor.
+
+    Returns
+    -------
+    numpy array
+        Normalized data.
     """
 
     # change all zeros to ones
@@ -316,8 +321,9 @@ def lowess_normalization(array, qc_idx, frac=0.07, it=3):
 
     Returns
     -------
-    numpy array
-        Normalized data.
+    dict
+        A dictionary containing the lowess model, the fit curve, and the normalized array.
+        {'model': model, 'fit_curve': y, 'normed_arr': int_arr_corr}
     """
 
     # only use qc data > 0 for normalization

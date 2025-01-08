@@ -189,12 +189,17 @@ Functions
 
 def detect_features(d):
     """
-    A function to detect features in the MS data.
+    Detect features in the MS data.
 
     Parameters
     ----------
     d: MSData object
         An MSData object that contains the MS data.
+
+    Returns
+    -------
+    final_features: list
+        A list of detected features.
     """
 
     # A list to store the rois in progress
