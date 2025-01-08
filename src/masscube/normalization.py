@@ -287,19 +287,18 @@ def signal_normalization(feature_table, sample_metadata, method='lowess', output
         for id, a in enumerate(tqdm(arr)):
             r = lowess_normalization(a, qc_idx)
             if r['fit_curve'] is not None:
-                arr[id] = r['normed_arr']
                 # visualization
                 if output_plot_path is not None:
                     plot_lowess_normalization(arr=a, fit_curve=r['fit_curve'], arr_new=r['normed_arr'], 
                                               sample_idx=sample_idx, qc_idx=qc_idx, n=n, id=id, output_dir=output_plot_path)
+                arr[id] = r['normed_arr']
 
-    
     feature_table.loc[:, samples] = arr
 
     return feature_table
 
 
-def lowess_normalization(array, qc_idx, frac=0.05, it=3):
+def lowess_normalization(array, qc_idx, frac=0.07, it=3):
     """
     A function to normalize samples using quality control samples.
 
@@ -330,7 +329,7 @@ def lowess_normalization(array, qc_idx, frac=0.05, it=3):
         x = np.arange(len(array))
         model = lowess(qc_arr, x[valid_idx], frac=frac, it=it)
         y = np.interp(x, model[:, 0], model[:, 1])
-        y[y < 0] = 0
+        y[y < 1] = 1    # gap filling
         int_arr_corr = array / y * np.max(y)
     else:
         int_arr_corr = array

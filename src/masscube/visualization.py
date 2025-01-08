@@ -244,7 +244,7 @@ def plot_ms2_matching_from_feature_table(feature_table, params=None, output_dir=
         mirror_ms2(mz[i], mz[i], peaks1, peaks2, annotations[i], score[i], output)
 
 
-def plot_lowess_normalization(arr, fit_curve, arr_new, sample_idx, qc_idx, n, id=None, output_dir=None):
+def plot_lowess_normalization(arr, fit_curve, arr_new, sample_idx, qc_idx, n, id=None, dpi=100, output_dir=None):
     """
     Plot the lowess normalization results by highlighting the QC samples, smoothing curve, and 95% confidence interval.
 
@@ -264,6 +264,8 @@ def plot_lowess_normalization(arr, fit_curve, arr_new, sample_idx, qc_idx, n, id
         The number of features.
     id : int
         The feature ID.
+    dpi : int
+        The dpi of the output image.
     output_dir : str
         The output directory.
     """
@@ -307,7 +309,7 @@ def plot_lowess_normalization(arr, fit_curve, arr_new, sample_idx, qc_idx, n, id
     
     if output_dir is not None:
         file_name = os.path.join(output_dir, "feature_{}_normalization.png".format(id))
-        plt.savefig(file_name, dpi=200, bbox_inches="tight")
+        plt.savefig(file_name, dpi=dpi, bbox_inches="tight")
         plt.close()
     else:
         plt.show()

@@ -79,7 +79,7 @@ class Params:
         self.scan_number_cutoff = 5                 # feature with non-zero scan number greater than the cutoff will be aligned, default is 5
         self.detection_rate_cutoff = 0.1            # features detected need to be >rate*(qc+sample), default rate is 0.1
         self.merge_features = True                  # whether to merge features with almost the same m/z and RT, default is True
-        self.mz_tol_merge_features = 0.01           # m/z tolerance for merging features, default is 0.01
+        self.mz_tol_merge_features = 0.012          # m/z tolerance for merging features, default is 0.012
         self.rt_tol_merge_features = 0.05           # RT tolerance for merging features, default is 0.05
         self.group_features_after_alignment = True  # whether to group features after alignment, default is False
         self.fill_gaps = True                       # whether to fill the gaps in the aligned features, default is True

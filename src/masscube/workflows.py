@@ -111,7 +111,8 @@ def process_single_file(file_name, params=None, segment_feature=True, group_feat
 
 
 # 2. Untargeted metabolomics workflow
-def untargeted_metabolomics_workflow(path=None, return_results=False, only_process_single_files=False):
+def untargeted_metabolomics_workflow(path=None, return_results=False, only_process_single_files=False,
+                                     return_params_only=False):
     """
     The untargeted metabolomics workflow. See the documentation for details.
 
@@ -121,6 +122,10 @@ def untargeted_metabolomics_workflow(path=None, return_results=False, only_proce
         The working directory. If None, the current working directory is used.
     return_results : bool
         Whether to return the results. Default is False.
+    only_process_single_files : bool
+        Whether to only process the single files. Default is False.
+    return_params_only : bool
+        Whether to return the parameters only. Default is False.
 
     Returns
     -------
@@ -156,6 +161,9 @@ def untargeted_metabolomics_workflow(path=None, return_results=False, only_proce
     print("\tWorkflow is prepared.")
     print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 
+    if return_params_only:
+        return params
+
     # STEP 2. Process individual files
     print("Step 2: Processing individual files for feature detection...")
     processed_files = [f.split(".")[0] for f in os.listdir(params.single_file_dir) if f.lower().endswith(".txt")]
@@ -186,47 +194,46 @@ def untargeted_metabolomics_workflow(path=None, return_results=False, only_proce
     
     # STEP 3. Feature alignment
     print("Step 3: Aligning features...")
-    if os.path.exists(params.project_dir + "/aligned_feature_table.txt"):
-        if return_results:
-            return None, params
-        else:
-            return None
-    features = feature_alignment(params.single_file_dir, params)
-    metadata[3]["status"] = "completed"
-    print("\tFeature alignment is completed.")
-    print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-    
-    # STEP 4. Feature annotation
-    print("Step 4: Annotating features...")
-    # annotation (using MS2 library)
-    print("\tAnnotating features using the MS2 library...")
-    if params.ms2_library_path is not None and os.path.exists(params.ms2_library_path):
-        features = annotate_aligned_features(features, params)
-        print("\tMS2 annotation is completed.")
-    else:
-        print("\tNo MS2 library is found. MS2 annotation is skipped.")
-    # annotation (using mzrt list)
-    if os.path.exists(os.path.join(params.project_dir, "mzrt_list.csv")):
-        print("\tAnnotating features using the extra mzrt list...")
-        features = feature_annotation_mzrt(features, os.path.join(params.project_dir, "mzrt_list.csv"), params.mz_tol_alignment, params.rt_tol_alignment)
-        print("\tmz/rt annotation is completed.")
-    # annotate feature groups
-    print("\tAnnotating feature groups...")
-    if params.group_features_after_alignment:
-        group_features_after_alignment(features, params)
-    for f in features:
-        f.isotope_signals = convert_signals_to_string(f.isotope_signals)
-    print("\tFeature grouping is completed.")
-    metadata[4]["status"] = "completed"
+    if not os.path.exists(params.project_dir + "/aligned_feature_table.txt"):
 
-    feature_table = convert_features_to_df(features=features, sample_names=params.sample_names, quant_method=params.quant_method)
-    # output feature table to a txt file
-    output_path = os.path.join(params.project_dir, "aligned_feature_table.txt")
-    output_feature_table(feature_table, output_path)
-    # output the acquired MS2 spectra to a MSP file (designed for MassWiki)
-    output_path = os.path.join(params.project_file_dir, "features.msp")
-    output_feature_to_msp(feature_table, output_path)
-    print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+        features = feature_alignment(params.single_file_dir, params)
+        metadata[3]["status"] = "completed"
+        print("\tFeature alignment is completed.")
+        print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+        
+    # STEP 4. Feature annotation
+        print("Step 4: Annotating features...")
+        # annotation (using MS2 library)
+        print("\tAnnotating features using the MS2 library...")
+        if params.ms2_library_path is not None and os.path.exists(params.ms2_library_path):
+            features = annotate_aligned_features(features, params)
+            print("\tMS2 annotation is completed.")
+        else:
+            print("\tNo MS2 library is found. MS2 annotation is skipped.")
+        # annotation (using mzrt list)
+        if os.path.exists(os.path.join(params.project_dir, "mzrt_list.csv")):
+            print("\tAnnotating features using the extra mzrt list...")
+            features = feature_annotation_mzrt(features, os.path.join(params.project_dir, "mzrt_list.csv"), params.mz_tol_alignment, params.rt_tol_alignment)
+            print("\tmz/rt annotation is completed.")
+        # annotate feature groups
+        print("\tAnnotating feature groups...")
+        if params.group_features_after_alignment:
+            group_features_after_alignment(features, params)
+        for f in features:
+            f.isotope_signals = convert_signals_to_string(f.isotope_signals)
+        print("\tFeature grouping is completed.")
+        metadata[4]["status"] = "completed"
+
+        feature_table = convert_features_to_df(features=features, sample_names=params.sample_names, quant_method=params.quant_method)
+        # output feature table to a txt file
+        output_path = os.path.join(params.project_dir, "aligned_feature_table.txt")
+        output_feature_table(feature_table, output_path)
+        # output the acquired MS2 spectra to a MSP file (designed for MassWiki)
+        output_path = os.path.join(params.project_file_dir, "features.msp")
+        output_feature_to_msp(feature_table, output_path)
+        print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+    else:
+        feature_table = pd.read_csv(params.project_dir + "/aligned_feature_table.txt", sep="\t", low_memory=False)
 
     # STEP 5. signal normalization
     if params.signal_normalization:
@@ -298,7 +305,7 @@ def run_evaluation(path=None, zscore_threshold=-2):
     path : str
         Path to the project directory.
     zscore_threshold : float
-        The threshold of z-score for detecting problematic files. Default is -2
+        The threshold of z-score for detecting problematic files. Default is -2.
     """
 
     if path is None:
