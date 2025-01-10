@@ -14,6 +14,101 @@ from ms_entropy import read_one_spectrum, FlashEntropySearch
 
 from .utils_functions import extract_signals_from_string, convert_signals_to_string
 
+"""
+Format of MS2 database in MassCube
+====================================================================================
+1. pickle format
+
+A FlashEntropySearch object that contains the MS2 database. ms_entropy version 1.2.2 is highly recommended
+to generate this object (other versions may not work). See masscube documentation for how to generate this object.
+
+2. msp format
+
+Within each block, key is defined as:
+    - NAME: the name of the compound
+    - PRECURSORMZ: the precursor m/z
+    - PRECURSORTYPE: the adduct type
+    - IONMODE: the ion mode
+    - RETENTIONTIME: the retention time
+    - CCS: collision cross section
+    - FORMULA: the molecular formula
+    - ONTOLOGY: the ontology of the compound
+    - SMILES: the SMILES string
+    - INCHIKEY: the InChIKey
+    - INSTRUMENTTYPE: the instrument type
+    - COLLISIONENERGY: the collision energy
+    - COMMENT: the comment
+    - Num Peaks: the number of peaks
+    - [mz1 intensity1]: the m/z and intensity of each fragment
+    - [mz2 intensity2]: the m/z and intensity of each fragment
+    - ...
+
+Example:
+    NAME: L-PHENYLALANINE
+    PRECURSORMZ: 166.086013793945
+    PRECURSORTYPE: [M+H]+
+    IONMODE: Positive
+    RETENTIONTIME: 3.30520009994507
+    CCS: 136.819671630859
+    FORMULA: C9H11NO2
+    ONTOLOGY: Phenylalanine and derivatives
+    SMILES: C1=CC=C(C=C1)C[C@@H](C(=O)O)N
+    INCHIKEY: COLNVLDHVKWLRT-QMMMGPOBSA-N
+    INSTRUMENTTYPE: LC-ESI-QFT
+    COLLISIONENERGY: 35.0 eV
+    COMMENT: DB#=EMBL-MCF_spec98214; origin=EMBL - Metabolomics Core Facility Spectral Library
+    Num Peaks: 7
+    103.054	15
+    107.049	14
+    120.081	1000
+    121.084	16
+    131.049	41
+    149.059	16
+    166.086	56
+
+3. json format
+
+A list of dictionaries, each dictionary contains the following keys:
+
+{
+    "name": the name of the compound
+    "precursor_mz": the precursor m/z
+    "precursor_type": the precursor ion type
+    "ionmode": the ion mode
+    "retentiontime": the retention time
+    "ccs": the collision cross section
+    "formula": the molecular formula
+    "ontology": the ontology of the compound
+    "smiles": the SMILES string
+    "inchikey": the InChIKey
+    "instrumenttype": the instrument type
+    "collisionenergy": the collision energy
+    "comment": the comment
+    "num peaks": the number of peaks
+    "peaks": a list of lists, each sublist contains two elements: m/z and intensity: [[mz1, intensity1], [mz2, intensity2], ...]
+}
+
+Example:
+{
+    "name": "L-PHENYLALANINE",
+    "precursor_mz": 166.086013793945, 
+    "precursor_type": "[M+H]+"
+    "ionmode": "Positive", 
+    "retentiontime": "3.30520009994507", 
+    "ccs": "136.819671630859", 
+    "formula": "C9H11NO2", 
+    "ontology": "Phenylalanine and derivatives", 
+    "smiles": "C1=CC=C(C=C1)C[C@@H](C(=O)O)N", 
+    "inchikey": "COLNVLDHVKWLRT-QMMMGPOBSA-N", 
+    "instrumenttype": "LC-ESI-QFT", 
+    "collisionenergy": "35.0 eV", 
+    "comment": "DB#=EMBL-MCF_spec98214; origin=EMBL - Metabolomics Core Facility Spectral Library", 
+    "num peaks": "7",
+    "peaks": [["103.054", "15"], ["107.049", "14"], ["120.081", "1000"], ["121.084", "16"], ["131.049", "41"], ["149.059", "16"], ["166.086", "56"]], 
+}
+
+"""
+
 
 def load_ms2_db(path):
     """
@@ -37,6 +132,8 @@ def load_ms2_db(path):
     if ext.lower() == '.msp':
         db =[]
         for a in read_one_spectrum(path):
+            if 'precursortype' in a.keys():
+                a['precursor_type'] = a.pop('precursortype')
             db.append(a)
         _correct_db(db)
         entropy_search = FlashEntropySearch()
@@ -267,6 +364,12 @@ def feature_annotation_mzrt(features, path, mz_tol=0.01, rt_tol=0.3):
 
     if 'adduct' not in df.columns:
         df['adduct'] = None
+    if 'inchikey' not in df.columns:
+        df['inchikey'] = None
+    if 'formula' not in df.columns:
+        df['formula'] = None
+    if 'smiles' not in df.columns:
+        df['smiles'] = None
 
     for i in range(len(df)):
         mz = df.iloc[i,1]
@@ -276,13 +379,13 @@ def feature_annotation_mzrt(features, path, mz_tol=0.01, rt_tol=0.3):
         matched_v = np.where(v1 & v2 & to_anno)[0]
         if len(matched_v) > 0:
             matched_idx = matched_v[0]
-            features[matched_idx].annotation = df.iloc[i,0]
-            features[matched_idx].search_mode = "mzrt_match"
-            features[matched_idx].adduct_type = df['adduct'][i]
+            _assign_mzrt_annotation_results_to_feature(f=features[matched_idx], annotation=df.iloc[i,0], adduct=df['adduct'][i], 
+                                                       inchikey=df['inchikey'][i], formula=df['formula'][i], smiles=df['smiles'][i],
+                                                       matched_precursor_mz=mz, matched_retention_time=rt)
             to_anno[matched_idx] = False
 
     return features
-          
+
 
 def feature_to_feature_search(feature_list):
     """
@@ -385,7 +488,37 @@ def output_ms2_to_msp(feature_table, output_path):
             for j in range(len(peaks)//2):
                 f.write(str(peaks[2*j]) + "\t" + str(peaks[2*j+1]) + "\n")
             f.write("\n")
-            
+
+
+def index_msp_to_pkl(msp_path, output_path=None):
+    """
+    A function to index MSP file to pickle format.
+
+    Parameters
+    ----------
+    msp_path : str
+        The path to the MSP file.
+    output_path : str
+        The path to the output pickle file.
+    """
+
+    file_name = os.path.basename(msp_path).split(".")[0]
+
+    if output_path is None:
+        output_path = os.path.dirname(msp_path)
+
+    db = []
+    for a in read_one_spectrum(msp_path):
+        if 'precursortype' in a.keys():
+            a['precursor_type'] = a.pop('precursortype')
+        db.append(a)
+
+    _correct_db(db)
+    entropy_search = FlashEntropySearch()
+    entropy_search.build_index(db)
+
+    pickle.dump(entropy_search, open(os.path.join(output_path, file_name + ".pkl"), 'wb'))
+
 
 def _correct_db(db):
     """
@@ -429,3 +562,42 @@ def _assign_annotation_results_to_feature(f, score, matched, matched_peak_num, s
     f.matched_adduct_type = matched['precursor_type'] if 'precursor_type' in matched else None
     if search_mode == 'identity_search':
         f.adduct_type = matched['precursor_type'] if 'precursor_type' in matched else None
+
+
+def _assign_mzrt_annotation_results_to_feature(f, annotation, adduct, inchikey, formula, smiles, matched_precursor_mz, 
+                                               matched_retention_time):
+    """
+    Assign annotation results to a feature.
+
+    Parameters
+    ----------
+    f : Feature or AlignedFeature object
+        Feature to be annotated.
+    annotation : str
+        The compound name.
+    adduct : str
+        The adduct type.
+    inchikey : str
+        The InChIKey.
+    formula : str
+        The molecular formula.
+    smiles : str
+        The SMILES string.
+    matched_precursor_mz : float
+        The matched precursor m/z.
+    matched_retention_time : float
+        The matched retention time.
+    """
+
+    f.search_mode = 'mzrt_search'
+    f.similarity = None
+    f.annotation = annotation
+    f.formula = formula
+    f.matched_peak_number = None
+    f.smiles = smiles
+    f.inchikey = inchikey
+    f.matched_precursor_mz = matched_precursor_mz
+    f.matched_retention_time = matched_retention_time
+    f.matched_adduct_type = adduct
+    f.adduct_type = adduct
+    f.matched_ms2 = None

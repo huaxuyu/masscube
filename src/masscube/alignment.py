@@ -85,6 +85,7 @@ class AlignedFeature:
         self.smiles = None                          # SMILES
         self.inchikey = None                        # InChIKey
         self.matched_precursor_mz = None            # matched precursor m/z
+        self.matched_retention_time = None          # matched retention time
         self.matched_adduct_type = None             # matched adduct type
         self.matched_ms2 = None                     # matched ms2 spectra
 

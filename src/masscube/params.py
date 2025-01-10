@@ -69,7 +69,7 @@ class Params:
         self.group_features_single_file = False     # whether to group features in a single file, default is False
         self.scan_scan_cor_tol = 0.7                # scan-to-scan correlation tolerance for feature grouping, default is 0.7
         self.mz_tol_feature_grouping = 0.015        # m/z tolerance for feature grouping, default is 0.01
-        self.rt_tol_feature_grouping = 0.1          # RT tolerance for feature grouping, default is 0.2
+        self.rt_tol_feature_grouping = 0.1          # RT tolerance for feature grouping, default is 0.1
         self.valid_charge_states = [1]              # valid charge states for feature grouping, list of integers
 
         # feature alignment
@@ -90,6 +90,8 @@ class Params:
         self.ms2_library_path = None        # path to the MS2 library (.msp or .pickle), character string
         self.ms2_sim_tol = 0.7              # MS2 similarity tolerance, default is 0.7
         self.fuzzy_search = True            # whether to perform fuzzy search, default is True
+        self.consider_rt = False            # whether to consider RT when matching MS2, default is False. If True, RT needs to be provided in the MS2 library.
+        self.rt_tol_annotation = 0.2        # RT tolerance for MS2 annotation, default is 0.2
         
         # normalization
         self.sample_normalization = False   # whether to normalize the data based on total sample amount/concentration, default is False
