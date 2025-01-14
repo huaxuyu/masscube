@@ -83,14 +83,17 @@ class Params:
         self.rt_tol_merge_features = 0.05           # RT tolerance for merging features, default is 0.05
         self.group_features_after_alignment = True  # whether to group features after alignment, default is False
         self.fill_gaps = True                       # whether to fill the gaps in the aligned features, default is True
-        self.gap_filling_method = "local_maximum"   # method for gap filling, default is "local_maximum", string
+        self.gap_filling_method = "local_maximum"   # method for gap filling, default is "  local_maximum", string
         self.gap_filling_rt_window = 0.05           # RT window for finding local maximum, default is 0.05 minutes
+        self.isotope_rel_int_limit = 1.0            # intensity upper limit of isotopes cannot exceed the base peak intensity * isotope_rel_int_limit, default is 1.5
 
         # feature annotation
         self.ms2_library_path = None        # path to the MS2 library (.msp or .pickle), character string
+        self.mz_rt_ms2_match = False        # whether to match MS2 based on m/z and RT, default is False
+        self.mz_rt_match = False            # whether to match MS1 based on m/z and RT, default is False
+        self.mz_ms2_match = True            # whether to match MS2 based on m/z, default is True
+        self.fuzzy_search = False           # whether to perform fuzzy search, default is False
         self.ms2_sim_tol = 0.7              # MS2 similarity tolerance, default is 0.7
-        self.fuzzy_search = True            # whether to perform fuzzy search, default is True
-        self.consider_rt = False            # whether to consider RT when matching MS2, default is False. If True, RT needs to be provided in the MS2 library.
         self.rt_tol_annotation = 0.2        # RT tolerance for MS2 annotation, default is 0.2
         
         # normalization

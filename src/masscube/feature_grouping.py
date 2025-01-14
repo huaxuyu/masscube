@@ -31,6 +31,7 @@ def group_features_after_alignment(features, params: Params):
     features.sort(key=lambda x: x.highest_intensity, reverse=True)
     mz_arr = np.array([f.mz for f in features])
     rt_arr = np.array([f.rt for f in features])
+    intensity_arr = np.array([f.highest_intensity for f in features])
     
     to_anno = np.ones(len(features), dtype=bool)
     feature_group_id = 1
@@ -52,7 +53,8 @@ def group_features_after_alignment(features, params: Params):
         _, eic_a, _ = d.get_eic_data(f.mz, f.rt, mz_tol=params.mz_tol_ms1, rt_tol=0.25)
         k = np.argmin(np.abs(d.ms1_time_arr-f.rt))
 
-        f.isotope_signals = find_isotope_signals(mz=f.mz, signals=d.scans[k].signals, mz_tol=params.mz_tol_feature_grouping)
+        f.isotope_signals = find_isotope_signals(mz=f.mz, intensity=np.max(eic_a), signals=d.scans[d.ms1_idx[k]].signals, 
+                                                 mz_tol=params.mz_tol_feature_grouping, rel_int_limit=params.isotope_rel_int_limit)
         if f.adduct_type is None:
             f.adduct_type = "[M+H]+" if params.ion_mode.lower() == "positive" else "[M-H]-"
         for s in f.isotope_signals:
@@ -61,10 +63,11 @@ def group_features_after_alignment(features, params: Params):
             w = np.where(w1 & w2 & to_anno)[0]
             if len(w) > 0:
                 for wi in w:
-                    to_anno[wi] = False
-                    features[wi].feature_group_id = f.feature_group_id
-                    features[wi].is_isotope = True
-                    features[wi].adduct_type = f.adduct_type + "_isotope"
+                    if intensity_arr[wi] < intensity_arr[i] * params.isotope_rel_int_limit:
+                        to_anno[wi] = False
+                        features[wi].feature_group_id = f.feature_group_id
+                        features[wi].is_isotope = True
+                        features[wi].adduct_type = f.adduct_type + "_isotope"
         # prepare m/z list to search in-source fragments and adducts
         search_dict = generate_search_dict(f, f.adduct_type, params.ion_mode)
         # find the features that are in the same group
@@ -86,7 +89,9 @@ def group_features_after_alignment(features, params: Params):
                         features[vi].is_in_source_fragment = True
                         features[vi].adduct_type = "ISF"
                     # find isotopes for this ion and do not use scan-to-scan correlation
-                    features[vi].isotope_signals = find_isotope_signals(features[vi].mz, d.scans[k].signals, mz_tol=params.mz_tol_feature_grouping)
+                    features[vi].isotope_signals = find_isotope_signals(features[vi].mz, intensity=np.max(eic_b), 
+                                                                        signals=d.scans[d.ms1_idx[k]].signals, mz_tol=params.mz_tol_feature_grouping,
+                                                                        rel_int_limit=params.isotope_rel_int_limit)
                     # retrieve the isotope signals from the feature list
                     for s in features[vi].isotope_signals:
                         w1 = np.abs(mz_arr - s[0]) < params.mz_tol_feature_grouping
@@ -94,10 +99,11 @@ def group_features_after_alignment(features, params: Params):
                         w = np.where(w1 & w2 & to_anno)[0]
                         if len(w) > 0:
                             for wi in w:
-                                to_anno[wi] = False
-                                features[wi].feature_group_id = f.feature_group_id
-                                features[wi].is_isotope = True
-                                features[wi].adduct_type = features[vi].adduct_type + "_isotope"
+                                if intensity_arr[wi] < intensity_arr[vi] * params.isotope_rel_int_limit:
+                                    to_anno[wi] = False
+                                    features[wi].feature_group_id = f.feature_group_id
+                                    features[wi].is_isotope = True
+                                    features[wi].adduct_type = features[vi].adduct_type + "_isotope"
         feature_group_id += 1
 
 
@@ -131,7 +137,8 @@ def group_features_single_file(d):
         _, eic_a, _ = d.get_eic_data(f.mz, f.rt, mz_tol=d.params.mz_tol_ms1, rt_tol=0.25)
         k = np.argmin(np.abs(d.ms1_time_arr-f.rt))
 
-        f.isotope_signals = find_isotope_signals(mz=f.mz, signals=d.scans[k].signals, mz_tol=d.params.mz_tol_feature_grouping)
+        f.isotope_signals = find_isotope_signals(mz=f.mz, intensity=np.max(eic_a), signals=d.scans[k].signals, 
+                                                 mz_tol=d.params.mz_tol_feature_grouping, rel_int_limit=d.params.isotope_rel_int_limit)
         if f.adduct_type is None:
             f.adduct_type = "[M+H]+" if d.params.ion_mode.lower() == "positive" else "[M-H]-"
         for s in f.isotope_signals:
@@ -140,10 +147,11 @@ def group_features_single_file(d):
             w = np.where(w1 & w2 & to_anno)[0]
             if len(w) > 0:
                 for wi in w:
-                    to_anno[wi] = False
-                    d.features[wi].feature_group_id = feature_group_id
-                    d.features[wi].is_isotope = True
-                    d.features[wi].adduct_type = f.adduct_type + "_isotope"
+                    if d.features[wi].peak_height < f.peak_height * d.params.isotope_rel_int_limit:
+                        to_anno[wi] = False
+                        d.features[wi].feature_group_id = feature_group_id
+                        d.features[wi].is_isotope = True
+                        d.features[wi].adduct_type = f.adduct_type + "_isotope"
         # prepare m/z list to search in-source fragments and adducts
         search_dict = generate_search_dict(f, f.adduct_type, d.params.ion_mode)
         # find the features that are in the same group
@@ -165,7 +173,8 @@ def group_features_single_file(d):
                         d.features[vi].is_in_source_fragment = True
                         d.features[vi].adduct_type = "ISF"
                     # find isotopes for this ion and do not use scan-to-scan correlation
-                    d.features[vi].isotope_signals = find_isotope_signals(d.features[vi].mz, d.scans[k].signals, mz_tol=d.params.mz_tol_feature_grouping)
+                    d.features[vi].isotope_signals = find_isotope_signals(mz=d.features[vi].mz, intensity=np.max(eic_b), signals=d.scans[k].signals,
+                                                                          mz_tol=d.params.mz_tol_feature_grouping, rel_int_limit=d.params.isotope_rel_int_limit)
                     # retrieve the isotope signals from the feature list
                     for s in d.features[vi].isotope_signals:
                         w1 = np.abs(mz_arr - s[0]) < d.params.mz_tol_feature_grouping
@@ -173,10 +182,11 @@ def group_features_single_file(d):
                         w = np.where(w1 & w2 & to_anno)[0]
                         if len(w) > 0:
                             for wi in w:
-                                to_anno[wi] = False
-                                d.features[wi].feature_group_id = feature_group_id
-                                d.features[wi].is_isotope = True
-                                d.features[wi].adduct_type = d.features[vi].adduct_type + "_isotope"
+                                if d.features[wi].peak_height < d.features[vi].peak_height * d.params.isotope_rel_int_limit:
+                                    to_anno[wi] = False
+                                    d.features[wi].feature_group_id = feature_group_id
+                                    d.features[wi].is_isotope = True
+                                    d.features[wi].adduct_type = d.features[vi].adduct_type + "_isotope"
         feature_group_id += 1
 
 
@@ -227,7 +237,7 @@ def generate_search_dict(feature, adduct_form, ion_mode):
     return search_dict
 
 
-def find_isotope_signals(mz, signals, mz_tol=0.015, charge_state=1, num=5):
+def find_isotope_signals(mz, intensity, signals, mz_tol=0.012, charge_state=1, num=5, rel_int_limit=1.5):
     """
     Find isotope patterns from the MS1 signals.
 
@@ -235,6 +245,8 @@ def find_isotope_signals(mz, signals, mz_tol=0.015, charge_state=1, num=5):
     ----------
     mz: float
         The m/z value of the feature.
+    intensity: float
+        The intensity of the feature's peak apex.
     signals: np.array
         The MS1 signals as [[m/z, intensity], ...]
     mz_tol: float
@@ -243,6 +255,8 @@ def find_isotope_signals(mz, signals, mz_tol=0.015, charge_state=1, num=5):
         The charge state of the feature.
     num: int
         The maximum number of isotopes to be found.
+    rel_int_limit: float
+        Isotope's intensity cannot be higher than rel_int_limit * intensity.
 
     Returns
     -------
@@ -252,13 +266,15 @@ def find_isotope_signals(mz, signals, mz_tol=0.015, charge_state=1, num=5):
     
     diff = signals[:, 0] - mz
     isotope_signals = []
+    limit = rel_int_limit * intensity
     if charge_state == 1:
-        for i in range(1, num+1):
+        for i in range(1, num):
             v = np.abs(diff - 1.003355*i) < mz_tol
             if np.sum(v) > 0:
                 tmp = signals[v]
                 tmp = [np.mean(tmp[:, 0]), np.sum(tmp[:, 1])]
-                isotope_signals.append(tmp)
+                if tmp[1] < limit:
+                    isotope_signals.append(tmp)
     
     return np.array(isotope_signals)
 
@@ -360,14 +376,14 @@ ADDUCT_POS = {
     '[M+H]+': (1.007276, 1, 1),
     '[M+NH4]+': (18.033826, 1, 1),
     '[M]+': (0, 1, 1),
-    '[M+H+CH3OH]+': (33.03349, 1, 1),
+    # '[M+H+CH3OH]+': (33.03349, 1, 1),
     '[M+Na]+': (22.989221, 1, 1),
     '[M+K]+': (38.963158, 1, 1),
-    '[M+H+CH3CN]+': (42.033826, 1, 1),
+    # '[M+H+CH3CN]+': (42.033826, 1, 1),
     '[M-H+2Na]+': (44.971165, 1, 1),
     '[M+H-H2O]+': (-17.003288, 1, 1),
-    '[M+H-2H2O]+': (-35.01385291583, 1, 1),
-    '[M+H-3H2O]+': (-53.02441759986, 1, 1),
+    # '[M+H-2H2O]+': (-35.01385291583, 1, 1),
+    # '[M+H-3H2O]+': (-53.02441759986, 1, 1),
     '[M+H+HAc]+': (61.02841, 1, 1),
     '[M+H+HFA]+': (47.01276, 1, 1),
     '[2M+H]+': (1.007276, 2, 1),
@@ -375,11 +391,11 @@ ADDUCT_POS = {
     '[2M+Na]+': (22.989221, 2, 1),
     '[2M+H-H2O]+': (-17.003288, 2, 1),
     '[3M+H]+': (1.007276, 3, 1),
-    '[3M+NH4]+': (18.033826, 3, 1),
-    '[3M+Na]+': (22.989221, 3, 1),
-    '[3M+H-H2O]+': (-17.003288, 3, 1),
+    # '[3M+NH4]+': (18.033826, 3, 1),
+    # '[3M+Na]+': (22.989221, 3, 1),
+    # '[3M+H-H2O]+': (-17.003288, 3, 1),
     '[M+2H]2+': (0.503638, 1, 2),
-    '[M+3H]3+': (0.335759, 1, 3),
+    # '[M+3H]3+': (0.335759, 1, 3),
     # '[M+Li]+': (6.014574, 1, 1),
     # '[M+Ag]+': (106.904548, 1, 1),
     # '[M+Ca]2+': (39.961493, 1, 2),
@@ -400,7 +416,7 @@ ADDUCT_NEG = {
     '[2M-H-H2O]-': (-19.017841, 2, 1),
     '[3M-H]-': (-1.007276, 3, 1),
     '[M-2H]2-': (-0.503638, 1, 2),
-    '[M-3H]3-': (-0.335759, 1, 3),
+    # '[M-3H]3-': (-0.335759, 1, 3),
     # '[M+Br]-': (78.918886, 1, 1),
     # '[2M+Br]-': (78.918886, 2, 1),
     # '[3M+Br]-': (78.918886, 3, 1),

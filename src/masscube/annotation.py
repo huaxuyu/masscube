@@ -17,10 +17,13 @@ from .utils_functions import extract_signals_from_string, convert_signals_to_str
 """
 Format of MS2 database in MassCube
 ====================================================================================
+
 1. pickle format
 
 A FlashEntropySearch object that contains the MS2 database. ms_entropy version 1.2.2 is highly recommended
 to generate this object (other versions may not work). See masscube documentation for how to generate this object.
+
+https://huaxuyu.github.io/masscubedocs/docs/workflows/database/
 
 2. msp format
 
@@ -106,6 +109,32 @@ Example:
     "num peaks": "7",
     "peaks": [["103.054", "15"], ["107.049", "14"], ["120.081", "1000"], ["121.084", "16"], ["131.049", "41"], ["149.059", "16"], ["166.086", "56"]], 
 }
+
+"""
+
+"""
+Search modes in MassCube
+====================================================================================
+
+Features (i.e. unique m/z-RT pairs) can be annotated in different ways with different confidence. Search modes summarize the way to search and annotate features.
+
+1. mz_rt_ms2_match
+
+Features are matched to database compounds with m/z, retention time and MS2 spectra.
+
+2. mz_rt_match
+
+Features are matched to database compounds with m/z and retention time.
+
+3. mz_ms2_match
+
+Features are matched to database compounds with m/z and MS2 spectra.
+
+4. fuzzy_search (ms2 match or analog search)
+
+Features are matched to database compounds with MS2 spectra using fuzzy search. Experimental and database precursor m/z values can be different.
+
+Because matching by m/z value only is very likely to have false positives, this function is not provided in MassCube.
 
 """
 
