@@ -89,12 +89,10 @@ class Params:
 
         # feature annotation
         self.ms2_library_path = None        # path to the MS2 library (.msp or .pickle), character string
-        self.mz_rt_ms2_match = False        # whether to match MS2 based on m/z and RT, default is False
-        self.mz_rt_match = False            # whether to match MS1 based on m/z and RT, default is False
-        self.mz_ms2_match = True            # whether to match MS2 based on m/z, default is True
         self.fuzzy_search = False           # whether to perform fuzzy search, default is False
-        self.ms2_sim_tol = 0.7              # MS2 similarity tolerance, default is 0.7
+        self.consider_rt = False            # whether to consider RT in MS2 matching, default is False.
         self.rt_tol_annotation = 0.2        # RT tolerance for MS2 annotation, default is 0.2
+        self.ms2_sim_tol = 0.7              # MS2 similarity tolerance, default is 0.7
         
         # normalization
         self.sample_normalization = False   # whether to normalize the data based on total sample amount/concentration, default is False
@@ -142,7 +140,6 @@ class Params:
                     value = True
                 elif value.lower() == "false" or value.lower() == "no":
                     value = False
-
             setattr(self, df.iloc[i, 0], value)
 
         # check if the parameters are correct

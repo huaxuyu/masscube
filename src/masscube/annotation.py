@@ -77,8 +77,8 @@ A list of dictionaries, each dictionary contains the following keys:
     "name": the name of the compound
     "precursor_mz": the precursor m/z
     "precursor_type": the precursor ion type
-    "ionmode": the ion mode
-    "retentiontime": the retention time
+    "ion_mode": the ion mode
+    "retention_time": the retention time
     "ccs": the collision cross section
     "formula": the molecular formula
     "ontology": the ontology of the compound
@@ -96,8 +96,8 @@ Example:
     "name": "L-PHENYLALANINE",
     "precursor_mz": 166.086013793945, 
     "precursor_type": "[M+H]+"
-    "ionmode": "Positive", 
-    "retentiontime": "3.30520009994507", 
+    "ion_mode": "Positive", 
+    "retention_time": "3.30520009994507", 
     "ccs": "136.819671630859", 
     "formula": "C9H11NO2", 
     "ontology": "Phenylalanine and derivatives", 
@@ -163,6 +163,10 @@ def load_ms2_db(path):
         for a in read_one_spectrum(path):
             if 'precursortype' in a.keys():
                 a['precursor_type'] = a.pop('precursortype')
+            if 'ionmode' in a.keys():
+                a['ion_mode'] = a.pop('ionmode')
+            if 'retentiontime' in a.keys():
+                a['retention_time'] = a.pop('retentiontime')
             db.append(a)
         _correct_db(db)
         entropy_search = FlashEntropySearch()
@@ -207,43 +211,71 @@ def annotate_aligned_features(features, params, num=5):
 
     entropy_search = load_ms2_db(params.ms2_library_path)
 
+    if params.consider_rt:
+        rt_arr = np.zeros(len(entropy_search.precursor_mz_array))+np.inf
+        for i, ms2 in enumerate(entropy_search):
+            if 'retention_time' in ms2:
+                rt_arr[i] = ms2['retention_time']
+
     for f in tqdm(features):
         if len(f.ms2_seq) == 0:
             continue
-        parsed_ms2 = []
+        
+        matched = None  # matched MS2 spectrum in the database
+
+        parsed_ms2 = [] # experimental MS2 spectra (top num) to search
         for file_name, ms2 in f.ms2_seq:
             signals = extract_signals_from_string(ms2)
             signals = entropy_search.clean_spectrum_for_search(f.mz, signals, precursor_ions_removal_da=params.precursor_mz_offset)
             parsed_ms2.append([file_name, signals])
-        # sort parsed ms2 by summed intensity
+        
         parsed_ms2.sort(key=lambda x: np.sum(x[1][:, 1]), reverse=True)
         parsed_ms2 = parsed_ms2[:num]
-        matched = None
-
-        f.similarity = 0
         f.ms2_reference_file = parsed_ms2[0][0]
         f.ms2 = parsed_ms2[0][1]
-        f.matched_peak_number = 0
+
+        if params.consider_rt:
+            rt_boo = np.abs(rt_arr - f.rt) < params.rt_tol_annotation
+
+        similarities = []
+        matched_nums = []
 
         for file_name, signals in parsed_ms2:
             similarity, matched_num = entropy_search.identity_search(precursor_mz=f.mz, peaks=signals, ms1_tolerance_in_da=params.mz_tol_ms1,
                                                                      ms2_tolerance_in_da=params.mz_tol_ms2, output_matched_peak_number=True)
-            idx = np.argmax(similarity)
-            if similarity[idx] > params.ms2_sim_tol and similarity[idx] > f.similarity:
-                matched = entropy_search[idx]
-                f.similarity = similarity[idx]
-                f.ms2_reference_file = file_name
-                f.ms2 = signals
-                f.matched_peak_number = matched_num[idx]
+            similarities.append(similarity)
+            matched_nums.append(matched_num)
+        
+        if params.consider_rt:
+            similarities_rt = [s*rt_boo for s in similarities]
+            tmp = [np.max(s) for s in similarities_rt]
+            if np.max(tmp) > params.ms2_sim_tol:
+                idx_tmp = np.argmax(tmp)
+                f.ms2_reference_file = parsed_ms2[idx_tmp][0]
+                f.ms2 = parsed_ms2[idx_tmp][1]
+                matched_idx = np.argmax(similarities_rt[idx_tmp])
+                matched = entropy_search[matched_idx]
+                matched = {k.lower():v for k,v in matched.items()}
+                _assign_annotation_results_to_feature(f, score=similarities_rt[idx_tmp][matched_idx],matched=matched, 
+                                                      matched_peak_num=matched_nums[idx_tmp][matched_idx], search_mode='identity_search_with_rt')
+        
+        # if the feature cannot be annotated by considering retention time
+        if matched is None:
+            tmp = [np.max(s) for s in similarities]
+            if np.max(tmp) > params.ms2_sim_tol:    
+                idx_tmp = np.argmax(tmp)
+                f.ms2_reference_file = parsed_ms2[idx_tmp][0]
+                f.ms2 = parsed_ms2[idx_tmp][1]
+                matched_idx = np.argmax(similarities[idx_tmp])
+                matched = entropy_search[matched_idx]
+                matched = {k.lower():v for k,v in matched.items()}
+                _assign_annotation_results_to_feature(f, score=similarities[idx_tmp][matched_idx], matched=matched,
+                                                      matched_peak_num=matched_nums[idx_tmp][matched_idx], search_mode='identity_search')
 
-        if matched is not None:
-            matched = {k.lower():v for k,v in matched.items()}
-            _assign_annotation_results_to_feature(f, score=f.similarity, matched=matched, matched_peak_num=f.matched_peak_number, 
-                                                  search_mode='identity_search')
-
-        else:
+        # if the feature cannot be annotated by MS2 identity search
+        if matched is None and params.fuzzy_search:
             similarity = entropy_search.hybrid_search(precursor_mz=f.mz, peaks=f.ms2, ms1_tolerance_in_da=params.mz_tol_ms1, 
-                                                              ms2_tolerance_in_da=params.mz_tol_ms2)
+                                                      ms2_tolerance_in_da=params.mz_tol_ms2)
             idx = np.argmax(similarity)
             if similarity[idx] > params.ms2_sim_tol:
                 matched = entropy_search[idx]
@@ -256,7 +288,7 @@ def annotate_aligned_features(features, params, num=5):
     return features
 
 
-def annotate_features(d, sim_tol=None, fuzzy_search=True, ms2_library_path=None):
+def annotate_features(d, sim_tol=None, fuzzy_search=True, ms2_library_path=None, consider_rt=False):
     """
     Annotate features from a single raw data file using MS2 database.
     
@@ -272,6 +304,8 @@ def annotate_features(d, sim_tol=None, fuzzy_search=True, ms2_library_path=None)
     ms2_library_path : str
         The absolute path to the MS2 database. If not specified, the corresponding parameter from 
         the MS data file will be used.
+    consider_rt : bool
+        Whether to consider retention time in the annotation. Default is False.
     """
 
     if ms2_library_path is None:
@@ -281,6 +315,12 @@ def annotate_features(d, sim_tol=None, fuzzy_search=True, ms2_library_path=None)
 
     if sim_tol is None:
         sim_tol = d.params.ms2_sim_tol
+    
+    if consider_rt:
+        rt_arr = np.zeros(len(search_engine.precursor_mz_array))+np.inf
+        for i, ms2 in enumerate(search_engine):
+            if 'retention_time' in ms2:
+                rt_arr[i] = ms2['retention_time']
 
     for f in tqdm(d.features):
     
@@ -292,14 +332,27 @@ def annotate_features(d, sim_tol=None, fuzzy_search=True, ms2_library_path=None)
         signals = search_engine.clean_spectrum_for_search(precursor_mz=f.mz, peaks=f.ms2.signals, precursor_ions_removal_da=2.0)
         scores, peak_nums = search_engine.identity_search(precursor_mz=f.mz, peaks=signals, ms1_tolerance_in_da=d.params.mz_tol_ms1, 
                                                           ms2_tolerance_in_da=d.params.mz_tol_ms2, output_matched_peak_number=True)
-        idx = np.argmax(scores)
-        if scores[idx] > sim_tol:
-            matched = search_engine[idx]
-            matched = {k.lower():v for k,v in matched.items()}
-            matched_peak_num = peak_nums[idx]
-            _assign_annotation_results_to_feature(f, score=scores[idx], matched=matched, matched_peak_num=matched_peak_num,
-                                                  search_mode='identity_search')
-        elif fuzzy_search:
+        if consider_rt:
+            rt_boo = np.abs(rt_arr - f.rt) < d.params.rt_tol_annotation
+            scores_rt = scores * rt_boo
+            idx = np.argmax(scores_rt)
+            if scores_rt[idx] > sim_tol:
+                matched = search_engine[idx]
+                matched = {k.lower():v for k,v in matched.items()}
+                matched_peak_num = peak_nums[idx]
+                _assign_annotation_results_to_feature(f, score=scores_rt[idx], matched=matched, matched_peak_num=matched_peak_num, 
+                                                      search_mode='identity_search_with_rt')
+        
+        if matched is None:
+            idx = np.argmax(scores)
+            if scores[idx] > sim_tol:
+                matched = search_engine[idx]
+                matched = {k.lower():v for k,v in matched.items()}
+                matched_peak_num = peak_nums[idx]
+                _assign_annotation_results_to_feature(f, score=scores[idx], matched=matched, matched_peak_num=matched_peak_num,
+                                                      search_mode='identity_search')
+
+        if matched is None and fuzzy_search:
             scores = search_engine.hybrid_search(precursor_mz=f.mz, peaks=signals, ms1_tolerance_in_da=d.params.mz_tol_ms1, 
                                                              ms2_tolerance_in_da=d.params.mz_tol_ms2)
             idx = np.argmax(scores)
@@ -308,57 +361,6 @@ def annotate_features(d, sim_tol=None, fuzzy_search=True, ms2_library_path=None)
                 matched_peak_num = None
                 _assign_annotation_results_to_feature(f, score=scores[idx], matched=matched, matched_peak_num=matched_peak_num, 
                                                       search_mode='fuzzy_search')
-
-
-def annotate_ms2(ms2, ms2_library_path, sim_tol=0.7, fuzzy_search=True):
-    """
-    Annotate MS2 spectra using MS2 database.
-
-    Parameters
-    ----------
-    ms2 : Scan object
-        MS2 spectrum.
-    ms2_library_path : str
-        The absolute path to the MS2 database. If not specified, the corresponding parameter from 
-        the MS data file will be used.
-    sim_tol : float
-        The similarity threshold for MS2 annotation.
-    fuzzy_search : bool
-        Whether to further annotated the unmatched MS2 using fuzzy search.
-
-    Returns
-    -------
-    score : float
-        The similarity score.
-    matched : dict
-        The matched MS2 spectrum.
-    matched_peak_num : int
-        The number of matched peaks.
-    search_mode : str
-        The search mode, 'identity_search' or 'fuzzy_search'.
-    """
-
-    search_engine = load_ms2_db(ms2_library_path)
-
-    signals = search_engine.clean_spectrum_for_search(precursor_mz=ms2.precursor_mz, peaks=ms2.signals, precursor_ions_removal_da=2.0)
-    scores, peak_nums = search_engine.identity_search(precursor_mz=ms2.precursor_mz, peaks=signals, ms1_tolerance_in_da=0.01, 
-                                                      ms2_tolerance_in_da=0.015, output_matched_peak_number=True)
-    idx = np.argmax(scores)
-    if scores[idx] > sim_tol:
-        matched = search_engine[idx]
-        matched_peak_num = peak_nums[idx]
-        return scores[idx], matched, matched_peak_num, 'identity_search'
-
-    elif fuzzy_search:
-        scores = search_engine.hybrid_search(precursor_mz=ms2.precursor_mz, peaks=signals, ms1_tolerance_in_da=0.01, 
-                                                         ms2_tolerance_in_da=0.015)
-        idx = np.argmax(scores)
-        if scores[idx] > sim_tol:
-            matched = search_engine[idx]
-            matched_peak_num = None
-            return scores[idx], matched, None, 'fuzzy_search'
-    
-    return None, None, None, None
 
 
 def feature_annotation_mzrt(features, path, mz_tol=0.01, rt_tol=0.3):
@@ -540,6 +542,10 @@ def index_msp_to_pkl(msp_path, output_path=None):
     for a in read_one_spectrum(msp_path):
         if 'precursortype' in a.keys():
             a['precursor_type'] = a.pop('precursortype')
+        if 'ionmode' in a.keys():
+            a['ion_mode'] = a.pop('ionmode')
+        if 'retentiontime' in a.keys():
+            a['retention_time'] = a.pop('retentiontime')
         db.append(a)
 
     _correct_db(db)

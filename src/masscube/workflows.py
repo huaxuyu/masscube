@@ -238,6 +238,7 @@ def untargeted_metabolomics_workflow(path=None, return_results=False, only_proce
     # STEP 5. signal normalization
     if params.signal_normalization:
         print("Step 5: Running signal normalization...")
+        print(params.plot_normalization)
         if params.plot_normalization:
             feature_table = signal_normalization(feature_table, params.sample_metadata, params.signal_norm_method, output_plot_path=params.normalization_dir)
         else:
@@ -324,19 +325,17 @@ def run_evaluation(path=None, zscore_threshold=-2):
     txt_path = os.path.join(path, "single_files")
     txt_files = [f for f in os.listdir(txt_path) if f.lower().endswith('.txt')]
     txt_files = [f for f in txt_files if not f.startswith(".")]
+    txt_files = [f for f in txt_files if f.split(".")[0] not in blank_samples]
+
     int_array = np.zeros(len(txt_files))
     for i in range(len(txt_files)):
         df = pd.read_csv(os.path.join(txt_path, txt_files[i]), sep="\t", low_memory=False)
-        int_array[i] = np.sum(df['peak_height'].values)
+        int_array[i] = np.max(df['peak_height'].values)
         
     z = zscore(int_array)
     idx = np.where(z < zscore_threshold)[0]
 
-    problematic_files = []
-    for i in idx:
-        problematic_files.append(txt_files[i].split(".")[0])
-
-    problematic_files = [f for f in problematic_files if f not in blank_samples]
+    problematic_files = [txt_files[i].split(".")[0] for i in idx]
     
     # output the names of problematic files
     if len(problematic_files) > 0:
