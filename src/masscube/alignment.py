@@ -155,7 +155,7 @@ def feature_alignment(path: str, params: Params):
 
         # retention time correction
         if params.correct_rt:
-            _, model = retention_time_correction(mz_ref, rt_ref, tmp_table["m/z"].values, tmp_table["RT"].values)
+            _, model = retention_time_correction(mz_ref, rt_ref, tmp_table["m/z"].values, tmp_table["RT"].values, rt_tol=params.rt_tol_rt_correction)
             if model is not None:
                 current_table["RT"] = model(current_table["RT"].values)
             rt_cor_functions[file_name] = model

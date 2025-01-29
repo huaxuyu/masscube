@@ -75,6 +75,7 @@ class Params:
         # feature alignment
         self.mz_tol_alignment = 0.01                # m/z tolerance for alignment, default is 0.01
         self.rt_tol_alignment = 0.2                 # RT tolerance for alignment, default is 0.2
+        self.rt_tol_rt_correction = 0.5             # Expected maximum RT shift for RT correction, default is 0.5 minutes
         self.correct_rt = True                      # whether to perform RT correction, default is True
         self.scan_number_cutoff = 5                 # feature with non-zero scan number greater than the cutoff will be aligned, default is 5
         self.detection_rate_cutoff = 0.1            # features detected need to be >rate*(qc+sample), default rate is 0.1
