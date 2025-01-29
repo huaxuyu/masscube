@@ -123,7 +123,7 @@ def feature_alignment(path: str, params: Params):
         # remove those files from names
         names = [names[i] for i in range(len(names)) if params.sample_names[i] not in not_found_files]
         # remove those files from sample metadata
-        params.sample_metadata = params.sample_metadata[~params.sample_metadata['file_name'].isin(not_found_files)]
+        params.sample_metadata = params.sample_metadata[~params.sample_metadata['sample_name'].isin(not_found_files)]
     
     # find anchors for retention time correction
     if params.correct_rt:
@@ -131,8 +131,9 @@ def feature_alignment(path: str, params: Params):
         for n in names:
             df = pd.read_csv(n, sep="\t", low_memory=False)
             intensities.append(np.sum(df["peak_height"]))
-        anchor_selection_name = names[np.argmax(intensities)]
-        mz_ref, rt_ref = rt_anchor_selection(anchor_selection_name)
+        # use the file with median total intensity as the reference file
+        anchor_selection_name = names[np.argsort(intensities)[len(intensities)//2]]
+        mz_ref, rt_ref = rt_anchor_selection(anchor_selection_name, num=500)
         rt_cor_functions = {}
     
     # STEP 2: read individual feature tables and align features
@@ -148,14 +149,15 @@ def feature_alignment(path: str, params: Params):
         # sort current table by peak height from high to low
         current_table = current_table.sort_values(by="peak_height", ascending=False)
         current_table.index = range(len(current_table))
+        tmp_table = current_table[current_table["peak_height"] > params.ms1_abs_int_tol * 5]
 
         availible_features = np.ones(len(current_table), dtype=bool)
 
         # retention time correction
-        if params.correct_rt and params.sample_metadata['is_blank'][i] == False:
-            rt_arr = current_table["RT"].values
-            rt_arr, model = retention_time_correction(mz_ref, rt_ref, current_table["m/z"].values, rt_arr)
-            current_table["RT"] = rt_arr
+        if params.correct_rt:
+            _, model = retention_time_correction(mz_ref, rt_ref, tmp_table["m/z"].values, tmp_table["RT"].values)
+            if model is not None:
+                current_table["RT"] = model(current_table["RT"].values)
             rt_cor_functions[file_name] = model
 
         for f in features:
@@ -458,7 +460,7 @@ def output_feature_table(feature_table, output_path):
     feature_table.to_csv(output_path, index=False, sep="\t")
 
 
-def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, mz_tol=0.01, rt_tol=2.0, mode='linear_interpolation', 
+def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, mz_tol=0.01, rt_tol=0.5, mode='linear_interpolation', 
                               rt_max=None):
     """
     To correct retention times for feature alignment.
@@ -498,15 +500,13 @@ def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, mz_tol=0.01, rt_to
         The model for retention time correction.
     """
 
-    mz_matched = []
     rt_matched = []
     idx_matched = []
 
     for i in range(len(mz_ref)):
         v = np.logical_and(np.abs(mz_arr - mz_ref[i]) < mz_tol, np.abs(rt_arr - rt_ref[i]) < rt_tol)
         v = np.where(v)[0]
-        if len(v) > 0:
-            mz_matched.append(mz_arr[v[0]])
+        if len(v) == 1:
             rt_matched.append(rt_arr[v[0]])
             idx_matched.append(i)
     rt_ref = rt_ref[idx_matched]
@@ -516,21 +516,21 @@ def retention_time_correction(mz_ref, rt_ref, mz_arr, rt_arr, mz_tol=0.01, rt_to
     
     # remove outliers
     v = rt_ref - np.array(rt_matched)
-    z = zscore(v)
-    outliers = np.where(np.logical_and(np.abs(z) > 1, np.abs(v) > 0.05))[0]
-    if len(outliers) > 0:
-        rt_ref = np.delete(rt_ref, outliers)
-        rt_matched = np.delete(rt_matched, outliers)
+    k = np.abs(v - np.mean(v)) < np.std(v)
+    rt_ref = rt_ref[k]
+    rt_matched = np.array(rt_matched)[k]
 
     if len(rt_matched) < 5:
         return rt_arr, None
+    
+    x = [0]
+    y = [0]
+    for i in range(len(rt_matched)):
+        if rt_matched[i] - x[-1] > 0.1:
+            x.append(rt_matched[i])
+            y.append(rt_ref[i])
 
-    # add zero and rt_max to the beginning and the end
-    if rt_max is None:
-        rt_max = np.max(rt_arr) + 0.1
-    rt_matched = np.concatenate(([0], rt_matched, [rt_max]))
-    rt_ref = np.concatenate(([0], rt_ref, [rt_max]))
-    f = interp1d(rt_matched, rt_ref, fill_value='extrapolate')
+    f = interp1d(x, y, fill_value='extrapolate')
     
     return f(rt_arr), f
 
