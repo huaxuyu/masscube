@@ -261,7 +261,7 @@ def plot_lowess_normalization(arr, fit_curve, arr_new, sample_idx, qc_idx, n, id
     qc_idx : numpy array
         QC samples are true, while blank and real samples are false. It's length is n.
     n : int
-        The number of features.
+        The number of samples.
     id : int
         The feature ID.
     dpi : int

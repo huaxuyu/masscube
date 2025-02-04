@@ -9,7 +9,6 @@ import re
 import os
 from tqdm import tqdm
 from scipy.interpolate import interp1d
-from scipy.stats import zscore
 import pickle
 from copy import deepcopy
 
@@ -133,7 +132,7 @@ def feature_alignment(path: str, params: Params):
             intensities.append(np.sum(df["peak_height"]))
         # use the file with median total intensity as the reference file
         anchor_selection_name = names[np.argsort(intensities)[len(intensities)//2]]
-        mz_ref, rt_ref = rt_anchor_selection(anchor_selection_name, num=500)
+        mz_ref, rt_ref = rt_anchor_selection(anchor_selection_name, num=100)
         rt_cor_functions = {}
     
     # STEP 2: read individual feature tables and align features

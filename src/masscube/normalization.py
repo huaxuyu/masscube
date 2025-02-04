@@ -285,12 +285,13 @@ def signal_normalization(feature_table, sample_metadata, method='lowess', output
 
     arr = feature_table.loc[:, samples].values
     n = len(samples)
+    n_qc = np.sum(qc_idx)
 
     # STEP 3: normalize samples
     if method == 'lowess':
         print("\tSignal normalization is running: lowess normalization.")
         for id, a in enumerate(tqdm(arr)):
-            r = lowess_normalization(a, qc_idx, frac=np.min([0.5, 8/n]), it=3)
+            r = lowess_normalization(a, qc_idx, frac=np.min([0.5, 8/n_qc]), it=3)
             if r['fit_curve'] is not None:
                 # visualization
                 if output_plot_path is not None:

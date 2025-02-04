@@ -6,6 +6,7 @@
 import numpy as np
 import os
 from tqdm import tqdm
+import pickle
 
 from .params import Params
 from .raw_data_utils import read_raw_file_to_obj
@@ -36,6 +37,12 @@ def group_features_after_alignment(features, params: Params):
     to_anno = np.ones(len(features), dtype=bool)
     feature_group_id = 1
 
+    if params.correct_rt and os.path.exists(os.path.join(params.project_dir, "rt_correction_models.pkl")):
+        with open(os.path.join(params.project_dir, "rt_correction_models.pkl"), "rb") as f:
+            rt_cor_functions = pickle.load(f)
+    else:
+        rt_cor_functions = {}
+
     # find isotopes, in-source fragments, and adducts for each feature
     for i, f in enumerate(tqdm(features)):
         
@@ -50,10 +57,21 @@ def group_features_after_alignment(features, params: Params):
         
         # load the reference file
         d = read_raw_file_to_obj(fn)
+
+        if f.reference_file in rt_cor_functions.keys():
+            func = rt_cor_functions[f.reference_file]
+            if func is not None:
+                d.correct_retention_time(func)
+
         _, eic_a, _ = d.get_eic_data(f.mz, f.rt, mz_tol=params.mz_tol_ms1, rt_tol=0.25)
+
+        if len(eic_a) == 0:
+            feature_group_id += 1
+            continue
+
         k = np.argmin(np.abs(d.ms1_time_arr-f.rt))
 
-        f.isotope_signals = find_isotope_signals(mz=f.mz, intensity=np.max(eic_a), signals=d.scans[d.ms1_idx[k]].signals, 
+        f.isotope_signals = find_isotope_signals(mz=f.mz, intensity=np.max(eic_a[:,1]), signals=d.scans[d.ms1_idx[k]].signals, 
                                                  mz_tol=params.mz_tol_feature_grouping, rel_int_limit=params.isotope_rel_int_limit)
         if f.adduct_type is None:
             f.adduct_type = "[M+H]+" if params.ion_mode.lower() == "positive" else "[M-H]-"

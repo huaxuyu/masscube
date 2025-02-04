@@ -200,6 +200,11 @@ def untargeted_metabolomics_workflow(path=None, return_results=False, only_proce
         metadata[3]["status"] = "completed"
         print("\tFeature alignment is completed.")
         print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+
+        feature_table = convert_features_to_df(features=features, sample_names=params.sample_names, quant_method=params.quant_method)
+        # output feature table to a txt file
+        output_path = os.path.join(params.project_file_dir, "aligned_feature_table_before_annotation.txt")
+        output_feature_table(feature_table, output_path)
         
     # STEP 4. Feature annotation
         print("Step 4: Annotating features...")
