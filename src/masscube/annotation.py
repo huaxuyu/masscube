@@ -1,4 +1,4 @@
-# Author: Hauxu Yu
+# Author: Huaxu Yu
 
 # A module to annotate metabolites based on their m/z, retention time and MS2 spectra
 

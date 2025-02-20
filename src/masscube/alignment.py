@@ -1,4 +1,4 @@
-# Author: Hauxu Yu
+# Author: Huaxu Yu
 
 # A module to align features (characterized by unique m/z and retention time) from different files. 
 

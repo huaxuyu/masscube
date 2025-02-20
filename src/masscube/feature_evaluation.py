@@ -1,4 +1,4 @@
-# Author: Hauxu Yu
+# Author: Huaxu Yu
 
 # Evaluate feature quality by chromatographic peak shapes, mz errors, rt errors, etc.
 

@@ -1,4 +1,4 @@
-# Author: Hauxu Yu
+# Author: Huaxu Yu
 
 # A module to read and process the raw MS data
 

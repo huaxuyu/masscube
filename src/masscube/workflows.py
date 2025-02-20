@@ -1,4 +1,4 @@
-# Author: Hauxu Yu
+# Author: Huaxu Yu
 
 # A module to summarize the premade data processing workflows.
 

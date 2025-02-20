@@ -1,4 +1,4 @@
-# Author: Hauxu Yu
+# Author: Huaxu Yu
 
 """
 mzpkl.py - pickle utilities for MassCube

@@ -1,3 +1,5 @@
+# Author: Huaxu Yu
+
 """
 classifier_builder.py - Build a random forest classification model from raw data.
 """

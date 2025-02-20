@@ -1,4 +1,4 @@
-# Author: Hauxu Yu
+# Author: Huaxu Yu
 
 # Group features from the same compound including isotopes, in-source fragments and adducts.
 
