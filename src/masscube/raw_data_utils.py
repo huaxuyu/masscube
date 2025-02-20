@@ -236,7 +236,10 @@ class MSData:
                     self.base_peak_arr.append([0, 0])
             else:
                 precursor_mz = spec['precursorMz'][0]['precursorMz']
-                int_upper = max(self.params.ms2_abs_int_tol, np.max(signals[:, 1]) * self.params.ms2_rel_int_tol)
+                if len(signals) == 0:
+                    int_upper = self.params.ms2_abs_int_tol
+                else:
+                    int_upper = max(self.params.ms2_abs_int_tol, np.max(signals[:, 1]) * self.params.ms2_rel_int_tol)
                 signals = clean_signals(signals, mz_range=[0, precursor_mz - self.params.precursor_mz_offset],
                                         intensity_range=[int_upper, np.inf])
                 if self.params.centroid_mz_tol is not None:

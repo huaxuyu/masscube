@@ -357,7 +357,7 @@ def run_evaluation(path=None, zscore_threshold=-2):
 
 # 4. Batch file processing
 def batch_file_processing(path=None, segment_feature=True, group_features=False, evaluate_peak_shape=True,
-                         annotate_ms2=True, ms2_library_path=None, cpu_ratio=0.8, batch_size=100):
+                          annotate_ms2=True, ms2_library_path=None, cpu_ratio=0.8, batch_size=100):
     """
     Process single files using default parameters.
 
@@ -393,7 +393,7 @@ def batch_file_processing(path=None, segment_feature=True, group_features=False,
     to_be_processed = [os.path.join(sample_dir, f) for f in to_be_processed]
 
     print("{} files to process out of {} files.".format(len(to_be_processed), len(all_files)))
-    
+
     workers = int(multiprocessing.cpu_count() * cpu_ratio)
     print("A total of {} CPU cores are detected, {} cores are used.".format(multiprocessing.cpu_count(), workers))
     for i in range(0, len(to_be_processed), batch_size):

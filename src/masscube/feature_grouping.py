@@ -45,7 +45,7 @@ def group_features_after_alignment(features, params: Params):
 
     # find isotopes, in-source fragments, and adducts for each feature
     for i, f in enumerate(tqdm(features)):
-        
+
         if not to_anno[i]:
             continue
 
