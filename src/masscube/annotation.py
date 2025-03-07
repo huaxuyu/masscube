@@ -166,10 +166,10 @@ def load_ms2_db(path):
             if 'ionmode' in a.keys():
                 a['ion_mode'] = a.pop('ionmode')
             if 'retentiontime' in a.keys():
-                a['retention_time'] = a.pop('retentiontime')
+                a['retention_time'] = float(a.pop('retentiontime'))
             db.append(a)
         _correct_db(db)
-        entropy_search = FlashEntropySearch()
+        entropy_search = FlashEntropySearch(intensity_weight=None)
         entropy_search.build_index(db)
         print("\tMS2 database has been loaded.")
         return entropy_search
@@ -181,7 +181,7 @@ def load_ms2_db(path):
     
     elif ext.lower() == '.json':
         db = json.load(open(path, 'r'))
-        entropy_search = FlashEntropySearch()
+        entropy_search = FlashEntropySearch(intensity_weight=None)
         entropy_search.build_index(db)
         print("\tMS2 database has been loaded.")
         return entropy_search
