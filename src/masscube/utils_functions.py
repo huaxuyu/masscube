@@ -50,7 +50,7 @@ def generate_sample_table(path=None, output=True):
         file_names = [os.path.splitext(f)[0] for f in os.listdir(path_data) if f.lower().endswith('.mzml') or f.lower().endswith('.mzxml')]
         file_names = [f for f in file_names if not f.startswith(".")]   # for Mac OS
         file_names = sorted(file_names)
-        sample_table = pd.DataFrame({'Sample': file_names, "is_qc": [None]*len(file_names), "is_blank": [None]*len(file_names)})
+        sample_table = pd.DataFrame({'sample_name': file_names, "is_qc": [None]*len(file_names), "is_blank": [None]*len(file_names)})
     else:
         raise FileNotFoundError(f"The path {path_data} does not exist.")
     
