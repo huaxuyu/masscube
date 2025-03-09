@@ -267,7 +267,7 @@ def detect_features(d):
 
 
 def segment_feature(feature, sigma=1.2, prominence_ratio=0.05, distance=10, peak_height_tol=1000,
-                    length_tol=5, sse_tol=0.5):
+                    length_tol=5, sse_tol=0.6):
     """
     Function to segment a feature into multiple features based on the edge detection.
 
@@ -297,15 +297,19 @@ def segment_feature(feature, sigma=1.2, prominence_ratio=0.05, distance=10, peak
         return [feature]
 
     # correction for peak with limited scan number
-    if len(feature.signals) < 10:
+    peak_tmp = feature.signals[:,1]
+    if np.sum(peak_tmp > peak_height_tol) < 12:
         sigma = 0.5*sigma
         distance = 3
     
-    ss = gaussian_filter1d(feature.signals[:,1], sigma=sigma)
-    feature.sse = squared_error_to_smoothed_curve(original_signal=feature.signals[:,1], fit_signal=ss)
+    # add zero to the front and the end of the signal to facilitate the edge detection
+    peak_tmp = np.concatenate(([0], peak_tmp, [0]))
+    ss = gaussian_filter1d(peak_tmp, sigma=sigma)
+    feature.sse = squared_error_to_smoothed_curve(original_signal=peak_tmp, fit_signal=ss)
     if feature.sse > sse_tol:
         return [feature]
     peaks, _ = find_peaks(ss, prominence=np.max(ss)*prominence_ratio, distance=distance)
+    peaks = peaks - 1   # correct the index
 
     # the resulting peaks should have a height larger than peak_height_tol
     peaks = peaks[feature.signals[peaks,1] > peak_height_tol]

@@ -122,7 +122,8 @@ def feature_alignment(path: str, params: Params):
         # remove those files from names
         names = [names[i] for i in range(len(names)) if params.sample_names[i] not in not_found_files]
         # remove those files from sample metadata
-        params.sample_metadata = params.sample_metadata[~params.sample_metadata['sample_name'].isin(not_found_files)]
+        params.sample_metadata = params.sample_metadata[~params.sample_metadata.iloc[:,1].isin(not_found_files)]
+        params.sample_names = list(params.sample_metadata.iloc[:, 0])
     
     # find anchors for retention time correction
     if params.correct_rt:

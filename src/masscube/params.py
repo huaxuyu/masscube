@@ -245,12 +245,7 @@ class Params:
             available_files = [f for f in os.listdir(self.sample_dir) if not f.startswith(".") and 
                                (f.lower().endswith(".mzml") or f.lower().endswith(".mzxml"))]
             # find the absolute paths of the raw MS data in order
-            self.sample_abs_paths = [None] * len(self.sample_names)
-            for i, name in enumerate(self.sample_names):
-                for f in available_files:
-                    if name in f:
-                        self.sample_abs_paths[i] = os.path.join(self.sample_dir, f)
-                        break
+            self.sample_abs_paths = [os.path.join(self.sample_dir, f) for f in available_files]
             # find the start time of the raw MS data
             self.sample_metadata['time'] = [get_start_time(path) for path in self.sample_abs_paths]
             self.sample_metadata['analytical_order'] = 0

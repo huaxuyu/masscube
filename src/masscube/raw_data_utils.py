@@ -290,7 +290,10 @@ class MSData:
             Number of iterations to segment features.
         """
 
-        distance = int(0.05/np.mean(np.diff(self.ms1_time_arr)))
+        distance = 0.05/np.mean(np.diff(self.ms1_time_arr))
+
+        if distance < 1:
+            distance = 1
 
         for _ in range(iteration):
             self.features = [segment_feature(feature, peak_height_tol=self.params.ms1_abs_int_tol*3, distance=distance) for feature in self.features]
