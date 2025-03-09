@@ -177,6 +177,9 @@ def load_ms2_db(path):
     elif ext.lower() == '.pkl':
         entropy_search = pickle.load(open(path, 'rb'))
         print("\tMS2 database has been loaded.")
+        # check if intensity_weight is an attribute
+        if not hasattr(entropy_search, 'intensity_weight'):
+            raise ValueError("Please new MS/MS database is required for MassCube ver. 1.2 or later. Please download from: https://zenodo.org/records/14991522.")
         return entropy_search
     
     elif ext.lower() == '.json':
