@@ -241,11 +241,11 @@ class Params:
         # STEP 5: read the sample names and sample metadata from the sample table
         if os.path.exists(os.path.join(self.project_dir, "sample_table.csv")):
             self.read_sample_metadata(os.path.join(self.project_dir, "sample_table.csv"))
-            self.sample_names = list(self.sample_metadata.iloc[:, 0])
-            available_files = [f for f in os.listdir(self.sample_dir) if not f.startswith(".") and 
-                               (f.lower().endswith(".mzml") or f.lower().endswith(".mzxml"))]
             # find the absolute paths of the raw MS data in order
-            self.sample_abs_paths = [os.path.join(self.sample_dir, f) for f in available_files]
+            self.sample_abs_paths, good_idx = _find_files_in_data_folder(self.sample_dir, list(self.sample_metadata.iloc[:, 0]))
+            self.sample_metadata = self.sample_metadata.iloc[good_idx, :]
+            self.sample_names = list(self.sample_metadata.iloc[:, 0])
+
             # find the start time of the raw MS data
             self.sample_metadata['time'] = [get_start_time(path) for path in self.sample_abs_paths]
             self.sample_metadata['analytical_order'] = 0
@@ -374,6 +374,22 @@ def find_ms_info(file_name):
             centroid = True
 
     return ms_type, ion_mode, centroid
+
+
+def _find_files_in_data_folder(folder_path, filenames):
+    found_files = []
+    
+    # Get a set of all files in the folder (without extensions)
+    folder_files = {os.path.splitext(f)[0]: f for f in os.listdir(folder_path) if not f.startswith(".") and
+                    (f.lower().endswith(".mzml") or f.lower().endswith(".mzxml"))}
+    
+    good_idx = []
+    for i, name in enumerate(filenames):
+        if name in folder_files:
+            found_files.append(os.path.abspath(os.path.join(folder_path, folder_files[name])))
+            good_idx.append(i)
+    
+    return found_files, good_idx
 
 
 PARAMETER_RAGES = {
