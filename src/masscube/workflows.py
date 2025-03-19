@@ -26,7 +26,7 @@ from .utils_functions import convert_signals_to_string
 
 # 1. Untargeted feature detection for a single file
 def process_single_file(file_name, params=None, segment_feature=True, group_features=False, evaluate_peak_shape=True,
-                        annotate_ms2=False, ms2_library_path=None, output_dir=None):
+                        annotate_ms2=False, ms2_library_path=None, remove_noise=False, output_dir=None):
     """
     Untargeted data processing for a single file (mzML, mzXML, mzjson or compressed mzjson).
 
@@ -77,6 +77,9 @@ def process_single_file(file_name, params=None, segment_feature=True, group_feat
             d.summarize_features(cal_g_score=True, cal_a_score=True)
         else:
             d.summarize_features(cal_g_score=False, cal_a_score=False)
+        
+        if remove_noise:
+            d.remove_noise()
 
         # STEP 4. MS2 annotation
         if annotate_ms2:

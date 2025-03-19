@@ -142,53 +142,38 @@ class MSData:
         time_unit = scans[0]['scanList']['scan'][0]['scan start time'].unit_info
 
         for idx, spec in enumerate(scans):
+            
+            # get time
+            if "scan start time" in spec['scanList']['scan'][0]:
+                scan_time = spec['scanList']['scan'][0]['scan start time']
+            elif "scan time" in spec['scanList']['scan'][0]:
+                scan_time = spec['scanList']['scan'][0]['scan time']   # not a standard format
+
+            if time_unit == 'second':
+                scan_time /= 60     # convert to minute
+
             # get level of mass spectrum
             level = spec['ms level']
-            if level not in self.params.scan_levels:
-                continue
 
-            # convert scan time to minute
-            try:
-                scan_time = spec['scanList']['scan'][0]['scan start time']
-            except:
-                scan_time = spec['scanList']['scan'][0]['scan time']   # not a standard format
-            if time_unit == 'second':
-                scan_time /= 60
-            # skip scans outside the defined retention time range
-            if scan_time < self.params.rt_lower_limit or scan_time > self.params.rt_upper_limit:
+            # skip scans not in the defined scan levels or outside the defined retention time range
+            if (level not in self.params.scan_levels) or (scan_time < self.params.rt_lower_limit) or (scan_time > self.params.rt_upper_limit):
+                self.scans.append(Scan(level=level, id=idx, scan_time=scan_time, signals=None, precursor_mz=None))
                 continue
 
             signals = np.array([spec['m/z array'], spec['intensity array']], dtype=np.float32).T
-
-            # process signals based on parameters and scan level
-            if level == 1:
-                signals = clean_signals(signals, intensity_range=[self.params.ms1_abs_int_tol, np.inf])
-                if self.params.centroid_mz_tol is not None:
-                    signals = centroid_signals(signals, mz_tol=self.params.centroid_mz_tol)
-                precursor_mz = None
-                self.ms1_idx.append(idx)
-                self.ms1_time_arr.append(scan_time)
-                if len(signals) > 0:
-                    self.base_peak_arr.append(signals[np.argmax(signals[:, 1])])
-                else:
-                    self.base_peak_arr.append([0, 0])
-            else:
-                precursor_mz = spec['precursorList']['precursor'][0]['selectedIonList']['selectedIon'][0]['selected ion m/z']
-                if len(signals) == 0:
-                    int_upper = self.params.ms2_abs_int_tol
-                else:
-                    int_upper = max(self.params.ms2_abs_int_tol, np.max(signals[:, 1]) * self.params.ms2_rel_int_tol)
-                signals = clean_signals(signals, mz_range=[0, precursor_mz - self.params.precursor_mz_offset],
-                                        intensity_range=[int_upper, np.inf])
-                if self.params.centroid_mz_tol is not None:
-                    signals = centroid_signals(signals, mz_tol=self.params.centroid_mz_tol)
-                self.ms2_idx.append(idx)
             
-            self.scans.append(Scan(level=level, id=idx, scan_time=scan_time, signals=signals, 
-                                   precursor_mz=precursor_mz))
-
-        self.ms1_time_arr = np.array(self.ms1_time_arr)
-        self.base_peak_arr = np.array(self.base_peak_arr)
+            if level == 2:
+                precursor_mz = spec['precursorList']['precursor'][0]['selectedIonList']['selectedIon'][0]['selected ion m/z']
+            else:
+                precursor_mz = None
+            
+            self.scans.append(_preprocess_signals_to_scan(level=level, id=idx, scan_time=scan_time, signals=signals, 
+                                                          params=self.params, precursor_mz=precursor_mz))
+        
+        self.ms1_idx = np.array([s.id for s in self.scans if s.level == 1 and s.signals is not None and len(s.signals) > 0])
+        self.ms2_idx = np.array([s.id for s in self.scans if s.level == 2 and s.signals is not None and len(s.signals) > 0])
+        self.ms1_time_arr = np.array([self.scans[i].time for i in self.ms1_idx])
+        self.base_peak_arr = np.array([self.scans[i].signals[np.argmax(self.scans[i].signals[:, 1])] for i in self.ms1_idx])
 
 
     def extract_scan_mzxml(self, scans):
@@ -207,50 +192,35 @@ class MSData:
         time_unit = scans[0]["retentionTime"].unit_info
 
         for idx, spec in enumerate(scans):
+
+            # get time
+            scan_time = spec["retentionTime"]
+
+            if time_unit == 'second':
+                scan_time = scan_time / 60  # convert to minute
+
             # get level of mass spectrum
             level = spec['msLevel']
-            if level not in self.params.scan_levels:
-                continue
 
-            # convert scan time to minute
-            scan_time = spec["retentionTime"]
-            if time_unit == 'second':
-                scan_time = scan_time / 60
-            # skip scans outside the defined retention time range
-            if scan_time < self.params.rt_lower_limit or scan_time > self.params.rt_upper_limit:
+            # skip scans not in the defined scan levels or outside the defined retention time range
+            if (level not in self.params.scan_levels) or (scan_time < self.params.rt_lower_limit) or (scan_time > self.params.rt_upper_limit):
+                self.scans.append(Scan(level=level, id=idx, scan_time=scan_time, signals=None, precursor_mz=None))
                 continue
 
             signals = np.array([spec['m/z array'], spec['intensity array']], dtype=np.float32).T
             
-            # process signals based on parameters and scan level
-            if level == 1:
-                signals = clean_signals(signals, intensity_range=[self.params.ms1_abs_int_tol, np.inf])
-                if self.params.centroid_mz_tol is not None:
-                    signals = centroid_signals(signals, mz_tol=self.params.centroid_mz_tol)
-                precursor_mz = None
-                self.ms1_idx.append(idx)
-                self.ms1_time_arr.append(scan_time)
-                if len(signals) > 0:
-                    self.base_peak_arr.append(signals[np.argmax(signals[:, 1])])
-                else:
-                    self.base_peak_arr.append([0, 0])
-            else:
+            if level == 2:
                 precursor_mz = spec['precursorMz'][0]['precursorMz']
-                if len(signals) == 0:
-                    int_upper = self.params.ms2_abs_int_tol
-                else:
-                    int_upper = max(self.params.ms2_abs_int_tol, np.max(signals[:, 1]) * self.params.ms2_rel_int_tol)
-                signals = clean_signals(signals, mz_range=[0, precursor_mz - self.params.precursor_mz_offset],
-                                        intensity_range=[int_upper, np.inf])
-                if self.params.centroid_mz_tol is not None:
-                    signals = centroid_signals(signals, mz_tol=self.params.centroid_mz_tol)
-                self.ms2_idx.append(idx)
-
-            self.scans.append(Scan(level=level, id=idx, scan_time=scan_time, signals=signals, 
-                                   precursor_mz=precursor_mz))
+            else:
+                precursor_mz = None
+            
+            self.scans.append(_preprocess_signals_to_scan(level=level, id=idx, scan_time=scan_time, signals=signals,
+                                                          params=self.params, precursor_mz=precursor_mz))
         
-        self.ms1_time_arr = np.array(self.ms1_time_arr)
-        self.base_peak_arr = np.array(self.base_peak_arr)
+        self.ms1_idx = np.array([s.id for s in self.scans if s.level == 1 and s.signals is not None and len(s.signals) > 0])
+        self.ms2_idx = np.array([s.id for s in self.scans if s.level == 2 and s.signals is not None and len(s.signals) > 0])
+        self.ms1_time_arr = np.array([self.scans[i].time for i in self.ms1_idx])
+        self.base_peak_arr = np.array([self.scans[i].signals[np.argmax(self.scans[i].signals[:, 1])] for i in self.ms1_idx])
 
 
     def drop_ms1_ions_by_intensity(self, int_tol):
@@ -287,13 +257,10 @@ class MSData:
         Parameters
         ----------
         iteration: int
-            Number of iterations to segment features.
+            Number of iterations to segment features. Increase this number may introduce more false positives.
         """
 
-        distance = 0.05/np.mean(np.diff(self.ms1_time_arr))
-
-        if distance < 1:
-            distance = 1
+        distance = np.clip(0.05 / np.mean(np.diff(self.ms1_time_arr)), 1, 5)
 
         for _ in range(iteration):
             self.features = [segment_feature(feature, peak_height_tol=self.params.ms1_abs_int_tol*3, distance=distance) for feature in self.features]
@@ -659,6 +626,9 @@ class MSData:
             Retention time tolerance.
         """
 
+        self.feature_mz_arr = np.array([feature.mz for feature in self.features])
+        self.feature_rt_arr = np.array([feature.rt for feature in self.features])
+
         if rt_target is None:
             tmp = np.abs(self.feature_mz_arr - mz_target) < mz_tol
             found_feature = [self.features[i] for i in np.where(tmp)[0]]
@@ -1016,3 +986,25 @@ def find_best_ms2(ms2_list):
             return ms2_list[max(range(len(total_ints)), key=total_ints.__getitem__)]
     else:
         return None
+
+
+def _preprocess_signals_to_scan(level, id, scan_time, signals, params, precursor_mz=None):
+    """
+    Function to generate a Scan object from signals.
+    """
+
+    if len(signals) == 0:
+        return Scan(level=level, id=id, scan_time=scan_time, signals=signals, precursor_mz=precursor_mz)
+
+    if level == 1:
+        signals = clean_signals(signals, intensity_range=[params.ms1_abs_int_tol, np.inf])
+
+    elif level == 2:
+        int_lower = max(params.ms2_abs_int_tol, np.max(signals[:, 1]) * params.ms2_rel_int_tol)
+        signals = clean_signals(signals, mz_range=[0, precursor_mz - params.precursor_mz_offset],
+                                intensity_range=[int_lower, np.inf])
+    
+    if params.centroid_mz_tol is not None:
+        signals = centroid_signals(signals, mz_tol=params.centroid_mz_tol)
+    
+    return Scan(level=level, id=id, scan_time=scan_time, signals=signals, precursor_mz=precursor_mz)

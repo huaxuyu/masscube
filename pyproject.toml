@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools<66", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "masscube"
-version = "1.2.3"
+version = "1.2.4"
 authors = [
   { name="Huaxu Yu", email="yhxchem@outlook.com" },
 ]

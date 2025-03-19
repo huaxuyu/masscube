@@ -266,8 +266,8 @@ def detect_features(d):
     return final_features
 
 
-def segment_feature(feature, sigma=1.2, prominence_ratio=0.05, distance=10, peak_height_tol=1000,
-                    length_tol=5, sse_tol=0.6):
+def segment_feature(feature, sigma=1.2, prominence_ratio=0.05, distance=5, peak_height_tol=1000,
+                    length_tol=5, sse_tol=0.3):
     """
     Function to segment a feature into multiple features based on the edge detection.
 
@@ -293,14 +293,10 @@ def segment_feature(feature, sigma=1.2, prominence_ratio=0.05, distance=10, peak
     """
 
     # if peak height is too low or the length is too short, skip segmentation
-    if feature.peak_height < peak_height_tol or feature.length < length_tol:
-        return [feature]
-
-    # correction for peak with limited scan number
     peak_tmp = feature.signals[:,1]
-    if np.sum(peak_tmp > peak_height_tol) < 12:
-        sigma = 0.5*sigma
-        distance = 3
+    dp = np.sum(peak_tmp > peak_height_tol)
+    if feature.peak_height < peak_height_tol or dp < length_tol:
+        return [feature]
     
     # add zero to the front and the end of the signal to facilitate the edge detection
     peak_tmp = np.concatenate(([0], peak_tmp, [0]))
@@ -308,11 +304,22 @@ def segment_feature(feature, sigma=1.2, prominence_ratio=0.05, distance=10, peak
     feature.sse = squared_error_to_smoothed_curve(original_signal=peak_tmp, fit_signal=ss)
     if feature.sse > sse_tol:
         return [feature]
-    peaks, _ = find_peaks(ss, prominence=np.max(ss)*prominence_ratio, distance=distance)
-    peaks = peaks - 1   # correct the index
 
-    # the resulting peaks should have a height larger than peak_height_tol
-    peaks = peaks[feature.signals[peaks,1] > peak_height_tol]
+    # correction of prominence ratio and sigma based on noise level and data points
+    prominence_ratio = np.clip(0.03, prominence_ratio * feature.sse * 20, 0.1)
+    prominence = np.max(ss)*prominence_ratio
+    sigma = np.clip(0.5, sigma * dp / 33, 1.2)
+    ss = gaussian_filter1d(peak_tmp, sigma=sigma)   # recalculate the smoothed signal
+
+    peaks, _ = find_peaks(ss, prominence=prominence, distance=distance)
+
+    # baseline filter
+    peaks = peaks - 1   # correct the index
+    
+    baseline = np.median(peak_tmp)
+
+    # the resulting peaks should have a height larger than baseline
+    peaks = peaks[feature.signals[peaks,1] > baseline]
 
     if len(peaks) < 2:
         return [feature]

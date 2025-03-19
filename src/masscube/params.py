@@ -61,7 +61,7 @@ class Params:
         # feature detection
         self.mz_tol_ms1 = 0.01              # m/z tolerance for MS1, default is 0.01
         self.mz_tol_ms2 = 0.015             # m/z tolerance for MS2, default is 0.015
-        self.feature_gap_tol = 30           # gap tolerance within a feature, default is 30 (i.e. 30 consecutive scans without signal), integer
+        self.feature_gap_tol = 10           # gap tolerance within a feature, default is 10 (i.e. 10 consecutive scans without signal), integer
         self.batch_size = 100               # batch size for parallel processing, default is 100, integer
         self.percent_cpu_to_use = 0.8       # percentage of CPU to use, default is 0.8, float
         
@@ -80,8 +80,8 @@ class Params:
         self.scan_number_cutoff = 5                 # feature with non-zero scan number greater than the cutoff will be aligned, default is 5
         self.detection_rate_cutoff = 0.1            # features detected need to be >rate*(qc+sample), default rate is 0.1
         self.merge_features = True                  # whether to merge features with almost the same m/z and RT, default is True
-        self.mz_tol_merge_features = 0.012          # m/z tolerance for merging features, default is 0.012
-        self.rt_tol_merge_features = 0.05           # RT tolerance for merging features, default is 0.05
+        self.mz_tol_merge_features = 0.01           # m/z tolerance for merging features, default is 0.01
+        self.rt_tol_merge_features = 0.02           # RT tolerance for merging features, default is 0.02
         self.group_features_after_alignment = True  # whether to group features after alignment, default is False
         self.fill_gaps = True                       # whether to fill the gaps in the aligned features, default is True
         self.gap_filling_method = "local_maximum"   # method for gap filling, default is "  local_maximum", string
