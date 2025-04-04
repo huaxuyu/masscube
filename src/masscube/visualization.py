@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import matplotlib.transforms as transforms
 from matplotlib.patches import Ellipse
+import matplotlib.font_manager as fm
 
 from .annotation import extract_signals_from_string
 
@@ -41,14 +42,16 @@ def plot_bpcs(data_list=None, autocolor=False, show_legend=True, output_path=Non
 
         plt.figure(figsize=(10, 4))
         plt.rcParams['font.size'] = 14
-        plt.rcParams['font.family'] = 'Arial'
+        # check if arial font is available
+        if 'Arial' in [f.name for f in fm.fontManager.ttflist]:
+            plt.rcParams['font.family'] = 'Arial'
 
         for i, d in enumerate(data_list):
             plt.plot(d.ms1_rt_seq, d.bpc_int, color=color_list[i], linewidth=0.5)
-            plt.xlabel("Retention Time (min)", fontsize=18, fontname='Arial')
-            plt.ylabel("Intensity", fontsize=18, fontname='Arial')
-            plt.xticks(fontsize=14, fontname='Arial')
-            plt.yticks(fontsize=14, fontname='Arial')
+            plt.xlabel("Retention Time (min)", fontsize=18)
+            plt.ylabel("Intensity", fontsize=18)
+            plt.xticks(fontsize=14)
+            plt.yticks(fontsize=14)
         
         if show_legend:
             plt.legend([d.params.file_name for d in data_list], fontsize=10)
@@ -100,7 +103,8 @@ def plot_feature(d, feature, mz_tol=0.005, rt_tol=0.3, rt_range=None, output=Fal
 
     plt.figure(figsize=(9, 3))
     plt.rcParams['font.size'] = 14
-    plt.rcParams['font.family'] = 'Arial'
+    if 'Arial' in [f.name for f in fm.fontManager.ttflist]:
+        plt.rcParams['font.family'] = 'Arial'
     plt.plot(eic_rt, eic_int, linewidth=0.5, color="black")
     plt.ylim(0, max_int*1.2)
 
@@ -113,13 +117,13 @@ def plot_feature(d, feature, mz_tol=0.005, rt_tol=0.3, rt_range=None, output=Fal
     # label the left and right of the feature
     plt.axvline(x = feature.rt_seq[0], color = 'black', linestyle = '--', linewidth=0.5, ymax=0.8)
     plt.axvline(x = feature.rt_seq[-1], color = 'black', linestyle = '--', linewidth=0.5, ymax=0.8)
-    plt.xlabel("Retention Time (min)", fontsize=18, fontname='Arial')
-    plt.ylabel("Intensity", fontsize=18, fontname='Arial')
-    plt.text(eic_rt[0], max_int*1.1, "m/z = {:.4f}".format(feature.mz), fontsize=11, fontname='Arial')
-    plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.2, max_int*1.1, "G-score = {:.2f}".format(feature.gaussian_similarity), fontsize=11, fontname='Arial', color="blue")
-    plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.4, max_int*1.1, "N-score = {:.2f}".format(feature.noise_score), fontsize=11, fontname='Arial', color="red")
-    plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.6, max_int*1.1, "A-score = {:.2f}".format(feature.asymmetry_factor), fontsize=11, fontname='Arial', color="darkgreen")
-    plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.8,max_int*1.1, d.params.file_name, fontsize=7, fontname='Arial', color="gray")
+    plt.xlabel("Retention Time (min)", fontsize=18)
+    plt.ylabel("Intensity", fontsize=18)
+    plt.text(eic_rt[0], max_int*1.1, "m/z = {:.4f}".format(feature.mz), fontsize=11)
+    plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.2, max_int*1.1, "G-score = {:.2f}".format(feature.gaussian_similarity), fontsize=11, color="blue")
+    plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.4, max_int*1.1, "N-score = {:.2f}".format(feature.noise_score), fontsize=11, color="red")
+    plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.6, max_int*1.1, "A-score = {:.2f}".format(feature.asymmetry_factor), fontsize=11, color="darkgreen")
+    plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.8,max_int*1.1, d.params.file_name, fontsize=7, color="gray")
 
     if output:
         plt.savefig(output, dpi=600, bbox_inches="tight")
@@ -170,7 +174,8 @@ def mirror_ms2(precursor_mz1, precursor_mz2, signals1, signals2, annotation=None
 
     plt.figure(figsize=(10, 3))
     plt.rcParams['font.size'] = 14
-    plt.rcParams['font.family'] = 'Arial'
+    if 'Arial' in [f.name for f in fm.fontManager.ttflist]:
+        plt.rcParams['font.family'] = 'Arial'
     # plot precursor
     plt.vlines(x = precursor_mz1, ymin = 0, ymax = 1, color="cornflowerblue", linewidth=1.5, linestyles='dashed')
     plt.vlines(x = precursor_mz2, ymin = 0, ymax = -1, color="lightcoral", linewidth=1.5, linestyles='dashed')
@@ -182,18 +187,18 @@ def mirror_ms2(precursor_mz1, precursor_mz2, signals1, signals2, annotation=None
     xmax = max([precursor_mz1, precursor_mz2])*1.2
     # plot zero line
     plt.hlines(y = 0, xmin = 0, xmax = xmax, color="black", linewidth=1.5)
-    plt.xlabel("m/z, Dalton", fontsize=18, fontname='Arial')
-    plt.ylabel("Intensity", fontsize=18, fontname='Arial')
-    plt.xticks(fontsize=14, fontname='Arial')
-    plt.yticks(fontsize=14, fontname='Arial')
+    plt.xlabel("m/z, Dalton", fontsize=18)
+    plt.ylabel("Intensity", fontsize=18)
+    plt.xticks(fontsize=14)
+    plt.yticks(fontsize=14)
 
     # note name and similarity score
-    plt.text(xmax*0.9, 0.9, "Experiment", fontsize=12, fontname='Arial', color="grey")
-    plt.text(xmax*0.9, -0.9, "Database", fontsize=12, fontname='Arial', color="grey")
+    plt.text(xmax*0.9, 0.9, "Experiment", fontsize=12, color="grey")
+    plt.text(xmax*0.9, -0.9, "Database", fontsize=12, color="grey")
     if score is not None:
-        plt.text(0, 0.9, "similarity = {:.3f}".format(score), fontsize=12, fontname='Arial', color="blue")
+        plt.text(0, 0.9, "similarity = {:.3f}".format(score), fontsize=12, color="blue")
     if annotation is not None:
-        plt.text(0, -0.95, annotation, fontsize=12, fontname='Arial', color="black")
+        plt.text(0, -0.95, annotation, fontsize=12, color="black")
 
     if output_path is not None:
         plt.savefig(output_path, dpi=600, bbox_inches="tight")
@@ -273,12 +278,13 @@ def plot_lowess_normalization(arr, fit_curve, arr_new, sample_idx, qc_idx, n, id
     v = np.arange(n)
     
     plt.rcParams['font.size'] = 20
-    plt.rcParams['font.family'] = 'Arial'
+    if 'Arial' in [f.name for f in fm.fontManager.ttflist]:
+        plt.rcParams['font.family'] = 'Arial'
     plt.figure(figsize=(20,8))
 
     plt.subplot(2, 1, 1)
     plt.title("Before normalization")
-    plt.ylabel("Intensity", fontname='Arial')
+    plt.ylabel("Intensity")
     plt.plot(v[sample_idx], arr[sample_idx], 'o', markersize=4, color='grey')
     plt.plot(v[qc_idx], arr[qc_idx], 'o', markersize=6, color='red')
     plt.plot(v, fit_curve, '--', color='blue', linewidth=2)
@@ -291,8 +297,8 @@ def plot_lowess_normalization(arr, fit_curve, arr_new, sample_idx, qc_idx, n, id
 
     plt.subplot(2, 1, 2)
     plt.title("After normalization")
-    plt.xlabel("Analytical order", fontname='Arial')
-    plt.ylabel("Intensity", fontname='Arial')
+    plt.xlabel("Analytical order")
+    plt.ylabel("Intensity")
     plt.plot(v[sample_idx], arr_new[sample_idx], 'o', markersize=4, color='grey')
     plt.plot(v[qc_idx], arr_new[qc_idx], 'o', markersize=6, color='red')
     plt.ylim(-300, np.max(arr_new[qc_idx]) * 1.1)
@@ -319,7 +325,8 @@ def plot_pca(vecPC1, vecPC2, var_PC1, var_PC2, group_names, colors=None, plot_or
     
     fig, ax = plt.subplots(figsize=(10,10))
     # set font to arial
-    plt.rcParams['font.family'] = 'Arial'
+    if 'Arial' in [f.name for f in fm.fontManager.ttflist]:
+        plt.rcParams['font.family'] = 'Arial'
     groups = np.unique(np.array(group_names))
     if colors is None:
         colors = COLORS[:len(groups)]
@@ -340,10 +347,10 @@ def plot_pca(vecPC1, vecPC2, var_PC1, var_PC2, group_names, colors=None, plot_or
         ax.spines[axis].set_linewidth(2)
     ax.tick_params(width=2, length=8) 
 
-    plt.xlabel("PC 1 ({:.1f} %)".format(var_PC1*100), fontname='Arial', fontsize=30, labelpad=25)
-    plt.ylabel("PC 2 ({:.1f} %)".format(var_PC2*100), fontname='Arial', fontsize=30, labelpad=25)
-    plt.xticks(fontname='Arial', fontsize=24)
-    plt.yticks(fontname='Arial', fontsize=24)
+    plt.xlabel("PC 1 ({:.1f} %)".format(var_PC1*100), fontsize=30, labelpad=25)
+    plt.ylabel("PC 2 ({:.1f} %)".format(var_PC2*100), fontsize=30, labelpad=25)
+    plt.xticks(fontsize=24)
+    plt.yticks(fontsize=24)
     plt.grid(linestyle=':')
     plt.legend(fontsize=20, loc='upper right', frameon=True)
     plt.rcParams.update({'font.size': 24})

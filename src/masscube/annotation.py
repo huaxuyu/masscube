@@ -40,6 +40,7 @@ Within each block, key is defined as:
     - INCHIKEY: the InChIKey
     - INSTRUMENTTYPE: the instrument type
     - COLLISIONENERGY: the collision energy
+    - DATABASE: the database name
     - COMMENT: the comment
     - Num Peaks: the number of peaks
     - [mz1 intensity1]: the m/z and intensity of each fragment
@@ -59,6 +60,7 @@ Example:
     INCHIKEY: COLNVLDHVKWLRT-QMMMGPOBSA-N
     INSTRUMENTTYPE: LC-ESI-QFT
     COLLISIONENERGY: 35.0 eV
+    DATABASE: EMBL-MCF_spec98214
     COMMENT: DB#=EMBL-MCF_spec98214; origin=EMBL - Metabolomics Core Facility Spectral Library
     Num Peaks: 7
     103.054	15
@@ -69,7 +71,7 @@ Example:
     149.059	16
     166.086	56
 
-3. json format
+3. a list of dictionaries (or json format)
 
 A list of dictionaries, each dictionary contains the following keys:
 
@@ -84,10 +86,11 @@ A list of dictionaries, each dictionary contains the following keys:
     "ontology": the ontology of the compound
     "smiles": the SMILES string
     "inchikey": the InChIKey
-    "instrumenttype": the instrument type
-    "collisionenergy": the collision energy
+    "instrument_type": the instrument type
+    "collision_energy": the collision energy
+    "database": the database name
     "comment": the comment
-    "num peaks": the number of peaks
+    "num_peaks": the number of peaks
     "peaks": a list of lists, each sublist contains two elements: m/z and intensity: [[mz1, intensity1], [mz2, intensity2], ...]
 }
 
@@ -103,10 +106,11 @@ Example:
     "ontology": "Phenylalanine and derivatives", 
     "smiles": "C1=CC=C(C=C1)C[C@@H](C(=O)O)N", 
     "inchikey": "COLNVLDHVKWLRT-QMMMGPOBSA-N", 
-    "instrumenttype": "LC-ESI-QFT", 
-    "collisionenergy": "35.0 eV", 
+    "instrument_type": "LC-ESI-QFT", 
+    "collision_energy": "35.0 eV", 
+    "database": "EMBL-MCF_spec98214"
     "comment": "DB#=EMBL-MCF_spec98214; origin=EMBL - Metabolomics Core Facility Spectral Library", 
-    "num peaks": "7",
+    "num_peaks": "7",
     "peaks": [["103.054", "15"], ["107.049", "14"], ["120.081", "1000"], ["121.084", "16"], ["131.049", "41"], ["149.059", "16"], ["166.086", "56"]], 
 }
 

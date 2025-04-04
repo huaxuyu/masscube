@@ -11,6 +11,7 @@ from sklearn.decomposition import PCA
 from umap import UMAP
 from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
 import random
 
 from .visualization import plot_pca
@@ -218,7 +219,8 @@ def umap_analysis(feature_table, params):
         # plot the UMAP
         plt.figure(figsize=(10, 10))
         plt.rcParams['font.size'] = 20
-        plt.rcParams['font.family'] = 'Arial'
+        if 'Arial' in [f.name for f in fm.fontManager.ttflist]:
+            plt.rcParams['font.family'] = 'Arial'
         # remove frame, x and y axis
         plt.box(False)
         plt.xticks([])

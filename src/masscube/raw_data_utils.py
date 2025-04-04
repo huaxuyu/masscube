@@ -5,9 +5,10 @@
 # imports
 from pyteomics import mzml, mzxml
 import numpy as np
+import pandas as pd
 import os
 import matplotlib.pyplot as plt
-import pandas as pd
+import matplotlib.font_manager as fm
 
 from .params import Params, find_ms_info
 from .feature_detection import detect_features, segment_feature
@@ -382,11 +383,12 @@ class MSData:
 
         plt.figure(figsize=(10, 3))
         plt.rcParams['font.size'] = 14
-        plt.rcParams['font.family'] = 'Arial'
-        plt.xlabel("Retention Time (min)", fontsize=18, fontname='Arial')
-        plt.ylabel("Intensity", fontsize=18, fontname='Arial')
-        plt.xticks(fontsize=14, fontname='Arial')
-        plt.yticks(fontsize=14, fontname='Arial')
+        if 'Arial' in [f.name for f in fm.fontManager.ttflist]:
+            plt.rcParams['font.family'] = 'Arial'
+        plt.xlabel("Retention Time (min)", fontsize=18)
+        plt.ylabel("Intensity", fontsize=18)
+        plt.xticks(fontsize=14)
+        plt.yticks(fontsize=14)
 
         if time_range is None:
             plt.plot(self.ms1_time_arr, self.base_peak_arr[:, 1], linewidth=1, color="black")
@@ -395,7 +397,7 @@ class MSData:
             plt.plot(self.ms1_time_arr[v], self.base_peak_arr[v, 1], linewidth=1, color="black")
 
         if label_name:
-            plt.text(self.ms1_time_arr[0], np.max(self.base_peak_arr[:,1])*0.9, self.params.file_name, fontsize=12, fontname='Arial', color="gray")
+            plt.text(self.ms1_time_arr[0], np.max(self.base_peak_arr[:,1])*0.9, self.params.file_name, fontsize=12, color="gray")
 
         if output_dir is not None:
             plt.savefig(output_dir, dpi=300, bbox_inches="tight")
@@ -540,9 +542,10 @@ class MSData:
 
         plt.figure(figsize=(10, 3))
         plt.rcParams['font.size'] = 14
-        plt.rcParams['font.family'] = 'Arial'
-        plt.xlabel("Retention Time (min)", fontsize=18, fontname='Arial')
-        plt.ylabel("Intensity", fontsize=18, fontname='Arial')
+        if 'Arial' in [f.name for f in fm.fontManager.ttflist]:
+            plt.rcParams['font.family'] = 'Arial'
+        plt.xlabel("Retention Time (min)", fontsize=18)
+        plt.ylabel("Intensity", fontsize=18)
 
         if ylim is not None:
             plt.ylim(ylim[0], ylim[1])
@@ -700,13 +703,14 @@ class MSData:
 
         plt.figure(figsize=(7, 3))
         plt.rcParams['font.size'] = 14
-        plt.rcParams['font.family'] = 'Arial'
+        if 'Arial' in [f.name for f in fm.fontManager.ttflist]:
+            plt.rcParams['font.family'] = 'Arial'
         plt.plot(eic_rt, eic_int, linewidth=1, color="black")
         plt.fill_between(eic_rt[idx_start:idx_end], eic_int[idx_start:idx_end], color="black", alpha=0.4)
-        plt.xlabel("Retention Time (min)", fontsize=18, fontname='Arial')
-        plt.ylabel("Intensity", fontsize=18, fontname='Arial')
-        plt.xticks(fontsize=14, fontname='Arial')
-        plt.yticks(fontsize=14, fontname='Arial')
+        plt.xlabel("Retention Time (min)", fontsize=18)
+        plt.ylabel("Intensity", fontsize=18)
+        plt.xticks(fontsize=14)
+        plt.yticks(fontsize=14)
 
         if output:
             plt.savefig(output, dpi=300, bbox_inches="tight")
@@ -830,20 +834,21 @@ class Scan:
         # plot the scan
         plt.figure(figsize=(10, 3))
         plt.rcParams['font.size'] = 14
-        plt.rcParams['font.family'] = 'Arial'
+        if 'Arial' in [f.name for f in fm.fontManager.ttflist]:
+            plt.rcParams['font.family'] = 'Arial'
         plt.ylim(0, max_int*1.2)
         plt.xlim(mz_range[0], mz_range[1])
         plt.vlines(x = signals[:,0], ymin = 0, ymax = signals[:,1], color="black", linewidth=1.5)
         plt.hlines(y = 0, xmin = mz_range[0], xmax = mz_range[1], color="black", linewidth=1.5)
-        plt.xlabel("m/z, Dalton", fontsize=18, fontname='Arial')
-        plt.ylabel("Intensity", fontsize=18, fontname='Arial')
-        plt.xticks(fontsize=14, fontname='Arial')
-        plt.yticks(fontsize=14, fontname='Arial')
+        plt.xlabel("m/z, Dalton", fontsize=18)
+        plt.ylabel("Intensity", fontsize=18)
+        plt.xticks(fontsize=14)
+        plt.yticks(fontsize=14)
         plt.text(mz_range[0]+(mz_range[1]-mz_range[0])*0.4, max_int*1.1, 
-                 "Time = {:.3f} min".format(self.time), fontsize=11, fontname='Arial')
+                 "Time = {:.3f} min".format(self.time), fontsize=11)
         if self.level == 2:
             plt.text(mz_range[0]+(mz_range[1]-mz_range[0])*0.05, max_int*1.1, 
-                     "Precursor m/z = {:.4f}".format(self.precursor_mz), fontsize=11, fontname='Arial')
+                     "Precursor m/z = {:.4f}".format(self.precursor_mz), fontsize=11)
         plt.show()
 
         if return_data:

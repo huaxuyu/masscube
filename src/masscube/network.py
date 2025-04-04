@@ -84,7 +84,6 @@ def network_analysis(feature_list, annotation_type="hybrid_and_identity", featur
     # hide outer frame
     plt.box(False)
     plt.rcParams['font.size'] = 12
-    plt.rcParams['font.family'] = 'Arial'
     # add legend with arial font
     plt.legend(handles=[plt.Line2D([0], [0], color="#BC6C25", marker="o", lw=0, markersize=7, label="Identity", markeredgewidth=0.5, markeredgecolor="black", alpha=0.5),
                         plt.Line2D([0], [0], color="#FEFAE0", marker="o", lw=0, markersize=7, label="Hybrid", markeredgewidth=0.5, markeredgecolor="black", alpha=0.5),
