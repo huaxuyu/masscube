@@ -280,23 +280,23 @@ def signal_normalization(feature_table, sample_metadata, method='lowess', output
     # STEP 2: get analytical order
     tmp = sample_metadata.sort_values(by="analytical_order")
     samples = tmp.iloc[:, 0].values
-    qc_idx = tmp['is_qc'].values
-    sample_idx = ~tmp['is_blank'].values
+    is_qc = tmp['is_qc'].values
+    is_qc_or_sample = ~tmp['is_blank'].values
+    batch_ids = tmp['batch_id'].values
 
     arr = feature_table.loc[:, samples].values
     n = len(samples)
-    n_qc = np.sum(qc_idx)
 
     # STEP 3: normalize samples
     if method == 'lowess':
         print("\tSignal normalization is running: lowess normalization.")
         for id, a in enumerate(tqdm(arr)):
-            r = lowess_normalization(a, qc_idx, frac=np.min([0.5, 8/n_qc]), it=3)
+            r = lowess_normalization(a, is_qc, batch_ids=batch_ids)
             if r['fit_curve'] is not None:
                 # visualization
                 if output_plot_path is not None:
                     plot_lowess_normalization(arr=a, fit_curve=r['fit_curve'], arr_new=r['normed_arr'], 
-                                              sample_idx=sample_idx, qc_idx=qc_idx, n=n, id=id, output_dir=output_plot_path)
+                                              is_qc_or_sample=is_qc_or_sample, qc_idx=is_qc, n=n, id=id, output_dir=output_plot_path)
                 arr[id] = r['normed_arr']
 
     feature_table.loc[:, samples] = arr
@@ -304,7 +304,7 @@ def signal_normalization(feature_table, sample_metadata, method='lowess', output
     return feature_table
 
 
-def lowess_normalization(array, qc_idx, frac=0.07, it=3):
+def lowess_normalization(array, is_qc, it=3, batch_ids=None, frac=None):
     """
     A function to normalize samples using quality control samples.
 
@@ -312,13 +312,15 @@ def lowess_normalization(array, qc_idx, frac=0.07, it=3):
     ----------
     array : numpy array
         The data to be normalized.
-    qc_idx : numpy array of bool
+    is_qc : numpy array of bool
         Boolean array indicating whether a sample is a quality control sample. It's length 
         should be the same as the length of array.
     frac : float
         The fraction of the data used when estimating each y-value (used in lowess). See statsmodels package for details.
     it : int
         The number of residual-based reweightings to perform (used in lowess). See statsmodels package for details.
+    batch_ids : numpy array
+        The batch IDs of the samples. If provided, the normalization will be performed within each batch and then combined.
 
     Returns
     -------
@@ -328,19 +330,33 @@ def lowess_normalization(array, qc_idx, frac=0.07, it=3):
     """
 
     # only use qc data > 0 for normalization
-    valid_idx = qc_idx & (array > 0)
-    qc_arr = array[valid_idx]
+    valid_idx = is_qc & (array > 0)
+    
+    if batch_ids is None:
+        batch_ids = np.zeros(len(array), dtype=int)
+    
+    unique_batch_ids = np.unique(batch_ids[valid_idx])
+    x = np.arange(len(array))
 
-    # if there are more than 2 QC samples
-    if len(qc_arr) > 2:
-        x = np.arange(len(array))
-        model = lowess(qc_arr, x[valid_idx], frac=frac, it=it)
-        y = np.interp(x, model[:, 0], model[:, 1])
-        y[y < 1] = 1    # gap filling
-        int_arr_corr = array / y * np.max(y)
-    else:
-        int_arr_corr = array
-        y = None
-        model = None
+    fitted_y = np.ones(len(array))
+    models = []
 
-    return {'model': model, 'fit_curve': y, 'normed_arr': int_arr_corr}
+    for id in unique_batch_ids:
+        qc_idx_i = valid_idx & (batch_ids == id)
+        frac = np.min([0.8, 8/np.sum(qc_idx_i)])
+        if np.sum(qc_idx_i) > 2:
+            # apply lowess normalization
+            xi = x[batch_ids == id]
+            model = lowess(array[qc_idx_i], x[qc_idx_i], frac=frac, it=it)
+            yi = np.interp(xi, model[:, 0], model[:, 1])
+            yi[yi < 1] = 1    # gap filling
+            fitted_y[batch_ids == id] = yi
+        else:
+            model = None
+        
+        models.append(model)
+    
+    # calculate the corrected intensity array
+    int_arr_corr = array / fitted_y * np.max(fitted_y)
+
+    return {'model': models, 'fit_curve': fitted_y, 'normed_arr': int_arr_corr}

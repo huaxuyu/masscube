@@ -13,6 +13,7 @@ import matplotlib.font_manager as fm
 from .params import Params, find_ms_info
 from .feature_detection import detect_features, segment_feature
 from .mzpkl import convert_MSData_to_mzpkl, read_mzpkl_to_MSData
+from .utils_functions import centroid_signals
 
 
 """
@@ -152,6 +153,8 @@ class MSData:
 
             if time_unit == 'second':
                 scan_time /= 60     # convert to minute
+            
+            scan_time = float(scan_time)
 
             # get level of mass spectrum
             level = spec['ms level']
@@ -199,6 +202,8 @@ class MSData:
 
             if time_unit == 'second':
                 scan_time = scan_time / 60  # convert to minute
+            
+            scan_time = float(scan_time)
 
             # get level of mass spectrum
             level = spec['msLevel']
@@ -247,6 +252,9 @@ class MSData:
         Run feature detection. Parameters are specified in self.params (Params object).
         """
 
+        if len(self.ms1_idx) == 0:
+            return []
+
         self.features = detect_features(self)
 
 
@@ -264,7 +272,7 @@ class MSData:
         distance = np.clip(0.05 / np.mean(np.diff(self.ms1_time_arr)), 1, 5)
 
         for _ in range(iteration):
-            self.features = [segment_feature(feature, peak_height_tol=self.params.ms1_abs_int_tol*3, distance=distance) for feature in self.features]
+            self.features = [segment_feature(feature, peak_height_tol=self.params.ms1_abs_int_tol, distance=distance) for feature in self.features]
             # flatten the list
             self.features = [item for sublist in self.features for item in sublist]
 
@@ -753,6 +761,23 @@ class MSData:
         self.ms1_time_arr = data['time']
         self.scans = [Scan(level=1, id=i, scan_time=self.ms1_time_arr[i], 
                            signals=data['signals'][i]) for i in range(len(data['time']))]
+    
+    
+    def get_spectral_rate(self):
+        """
+        Function to calculate the spectral rate of the raw data.
+
+        Returns
+        -------
+        spectral_rate: float
+            Spectral rate of the raw data, in Hz.
+        """
+
+        diff = np.diff(self.ms1_time_arr)
+        diff = np.mean(diff[diff > 0]) * 60
+
+        return 1 / diff
+
 
 class Scan:
     """
@@ -883,60 +908,8 @@ def clean_signals(signals, mz_range=[0,np.inf], intensity_range=[0,np.inf]):
                    (signals[:, 1] > intensity_range[0]) & (signals[:, 1] < intensity_range[1])]
 
 
-def centroid_signals(signals, mz_tol=0.005):
-    """
-    Function to centroid signals in a mass spectrum.
-
-    Parameters
-    ----------
-    signals: numpy array
-        MS signals for a scan as 2D numpy array in float32, organized as [[m/z, intensity], ...].
-    mz_tol: float
-        m/z tolerance for centroiding. Default is 0.005 Da.
-
-    Returns
-    -------
-    signals: numpy array
-        Centroided signals.
-    """
-
-    if mz_tol is None or mz_tol < 1e-6:
-        return signals
-
-    v = np.diff(signals[:, 0]) < mz_tol
-
-    if np.sum(v) == 0:
-        return signals
-    
-    # merge signals with m/z difference less than mz_tol
-    idx_f = 0
-    idx_e = 0
-    new_signals = []
-    for i in range(len(v)):
-        if v[i]:
-            idx_e = i + 1
-            continue
-        else:
-            if idx_f == idx_e:
-                new_signals.append(signals[idx_f])
-            else:
-                # weighted average of m/z and intensity
-                new_signals.append([np.average(signals[idx_f:idx_e+1, 0], weights=signals[idx_f:idx_e+1, 1]), 
-                                    np.sum(signals[idx_f:idx_e+1, 1])])
-            idx_f = i + 1
-            idx_e = i + 1
-    
-    if idx_f == idx_e:
-        new_signals.append(signals[idx_f])
-    else:
-        new_signals.append([np.average(signals[idx_f:idx_e+1, 0], weights=signals[idx_f:idx_e+1, 1]),
-                            np.sum(signals[idx_f:idx_e+1, 1])])
-
-    return np.array(new_signals, dtype=np.float32)
-
-
 def read_raw_file_to_obj(file_name, params=None, scan_levels=[1,2], centroid_mz_tol=0.005, 
-                         ms1_abs_int_tol=None, ms2_abs_int_tol=None, ms2_rel_int_tol=0.01, 
+                         ms1_abs_int_tol=0, ms2_abs_int_tol=0, ms2_rel_int_tol=0.01, 
                          precursor_mz_offset=2):
     """
     Read a raw file to a MSData object. It's a useful function for data visualization or 

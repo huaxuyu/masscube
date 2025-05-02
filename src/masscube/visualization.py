@@ -249,7 +249,7 @@ def plot_ms2_matching_from_feature_table(feature_table, params=None, output_dir=
         mirror_ms2(mz[i], mz[i], peaks1, peaks2, annotations[i], score[i], output)
 
 
-def plot_lowess_normalization(arr, fit_curve, arr_new, sample_idx, qc_idx, n, id=None, dpi=100, output_dir=None):
+def plot_lowess_normalization(arr, fit_curve, arr_new, is_qc_or_sample, qc_idx, n, id=None, dpi=100, output_dir=None):
     """
     Plot the lowess normalization results by highlighting the QC samples, smoothing curve, and 95% confidence interval.
 
@@ -261,7 +261,7 @@ def plot_lowess_normalization(arr, fit_curve, arr_new, sample_idx, qc_idx, n, id
         The smoothed curve by LOWESS.
     arr_new : numpy array
         The normalized intensity array.
-    sample_idx : numpy array of bool
+    is_qc_or_sample : numpy array of bool
         Blank samples are false, while qc and real samples are true. It's length is n.
     qc_idx : numpy array
         QC samples are true, while blank and real samples are false. It's length is n.
@@ -285,11 +285,11 @@ def plot_lowess_normalization(arr, fit_curve, arr_new, sample_idx, qc_idx, n, id
     plt.subplot(2, 1, 1)
     plt.title("Before normalization")
     plt.ylabel("Intensity")
-    plt.plot(v[sample_idx], arr[sample_idx], 'o', markersize=4, color='grey')
+    plt.plot(v[is_qc_or_sample], arr[is_qc_or_sample], 'o', markersize=4, color='grey')
     plt.plot(v[qc_idx], arr[qc_idx], 'o', markersize=6, color='red')
     plt.plot(v, fit_curve, '--', color='blue', linewidth=2)
     plt.legend(["Sample", "QC", "LOWESS"])
-    plt.ylim(-300, np.max(arr[qc_idx]) * 1.1)
+    plt.ylim(-10, np.max(arr[qc_idx]) * 1.1)
     plt.xlim(-n*0.01, n*1.2)
     plt.text(n*0.1, np.max(arr[qc_idx]) * 1.15, "Feature ID: %d" % id, color='grey')
     rsd = np.std(arr[qc_idx]) / np.mean(arr[qc_idx]) * 100
@@ -299,7 +299,7 @@ def plot_lowess_normalization(arr, fit_curve, arr_new, sample_idx, qc_idx, n, id
     plt.title("After normalization")
     plt.xlabel("Analytical order")
     plt.ylabel("Intensity")
-    plt.plot(v[sample_idx], arr_new[sample_idx], 'o', markersize=4, color='grey')
+    plt.plot(v[is_qc_or_sample], arr_new[is_qc_or_sample], 'o', markersize=4, color='grey')
     plt.plot(v[qc_idx], arr_new[qc_idx], 'o', markersize=6, color='red')
     plt.ylim(-300, np.max(arr_new[qc_idx]) * 1.1)
     # use color band to show the 95% confidence interval

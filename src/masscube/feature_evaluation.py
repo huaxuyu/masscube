@@ -69,7 +69,7 @@ def calculate_gaussian_similarity(x, y):
     return np.max([0, similarity])
 
 
-def calculate_noise_score(y, rel_int_tol=0.05):
+def calculate_noise_score(y, rel_int_tol=0.05, min_len=5):
     """
     Calculate the noise score that reflect the signal fluctuation.
 
@@ -79,6 +79,8 @@ def calculate_noise_score(y, rel_int_tol=0.05):
         Intensity
     rel_int_tol: float
         Relative intensity tolerance.
+    min_len: int
+        Minimum length of the peak to calculate the noise score.
     
     Returns
     -------
@@ -88,12 +90,13 @@ def calculate_noise_score(y, rel_int_tol=0.05):
 
     y = y[y > np.max(y) * rel_int_tol]
 
-    if len(y) < 5:
-        return 0.0
+    if len(y) < min_len:
+        return np.nan
 
+    y = np.concatenate(([0], y, [0]))
     diff = np.diff(y)
-    score = np.sum(np.abs(diff)) / np.max(y) / 2 - 1
-    return np.max([0, score])
+
+    return np.sum(np.abs(diff)) / np.max(y) / 2 - 1
 
 
 def calculate_asymmetry_factor(y):

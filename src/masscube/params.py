@@ -9,7 +9,7 @@ import json
 from importlib.metadata import version
 import numpy as np
 
-from .utils_functions import get_start_time
+from .utils_functions import get_start_time, label_batch_id
 
 
 class Params:
@@ -160,6 +160,7 @@ class Params:
         df = pd.read_csv(path)
         self.sample_names = list(df.iloc[:, 0])
         df.columns = [col.lower() if col.lower() in ['is_qc', 'is_blank'] else col for col in df.columns]
+        # df.columns[0] = 'sample_name'
 
         if 'is_qc' in df.columns and type(df['is_qc'][0]) == str:
             df['is_qc'] = df['is_qc'].apply(lambda x: True if x.lower() == 'yes' else False)
@@ -243,6 +244,8 @@ class Params:
             self.read_sample_metadata(os.path.join(self.project_dir, "sample_table.csv"))
             # find the absolute paths of the raw MS data in order
             self.sample_abs_paths, good_idx = _find_files_in_data_folder(self.sample_dir, list(self.sample_metadata.iloc[:, 0]))
+            if len(self.sample_abs_paths) == 0:
+                raise ValueError("Please check the sample table to make sure the sample names are correct.")
             self.sample_metadata = self.sample_metadata.iloc[good_idx, :]
             self.sample_names = list(self.sample_metadata.iloc[:, 0])
 
@@ -250,7 +253,12 @@ class Params:
             self.sample_metadata['time'] = [get_start_time(path) for path in self.sample_abs_paths]
             self.sample_metadata['analytical_order'] = 0
             for rank, idx in enumerate(np.argsort(self.sample_metadata['time'])):
-                self.sample_metadata.loc[idx, 'analytical_order'] = rank + 1
+                self.sample_metadata.loc[idx, 'analytical_order'] = rank
+            
+            # recongnize the batch ID for normalization purpose
+            self.sample_metadata = label_batch_id(self.sample_metadata)
+            
+            self.sample_metadata.to_csv(os.path.join(self.project_file_dir, "sample_table_with_time.csv"), index=False)
         else:
             self.sample_names = [f for f in os.listdir(self.sample_dir) if not f.startswith(".") and 
                                  (f.lower().endswith(".mzml") or f.lower().endswith(".mzxml"))]

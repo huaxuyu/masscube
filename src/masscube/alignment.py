@@ -254,7 +254,7 @@ def gap_filling(features, params: Params):
         for i, file_name in enumerate(tqdm(params.sample_names)):
             fn = os.path.join(params.tmp_file_dir, file_name + ".mzpkl")
             if os.path.exists(fn):
-                d = read_raw_file_to_obj(fn)
+                d = read_raw_file_to_obj(fn, ms1_abs_int_tol=params.ms1_abs_int_tol, centroid_mz_tol=None)
                 # correct retention time if model is available
                 if rt_cor_functions is not None and file_name in rt_cor_functions.keys():
                     f = rt_cor_functions[file_name]
