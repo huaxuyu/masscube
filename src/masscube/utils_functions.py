@@ -221,7 +221,7 @@ def formula_to_mz(formula, adduct):
     return mz
 
 
-def formula_to_isotope_distribution(formula, adduct, prob_to_cover=0.999, delta_mass=0.005):
+def formula_to_isotope_distribution(formula, adduct, prob_to_cover=0.9999, delta_mass=0.005):
     """
     Calculate the isotope distribution of a molecule given its chemical formula and adduct.
 
@@ -249,7 +249,12 @@ def formula_to_isotope_distribution(formula, adduct, prob_to_cover=0.999, delta_
     parsed_formula = parse_formula(formula)
 
     # combine with adduct
-    parsed_formula, charge = _combine_formula_with_adduct(parsed_formula, adduct)
+    results = _combine_formula_with_adduct(parsed_formula, adduct)
+
+    if results is None:
+        return None
+    else:
+        parsed_formula, charge = results
 
     sp = IsoTotalProb(formula=parsed_formula, prob_to_cover=prob_to_cover)
 
@@ -351,6 +356,11 @@ def _combine_formula_with_adduct(parsed_formula, adduct):
     else:
         print(f"Adduct {adduct} not found in the database. Please check the adduct name.")
         return None
+    
+    # cannot subtract atoms that are not in the original formula
+    for k, v in tmp.modification.items():
+        if v<0 and k not in parsed_formula:
+            return None
     
     for k, v in parsed_formula.items():
         parsed_formula[k] = v * tmp.mol_multiplier
@@ -503,16 +513,17 @@ class Adduct:
     mol_multiplier: int  # number of molecules, e.g. 1 for [M+H]+, 2 for [2M+H]+, 3 for [3M+H]+
     considered: bool     # whether the adduct is considered in the analysis
 
+
 ADDUCTS = {
     # Positive adducts
     '[M+H]+': Adduct('[M+H]+', 1.00782503227, Counter({'H': 1}), 1, 1, True),
     '[M+NH4]+': Adduct('[M+NH4]+', 18.03437413328, Counter({'N': 1, 'H': 4}), 1, 1, True),
-    '[M]+': Adduct('[M]+', 0, Counter({}), 1, 1, True),
+    '[M]+': Adduct('[M]+', 0, Counter({}), 1, 1, False), # rare adduct form
     '[M+H+CH3OH]+': Adduct('[M+H+CH3OH]+', 33.03403978155, Counter({'C': 1, 'H': 5, 'O': 1}), 1, 1, False), # only consider if mobile phase is methanol
     '[M+Na]+': Adduct('[M+Na]+', 22.989769282, Counter({'Na': 1}), 1, 1, True),
     '[M+K]+': Adduct('[M+K]+', 38.963706493, Counter({'K': 1}), 1, 1, True),
     '[M+H+CH3CN]+': Adduct('[M+H+CH3CN]+', 42.033826, Counter({'C': 2, 'H': 4, 'N': 1}), 1, 1, False), # only consider if mobile phase is acetonitrile
-    '[M-H+2Na]+': Adduct('[M-H+2Na]+', 44.971165, Counter({'Na': 2, 'H': -1}), 1, 1, True),
+    '[M-H+2Na]+': Adduct('[M-H+2Na]+', 44.971165, Counter({'Na': 2, 'H': -1}), 1, 1, False),
     '[M+H-H2O]+': Adduct('[M+H-H2O]+', -17.002739652469998, Counter({'H': -1, 'O': -1}), 1, 1, True),
     '[M+H+CH3COOH]+': Adduct('[M+H+CH3COOH]+', 61.02895440175, Counter({'C': 2, 'H': 5, 'O': 2}), 1, 1, True),
     '[M+H+HCOOH]+': Adduct('[M+H+HCOOH]+', 47.01330433721, Counter({'C': 1, 'H': 3, 'O': 2}), 1, 1, True),
@@ -536,11 +547,11 @@ ADDUCTS = {
     '[M+CH3COO]-': Adduct('[M+CH3COO]-', 59.01330433721, Counter({'C': 2, 'H': 3, 'O': 2}), -1, 1, True),
     '[M-H-H2O]-': Adduct('[M-H-H2O]-', -19.01838971701, Counter({'H': -3, 'O': -1}), -1, 1, True),
     '[2M-H]-': Adduct('[2M-H]-', -1.00782503227, Counter({'H': -1}), -1, 2, True),
-    '[2M+Cl]-': Adduct('[2M+Cl]-', 34.96885273, Counter({'Cl': 1}), -1, 2, True),
-    '[2M+FA]-': Adduct('[2M+FA]-', 44.99765427267, Counter({'C': 1, 'H': 1, 'O': 2}), -1, 2, True),
-    '[2M+Ac]-': Adduct('[2M+Ac]-', 59.01330433721, Counter({'C': 2, 'H': 3, 'O': 2}), -1, 2, True),
-    '[2M-H-H2O]-': Adduct('[2M-H-H2O]-', -19.01838971701, Counter({'H': -3, 'O': -1}), -1, 2, True),
     '[3M-H]-': Adduct('[3M-H]-', -1.00782503227, Counter({'H': -1}), -1, 3, True),
-    '[M-2H]2-': Adduct('[M-2H]2-', -2.01565006454, Counter({'H': -2}), 2, 1, True),
-    '[M-3H]3-': Adduct('[M-3H]3-', -3.02347509681, Counter({'H': -3}), 3, 1, True),
+    '[M-2H]2-': Adduct('[M-2H]2-', -2.01565006454, Counter({'H': -2}), -2, 1, True),
+    '[M-3H]3-': Adduct('[M-3H]3-', -3.02347509681, Counter({'H': -3}), -3, 1, True), 
+    '[2M+Cl]-': Adduct('[2M+Cl]-', 34.96885273, Counter({'Cl': 1}), -1, 2, False),
+    '[2M+HCOO]-': Adduct('[2M+HCOO]-', 44.99765427267, Counter({'C': 1, 'H': 1, 'O': 2}), -1, 2, False),
+    '[2M+CH3COO]-': Adduct('[2M+CH3COO]-', 59.01330433721, Counter({'C': 2, 'H': 3, 'O': 2}), -1, 2, False),
+    '[2M-H-H2O]-': Adduct('[2M-H-H2O]-', -19.01838971701, Counter({'H': -3, 'O': -1}), -1, 2, False),
 }

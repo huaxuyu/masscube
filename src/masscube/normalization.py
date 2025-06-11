@@ -335,28 +335,36 @@ def lowess_normalization(array, is_qc, it=3, batch_ids=None, frac=None):
     if batch_ids is None:
         batch_ids = np.zeros(len(array), dtype=int)
     
-    unique_batch_ids = np.unique(batch_ids[valid_idx])
+    unique_batch_ids = np.unique(batch_ids)
     x = np.arange(len(array))
 
     fitted_y = np.ones(len(array))
     models = []
 
+    not_corrected_batches = []
+
     for id in unique_batch_ids:
         qc_idx_i = valid_idx & (batch_ids == id)
-        frac = np.min([0.8, 8/np.sum(qc_idx_i)])
         if np.sum(qc_idx_i) > 2:
             # apply lowess normalization
+            frac = np.min([0.8, 8/np.sum(qc_idx_i)])
             xi = x[batch_ids == id]
             model = lowess(array[qc_idx_i], x[qc_idx_i], frac=frac, it=it)
             yi = np.interp(xi, model[:, 0], model[:, 1])
             yi[yi < 1] = 1    # gap filling
             fitted_y[batch_ids == id] = yi
         else:
+            # perform no correction
             model = None
+            not_corrected_batches.append(id)
         
         models.append(model)
     
     # calculate the corrected intensity array
     int_arr_corr = array / fitted_y * np.max(fitted_y)
+
+    # for not corrected batches, change it back to the original data
+    for id in not_corrected_batches:
+        int_arr_corr[batch_ids == id] = array[batch_ids == id]
 
     return {'model': models, 'fit_curve': fitted_y, 'normed_arr': int_arr_corr}

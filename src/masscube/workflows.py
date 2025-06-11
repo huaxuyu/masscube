@@ -14,7 +14,7 @@ from scipy.stats import zscore
 import time
 
 from .raw_data_utils import read_raw_file_to_obj
-from .params import Params
+from .params import Params, find_ms_info
 from .feature_grouping import group_features_after_alignment, group_features_single_file
 from .alignment import feature_alignment, output_feature_table, convert_features_to_df, output_feature_to_msp
 from .annotation import annotate_aligned_features, annotate_features, feature_annotation_mzrt
@@ -58,6 +58,11 @@ def process_single_file(file_name, params=None, segment_feature=True, group_feat
 
     # try:
     # STEP 1. data reading, parsing, and parameter preparation
+    if params is None:
+        params = Params()
+        ms_type, ion_mode, _ = find_ms_info(file_name)
+        params.set_default(ms_type, ion_mode)
+
     d = read_raw_file_to_obj(file_name, params=params)
 
     # check if the MS1 data is valid (no MS1 data found when intensity tolerance is too high)
@@ -86,8 +91,8 @@ def process_single_file(file_name, params=None, segment_feature=True, group_feat
     else:
         d.summarize_features(cal_g_score=False, cal_a_score=False)
     
-    if remove_noise:
-        d.remove_noise()
+    # if remove_noise:
+    #     d.remove_noise()
 
     # STEP 4. MS2 annotation
     if annotate_ms2:

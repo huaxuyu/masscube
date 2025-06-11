@@ -503,7 +503,7 @@ class MSData:
                     eic_scan_idx_arr.append(i)
                 else:
                     eic_time_arr.append(self.scans[i].time)
-                    eic_signals.append([target_mz, 0])
+                    eic_signals.append([np.nan, 0])
                     eic_scan_idx_arr.append(i)
 
             if self.scans[i].time > rt_range[1]:
@@ -909,7 +909,7 @@ def clean_signals(signals, mz_range=[0,np.inf], intensity_range=[0,np.inf]):
 
 
 def read_raw_file_to_obj(file_name, params=None, scan_levels=[1,2], centroid_mz_tol=0.005, 
-                         ms1_abs_int_tol=0, ms2_abs_int_tol=0, ms2_rel_int_tol=0.01, 
+                         ms1_abs_int_tol=1000, ms2_abs_int_tol=0, ms2_rel_int_tol=0.01, 
                          precursor_mz_offset=2):
     """
     Read a raw file to a MSData object. It's a useful function for data visualization or 

@@ -23,6 +23,7 @@ Requires-Dist: ms_entropy==1.3.4
 Requires-Dist: scikit-learn>=1.3.2
 Requires-Dist: statsmodels>=0.14.2
 Requires-Dist: umap-learn>=0.5.7
+Requires-Dist: IsoSpecPy>=2.2.3
 Dynamic: license-file
 
 # MassCube

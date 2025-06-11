@@ -169,7 +169,7 @@ def load_ms2_db(path):
                 a['precursor_type'] = a.pop('precursortype')
             if 'ionmode' in a.keys():
                 a['ion_mode'] = a.pop('ionmode')
-            if 'retentiontime' in a.keys():
+            if 'retentiontime' in a.keys() and a['retentiontime'] != '':
                 a['retention_time'] = float(a.pop('retentiontime'))
             db.append(a)
         _correct_db(db)
@@ -218,6 +218,10 @@ def annotate_aligned_features(features, params, num=5):
 
     entropy_search = load_ms2_db(params.ms2_library_path)
 
+    # ion mode filtering
+    ion_mode_mask = np.array([1 if (entropy_search[i]['ion_mode'] == params.ion_mode) else 0 for 
+                              i in range(len(entropy_search.precursor_mz_array))], dtype=bool)
+
     if params.consider_rt:
         rt_arr = np.zeros(len(entropy_search.precursor_mz_array))+np.inf
         for i, ms2 in enumerate(entropy_search):
@@ -250,7 +254,7 @@ def annotate_aligned_features(features, params, num=5):
         for file_name, signals in parsed_ms2:
             similarity, matched_num = entropy_search.identity_search(precursor_mz=f.mz, peaks=signals, ms1_tolerance_in_da=params.mz_tol_ms1,
                                                                      ms2_tolerance_in_da=params.mz_tol_ms2, output_matched_peak_number=True)
-            similarities.append(similarity)
+            similarities.append(similarity * ion_mode_mask)
             matched_nums.append(matched_num)
         
         if params.consider_rt:
@@ -283,6 +287,7 @@ def annotate_aligned_features(features, params, num=5):
         if matched is None and params.fuzzy_search:
             similarity = entropy_search.hybrid_search(precursor_mz=f.mz, peaks=f.ms2, ms1_tolerance_in_da=params.mz_tol_ms1, 
                                                       ms2_tolerance_in_da=params.mz_tol_ms2)
+            similarity = similarity * ion_mode_mask
             idx = np.argmax(similarity)
             if similarity[idx] > params.ms2_sim_tol:
                 matched = entropy_search[idx]
@@ -319,6 +324,10 @@ def annotate_features(d, sim_tol=None, fuzzy_search=True, ms2_library_path=None,
         search_engine = load_ms2_db(d.params.ms2_library_path)
     else:
         search_engine = load_ms2_db(ms2_library_path)
+    
+    # ion mode filtering
+    ion_mode_mask = np.array([1 if (search_engine[i]['ion_mode'] == d.params.ion_mode) else 0 for
+                              i in range(len(search_engine.precursor_mz_array))], dtype=bool)
 
     if sim_tol is None:
         sim_tol = d.params.ms2_sim_tol
@@ -339,6 +348,7 @@ def annotate_features(d, sim_tol=None, fuzzy_search=True, ms2_library_path=None,
         signals = search_engine.clean_spectrum_for_search(precursor_mz=f.mz, peaks=f.ms2.signals, precursor_ions_removal_da=2.0)
         scores, peak_nums = search_engine.identity_search(precursor_mz=f.mz, peaks=signals, ms1_tolerance_in_da=d.params.mz_tol_ms1, 
                                                           ms2_tolerance_in_da=d.params.mz_tol_ms2, output_matched_peak_number=True)
+        scores = ion_mode_mask
         if consider_rt:
             rt_boo = np.abs(rt_arr - f.rt) < d.params.rt_tol_annotation
             scores_rt = scores * rt_boo

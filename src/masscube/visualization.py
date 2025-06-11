@@ -292,7 +292,10 @@ def plot_lowess_normalization(arr, fit_curve, arr_new, is_qc_or_sample, qc_idx, 
     plt.ylim(-10, np.max(arr[qc_idx]) * 1.1)
     plt.xlim(-n*0.01, n*1.2)
     plt.text(n*0.1, np.max(arr[qc_idx]) * 1.15, "Feature ID: %d" % id, color='grey')
-    rsd = np.std(arr[qc_idx]) / np.mean(arr[qc_idx]) * 100
+    if np.mean(arr[qc_idx]) > 0:
+        rsd = np.std(arr[qc_idx]) / np.mean(arr[qc_idx]) * 100
+    else:
+        rsd = np.nan
     plt.text(n, np.max(arr[qc_idx]) * 1.15, "QC RSD: %.2f%%" % rsd, color='grey')
 
     plt.subplot(2, 1, 2)
@@ -306,7 +309,10 @@ def plot_lowess_normalization(arr, fit_curve, arr_new, is_qc_or_sample, qc_idx, 
     y_up = np.median(arr_new[qc_idx]) + 1.96 * np.std(arr_new[qc_idx])
     y_down = np.median(arr_new[qc_idx]) - 1.96 * np.std(arr_new[qc_idx])
     plt.fill_between(v, y_down, y_up, color='lightblue', alpha=0.5)
-    rsd = np.std(arr_new[qc_idx]) / np.mean(arr_new[qc_idx]) * 100
+    if np.mean(arr_new[qc_idx]) > 0:
+        rsd = np.std(arr_new[qc_idx]) / np.mean(arr_new[qc_idx]) * 100
+    else:
+        rsd = np.nan
     plt.text(n, np.max(arr_new[qc_idx]) * 1.15, "QC RSD: %.2f%%" % rsd, color='grey')
     plt.legend(["Sample", "QC", "95% CI"])
     plt.xlim(-n*0.01, n*1.2)
