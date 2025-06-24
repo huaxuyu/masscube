@@ -427,24 +427,32 @@ class MSData:
         result = []
 
         for f in self.features:
-            iso = ""
             ms2 = ""
+            iso = ""
+            peak_shape = ""
             if f.ms2 is not None:
                 for s in f.ms2.signals:
                     ms2 += str(np.round(s[0], decimals=4)) + ";" + str(np.round(s[1], decimals=0)) + "|"
                 ms2 = ms2[:-1]
+            if f.isotope_signals is not None:
+                for s in f.isotope_signals:
+                    iso += str(np.round(s[0], decimals=4)) + ";" + str(np.round(s[1], decimals=0)) + "|"
+                iso = iso[:-1]
+            if f.peak_shape is not None:
+                for p in f.peak_shape:
+                    peak_shape += str(np.round(p[0], decimals=3)) + ";" + str(np.round(p[1], decimals=0)) + "|"
 
             temp = [f.feature_group_id, f.id, f.mz.__round__(4), f.rt.__round__(3), f.adduct_type, f.is_isotope, 
                     f.is_in_source_fragment, f.scan_idx, f.peak_area, f.peak_height, f.top_average, f.gaussian_similarity.__round__(2), 
                     f.noise_score.__round__(2), f.asymmetry_factor.__round__(2), f.charge_state, iso, f.rt_seq[0].__round__(3),
-                    f.rt_seq[-1].__round__(3), f.length, ms2, f.matched_ms2, f.search_mode, f.annotation, f.formula, f.similarity,
+                    f.rt_seq[-1].__round__(3), f.length, peak_shape, ms2, f.matched_ms2, f.search_mode, f.annotation, f.formula, f.similarity,
                     f.matched_precursor_mz, f.matched_peak_number, f.smiles, f.inchikey]
 
             result.append(temp)
 
         # convert result to a pandas dataframe
         columns = [ "group_ID", "feature_ID", "m/z", "RT", "adduct", "is_isotope", "is_in_source_fragment", "scan_idx", "peak_area", "peak_height", "top_average",
-                    "Gaussian_similarity", "noise_score", "asymmetry_factor", "charge", "isotopes", "RT_start", "RT_end", "total_scans",
+                    "Gaussian_similarity", "noise_score", "asymmetry_factor", "charge", "isotopes", "RT_start", "RT_end", "total_scans", "peak_shape",
                     "MS2", "matched_MS2", "search_mode", "annotation", "formula", "similarity", "matched_mz", "matched_peak_number", "SMILES", "InChIKey"]
 
         df = pd.DataFrame(result, columns=columns)

@@ -71,11 +71,11 @@ def group_features_after_alignment(features, params: Params):
 
         k = np.argmin(np.abs(d.ms1_time_arr-f.rt))
 
-        f.isotope_signals = find_isotope_signals(mz=f.mz, intensity=np.max(eic_a[:,1]), signals=d.scans[d.ms1_idx[k]].signals, 
+        f.isotope_signals = find_isotope_signals(mz=f.mz, signals=d.scans[d.ms1_idx[k]].signals, 
                                                  mz_tol=params.mz_tol_feature_grouping, rel_int_limit=params.isotope_rel_int_limit)
         if f.adduct_type is None:
             f.adduct_type = "[M+H]+" if params.ion_mode.lower() == "positive" else "[M-H]-"
-        for s in f.isotope_signals:
+        for s in f.isotope_signals[1:]:
             w1 = np.abs(mz_arr - s[0]) < params.mz_tol_feature_grouping
             w2 = np.abs(rt_arr - f.rt) < params.rt_tol_feature_grouping
             w = np.where(w1 & w2 & to_anno)[0]
@@ -107,11 +107,11 @@ def group_features_after_alignment(features, params: Params):
                         features[vi].is_in_source_fragment = True
                         features[vi].adduct_type = "ISF"
                     # find isotopes for this ion and do not use scan-to-scan correlation
-                    features[vi].isotope_signals = find_isotope_signals(features[vi].mz, intensity=np.max(eic_b), 
+                    features[vi].isotope_signals = find_isotope_signals(features[vi].mz,
                                                                         signals=d.scans[d.ms1_idx[k]].signals, mz_tol=params.mz_tol_feature_grouping,
                                                                         rel_int_limit=params.isotope_rel_int_limit)
                     # retrieve the isotope signals from the feature list
-                    for s in features[vi].isotope_signals:
+                    for s in features[vi].isotope_signals[1:]:
                         w1 = np.abs(mz_arr - s[0]) < params.mz_tol_feature_grouping
                         w2 = np.abs(rt_arr - f.rt) < params.rt_tol_feature_grouping
                         w = np.where(w1 & w2 & to_anno)[0]
@@ -155,11 +155,11 @@ def group_features_single_file(d):
         _, eic_a, _ = d.get_eic_data(f.mz, f.rt, mz_tol=d.params.mz_tol_ms1, rt_tol=0.25)
         k = np.argmin(np.abs(d.ms1_time_arr-f.rt))
 
-        f.isotope_signals = find_isotope_signals(mz=f.mz, intensity=np.max(eic_a), signals=d.scans[k].signals, 
+        f.isotope_signals = find_isotope_signals(mz=f.mz, signals=d.scans[k].signals, 
                                                  mz_tol=d.params.mz_tol_feature_grouping, rel_int_limit=d.params.isotope_rel_int_limit)
         if f.adduct_type is None:
             f.adduct_type = "[M+H]+" if d.params.ion_mode.lower() == "positive" else "[M-H]-"
-        for s in f.isotope_signals:
+        for s in f.isotope_signals[1:]:
             w1 = np.abs(mz_arr - s[0]) < d.params.mz_tol_feature_grouping
             w2 = np.abs(rt_arr - f.rt) < d.params.rt_tol_feature_grouping
             w = np.where(w1 & w2 & to_anno)[0]
@@ -191,10 +191,10 @@ def group_features_single_file(d):
                         d.features[vi].is_in_source_fragment = True
                         d.features[vi].adduct_type = "ISF"
                     # find isotopes for this ion and do not use scan-to-scan correlation
-                    d.features[vi].isotope_signals = find_isotope_signals(mz=d.features[vi].mz, intensity=np.max(eic_b), signals=d.scans[k].signals,
+                    d.features[vi].isotope_signals = find_isotope_signals(mz=d.features[vi].mz, signals=d.scans[k].signals,
                                                                           mz_tol=d.params.mz_tol_feature_grouping, rel_int_limit=d.params.isotope_rel_int_limit)
                     # retrieve the isotope signals from the feature list
-                    for s in d.features[vi].isotope_signals:
+                    for s in d.features[vi].isotope_signals[1:]:
                         w1 = np.abs(mz_arr - s[0]) < d.params.mz_tol_feature_grouping
                         w2 = np.abs(rt_arr - f.rt) < d.params.rt_tol_feature_grouping
                         w = np.where(w1 & w2 & to_anno)[0]
@@ -255,7 +255,7 @@ def generate_search_dict(feature, adduct_form, ion_mode):
     return search_dict
 
 
-def find_isotope_signals(mz, intensity, signals, mz_tol=0.012, charge_state=1, num=5, rel_int_limit=1.5):
+def find_isotope_signals(mz, signals, mz_tol=0.012, charge_state=1, num=5, rel_int_limit=1.5):
     """
     Find isotope patterns from the MS1 signals.
 
@@ -263,8 +263,6 @@ def find_isotope_signals(mz, intensity, signals, mz_tol=0.012, charge_state=1, n
     ----------
     mz: float
         The m/z value of the feature.
-    intensity: float
-        The intensity of the feature's peak apex.
     signals: np.array
         The MS1 signals as [[m/z, intensity], ...]
     mz_tol: float
@@ -284,9 +282,10 @@ def find_isotope_signals(mz, intensity, signals, mz_tol=0.012, charge_state=1, n
     
     diff = signals[:, 0] - mz
     isotope_signals = []
-    limit = rel_int_limit * intensity
+
     if charge_state == 1:
-        for i in range(1, num):
+        limit = signals[np.argmin(np.abs(diff))][1] * rel_int_limit
+        for i in range(num):
             v = np.abs(diff - 1.003355*i) < mz_tol
             if np.sum(v) > 0:
                 tmp = signals[v]

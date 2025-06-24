@@ -292,8 +292,10 @@ def plot_lowess_normalization(arr, fit_curve, arr_new, is_qc_or_sample, qc_idx, 
     plt.ylim(-10, np.max(arr[qc_idx]) * 1.1)
     plt.xlim(-n*0.01, n*1.2)
     plt.text(n*0.1, np.max(arr[qc_idx]) * 1.15, "Feature ID: %d" % id, color='grey')
-    if np.mean(arr[qc_idx]) > 0:
-        rsd = np.std(arr[qc_idx]) / np.mean(arr[qc_idx]) * 100
+    tmp = arr[qc_idx]
+    tmp = tmp[tmp > 0]
+    if len(tmp) > 2:
+        rsd = np.std(tmp) / np.mean(tmp) * 100
     else:
         rsd = np.nan
     plt.text(n, np.max(arr[qc_idx]) * 1.15, "QC RSD: %.2f%%" % rsd, color='grey')
@@ -304,15 +306,18 @@ def plot_lowess_normalization(arr, fit_curve, arr_new, is_qc_or_sample, qc_idx, 
     plt.ylabel("Intensity")
     plt.plot(v[is_qc_or_sample], arr_new[is_qc_or_sample], 'o', markersize=4, color='grey')
     plt.plot(v[qc_idx], arr_new[qc_idx], 'o', markersize=6, color='red')
-    plt.ylim(-300, np.max(arr_new[qc_idx]) * 1.1)
+    plt.ylim(-10, np.max(arr_new[qc_idx]) * 1.1)
     # use color band to show the 95% confidence interval
-    y_up = np.median(arr_new[qc_idx]) + 1.96 * np.std(arr_new[qc_idx])
-    y_down = np.median(arr_new[qc_idx]) - 1.96 * np.std(arr_new[qc_idx])
+    tmp_new = arr_new[qc_idx]
+    tmp_new = tmp_new[tmp_new > 0]
+    y_up = np.median(tmp_new) + 1.96 * np.std(tmp_new)
+    y_down = np.median(tmp_new) - 1.96 * np.std(tmp_new)
     plt.fill_between(v, y_down, y_up, color='lightblue', alpha=0.5)
-    if np.mean(arr_new[qc_idx]) > 0:
-        rsd = np.std(arr_new[qc_idx]) / np.mean(arr_new[qc_idx]) * 100
+    if len(tmp_new) > 2:
+        rsd = np.std(tmp_new) / np.mean(tmp_new) * 100
     else:
         rsd = np.nan
+
     plt.text(n, np.max(arr_new[qc_idx]) * 1.15, "QC RSD: %.2f%%" % rsd, color='grey')
     plt.legend(["Sample", "QC", "95% CI"])
     plt.xlim(-n*0.01, n*1.2)

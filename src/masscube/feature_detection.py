@@ -30,6 +30,7 @@ class Feature:
         self.scan_idx_seq = []               # scan index sequence
         self.ms2_seq = []                    # MS2 spectra
         self.gap_counter = 0                 # count the number of consecutive zeros in the end of the peak
+        self.peak_shape = None               # peak shape ([[rt, intensity], ...]) 
 
         # summary
         self.id = None                       # feature id
@@ -49,7 +50,7 @@ class Feature:
         self.is_segmented = False            # whether the feature is segmented from a larger feature
         self.is_isotope = None               # whether the feature is an isotope
         self.charge_state = 1                # charge state of the feature
-        self.isotope_signals = []            # isotope signals [[mz, intensity], ...]
+        self.isotope_signals = None          # isotope signals [[mz, intensity], ...]
         self.is_in_source_fragment = None    # whether the feature is an in-source fragment
         self.adduct_type = None              # adduct type
 
@@ -143,6 +144,7 @@ class Feature:
         self.rt = self.rt_seq[apx]
         self.scan_idx = self.scan_idx_seq[apx]
         self.length = np.sum(self.signals[:, 1] > 0)
+        self.peak_shape = np.array([[self.rt_seq[i], self.signals[i, 1]] for i in range(len(self.signals))])
 
         if ph:
             self.peak_height = int(self.signals[apx, 1])

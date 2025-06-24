@@ -366,5 +366,15 @@ def lowess_normalization(array, is_qc, it=3, batch_ids=None, frac=None):
     # for not corrected batches, change it back to the original data
     for id in not_corrected_batches:
         int_arr_corr[batch_ids == id] = array[batch_ids == id]
+    
+    # check the normalization results, if the normed RSD is bigger than the original RSD, then use the original data
+    tmp = array[is_qc]
+    tmp_normed = int_arr_corr[is_qc]
+    tmp = tmp[tmp > 0]
+    tmp_normed = tmp_normed[tmp_normed > 0]
+    if (len(tmp) == 0) or (len(tmp_normed) == 0) or (np.std(tmp_normed) / np.mean(tmp_normed) > np.std(tmp) / np.mean(tmp)):
+        int_arr_corr = array
+        models = [None] * len(unique_batch_ids)
+        fitted_y = np.ones(len(array))
 
     return {'model': models, 'fit_curve': fitted_y, 'normed_arr': int_arr_corr}

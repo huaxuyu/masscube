@@ -56,74 +56,74 @@ def process_single_file(file_name, params=None, segment_feature=True, group_feat
         An MSData object containing the processed data.
     """
 
-    # try:
-    # STEP 1. data reading, parsing, and parameter preparation
-    if params is None:
-        params = Params()
-        ms_type, ion_mode, _ = find_ms_info(file_name)
-        params.set_default(ms_type, ion_mode)
+    try:
+        # STEP 1. data reading, parsing, and parameter preparation
+        if params is None:
+            params = Params()
+            ms_type, ion_mode, _ = find_ms_info(file_name)
+            params.set_default(ms_type, ion_mode)
 
-    d = read_raw_file_to_obj(file_name, params=params)
+        d = read_raw_file_to_obj(file_name, params=params)
 
-    # check if the MS1 data is valid (no MS1 data found when intensity tolerance is too high)
-    if len(d.ms1_idx) == 0:
-        print("No valid MS1 data were found in: " + file_name + ". Please check the file and MS1 intensity tolerance.")
-        return d
+        # check if the MS1 data is valid (no MS1 data found when intensity tolerance is too high)
+        if len(d.ms1_idx) == 0:
+            print("No valid MS1 data were found in: " + file_name + ". Please check the file and MS1 intensity tolerance.")
+            return d
 
-    # check if the file is centroided
-    if not d.params.is_centroid:
-        print("File: " + file_name + " is not centroided and skipped.")
-        return None
-    # set ms2 library path
-    if ms2_library_path is not None:
-        d.params.ms2_library_path = ms2_library_path
-    
-
-    # STEP 2. feature detection and segmentation
-    d.detect_features()
-
-    if segment_feature:
-        d.segment_features()
-
-    # STEP 3. feature evaluation
-    if evaluate_peak_shape:
-        d.summarize_features(cal_g_score=True, cal_a_score=True)
-    else:
-        d.summarize_features(cal_g_score=False, cal_a_score=False)
-    
-    # if remove_noise:
-    #     d.remove_noise()
-
-    # STEP 4. MS2 annotation
-    if annotate_ms2:
-        if ms2_library_path is None:
-            ms2_library_path = d.params.ms2_library_path
+        # check if the file is centroided
+        if not d.params.is_centroid:
+            print("File: " + file_name + " is not centroided and skipped.")
+            return None
+        # set ms2 library path
         if ms2_library_path is not None:
-            annotate_features(d=d, sim_tol=d.params.ms2_sim_tol, fuzzy_search=True, ms2_library_path=ms2_library_path)
-
-    # STEP 5. feature grouping
-    if group_features:
-        group_features_single_file(d)
-
-    # STEP 6. Visualization and output
-    if d.params.plot_bpc and d.params.bpc_dir is not None:
-        d.plot_bpc(output_dir=os.path.join(d.params.bpc_dir, d.params.file_name + "_bpc.png"))
-    
-    if output_dir is not None:
-        d.output_single_file(os.path.join(output_dir, d.params.file_name + ".txt"))
-    
-    elif d.params.output_single_file and d.params.single_file_dir is not None:
-        d.output_single_file()
+            d.params.ms2_library_path = ms2_library_path
         
-    # for faster data reloading
-    if d.params.tmp_file_dir is not None:
-        d.convert_to_mzpkl()
 
-    return d
+        # STEP 2. feature detection and segmentation
+        d.detect_features()
+
+        if segment_feature:
+            d.segment_features()
+
+        # STEP 3. feature evaluation
+        if evaluate_peak_shape:
+            d.summarize_features(cal_g_score=True, cal_a_score=True)
+        else:
+            d.summarize_features(cal_g_score=False, cal_a_score=False)
+        
+        # if remove_noise:
+        #     d.remove_noise()
+
+        # STEP 4. MS2 annotation
+        if annotate_ms2:
+            if ms2_library_path is None:
+                ms2_library_path = d.params.ms2_library_path
+            if ms2_library_path is not None:
+                annotate_features(d=d, sim_tol=d.params.ms2_sim_tol, fuzzy_search=True, ms2_library_path=ms2_library_path)
+
+        # STEP 5. feature grouping
+        if group_features:
+            group_features_single_file(d)
+
+        # STEP 6. Visualization and output
+        if d.params.plot_bpc and d.params.bpc_dir is not None:
+            d.plot_bpc(output_dir=os.path.join(d.params.bpc_dir, d.params.file_name + "_bpc.png"))
+        
+        if output_dir is not None:
+            d.output_single_file(os.path.join(output_dir, d.params.file_name + ".txt"))
+        
+        elif d.params.output_single_file and d.params.single_file_dir is not None:
+            d.output_single_file()
+            
+        # for faster data reloading
+        if d.params.tmp_file_dir is not None:
+            d.convert_to_mzpkl()
+
+        return d
     
-    # except:
-    #     print("Error occurred during processing file: " + file_name)
-    #     return None
+    except:
+        print("Error occurred during processing file: " + file_name)
+        return None
 
 
 # 2. Untargeted metabolomics workflow
@@ -184,10 +184,11 @@ def untargeted_metabolomics_workflow(path=None, return_results=False, only_proce
     print("Step 2: Processing individual files for feature detection...")
     processed_files = [f.split(".")[0] for f in os.listdir(params.single_file_dir) if f.lower().endswith(".txt")]
     to_be_processed = []
-    for i, f in enumerate(params.sample_names):
+    for i in range(len(params.sample_metadata)):
+        f = params.sample_metadata.iloc[i, 0]
         if f not in processed_files:
-            to_be_processed.append(params.sample_abs_paths[i])
-    print("\t{} files to process out of {} files.".format(len(to_be_processed), len(params.sample_abs_paths)))
+            to_be_processed.append(params.sample_metadata.loc[i, 'ABSOLUTE_PATH'])
+    print("\t{} files to process out of {} files.".format(len(to_be_processed), len(params.sample_metadata)))
     
     workers = int(multiprocessing.cpu_count() * params.percent_cpu_to_use)
     print("\tA total of {} CPU cores are detected, {} cores are used.".format(multiprocessing.cpu_count(), workers))
@@ -209,18 +210,20 @@ def untargeted_metabolomics_workflow(path=None, return_results=False, only_proce
         return None
     
     # STEP 3. Feature alignment
-    print("Step 3: Aligning features...")
     if not os.path.exists(params.project_dir + "/aligned_feature_table.txt"):
-
+        print("Step 3: Aligning features...")
         features = feature_alignment(params.single_file_dir, params)
         metadata[3]["status"] = "completed"
         print("\tFeature alignment is completed.")
         print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 
-        feature_table = convert_features_to_df(features=features, sample_names=params.sample_names, quant_method=params.quant_method)
+        feature_table = convert_features_to_df(features=features, sample_names=params.sample_metadata.iloc[:,0], quant_method=params.quant_method)
         # output feature table to a txt file
         output_path = os.path.join(params.project_file_dir, "aligned_feature_table_before_annotation.txt")
         output_feature_table(feature_table, output_path)
+        # output features as pickle file to the project directory
+        with open(os.path.join(params.project_file_dir, "aligned_features.pkl"), "wb") as f:
+            pickle.dump(features, f)
         
     # STEP 4. Feature annotation
         print("Step 4: Annotating features...")
@@ -245,15 +248,20 @@ def untargeted_metabolomics_workflow(path=None, return_results=False, only_proce
         print("\tFeature grouping is completed.")
         metadata[4]["status"] = "completed"
 
-        feature_table = convert_features_to_df(features=features, sample_names=params.sample_names, quant_method=params.quant_method)
+        feature_table = convert_features_to_df(features=features, sample_names=params.sample_metadata.iloc[:,0], quant_method=params.quant_method)
         # output feature table to a txt file
         output_path = os.path.join(params.project_dir, "aligned_feature_table.txt")
         output_feature_table(feature_table, output_path)
         # output the acquired MS2 spectra to a MSP file (designed for MassWiki)
         output_path = os.path.join(params.project_file_dir, "features.msp")
+        # output features as pickle file to the project directory
+        with open(os.path.join(params.project_file_dir, "aligned_features.pkl"), "wb") as f:
+            pickle.dump(features, f)
         output_feature_to_msp(feature_table, output_path)
         print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
     else:
+        print("Step 3: Feature alignment is skipped. Using the existing aligned feature table.")
+        print("Step 4: Feature annotation is skipped. Using the existing aligned feature table.")
         feature_table = pd.read_csv(params.project_dir + "/aligned_feature_table.txt", sep="\t", low_memory=False)
 
     # STEP 5. signal normalization
@@ -268,7 +276,7 @@ def untargeted_metabolomics_workflow(path=None, return_results=False, only_proce
         print("\tMS signal drift normalization is completed.")
     else:
         metadata[5]["status"] = "skipped"
-        print("Step 6: MS signal drift normalization is skipped.")
+        print("Step 5: MS signal drift normalization is skipped.")
     print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 
     # STEP 6. sample normalization

@@ -158,6 +158,7 @@ def label_batch_id(df, ratio_threshold=10):
             v.append(v[-1])
     df['batch_id'] = v
     df = df.sort_index()
+    
     return df
 
 

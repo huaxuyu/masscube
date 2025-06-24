@@ -61,6 +61,7 @@ class AlignedFeature:
         self.rt = 0.0                               # retention time
         self.reference_file = None                  # the reference file with the highest peak height
         self.reference_scan_idx = None              # the scan index of the peak apex from the reference file
+        self.reference_peak_shape = None            # the representative peak shape: [[rt, intensity], ...]
         self.highest_intensity = 0.0                # the highest peak height from individual files (which is the reference file)
         self.ms2 = None                             # representative MS2 spectrum
         self.ms2_reference_file = None              # the reference file for the representative MS2 spectrum
@@ -75,7 +76,6 @@ class AlignedFeature:
         self.is_in_source_fragment = False          # whether it is an in-source fragment
         self.adduct_type = None                     # adduct type
 
-        self.annotation_algorithm = None            # annotation algorithm. Not used now.
         self.search_mode = None                     # 'identity search', 'fuzzy search', or 'mzrt_search'
         self.similarity = None                      # similarity score (0-1)
         self.annotation = None                      # name of annotated compound
@@ -87,6 +87,7 @@ class AlignedFeature:
         self.matched_retention_time = None          # matched retention time
         self.matched_adduct_type = None             # matched adduct type
         self.matched_ms2 = None                     # matched ms2 spectra
+        self.matched_spectra = []                   # list of matched spectra (dictionaries)
 
 
 """
@@ -113,37 +114,30 @@ def feature_alignment(path: str, params: Params):
 
     # STEP 1: preparation
     features = []
-    names = [f + ".txt" for f in params.sample_names]
-    names = [os.path.join(path, name) for name in names]
-    not_found_files = [params.sample_names[i] for i in range(len(names)) if not os.path.exists(names[i])]
-    if len(not_found_files) > 0:
-        for f in not_found_files:
-            params.problematic_files[f] = "file does not exist"
-        # remove those files from names
-        names = [names[i] for i in range(len(names)) if params.sample_names[i] not in not_found_files]
-        # remove those files from sample metadata
-        params.sample_metadata = params.sample_metadata[~params.sample_metadata.iloc[:,1].isin(not_found_files)]
-        params.sample_names = list(params.sample_metadata.iloc[:, 0])
+    params.sample_metadata['SINGLE_FILE_PATH'] = [os.path.join(path, f + ".txt") for f in params.sample_metadata.iloc[:, 0]]
+    for i in range(len(params.sample_metadata)):
+        if not os.path.exists(params.sample_metadata['SINGLE_FILE_PATH'][i]):
+            params.sample_metadata.loc[i, "VALID"] = False
+    # remove invalid files
+    params.sample_metadata = params.sample_metadata[params.sample_metadata["VALID"]]
+    params.sample_metadata.index = np.arange(len(params.sample_metadata))
     
     # find anchors for retention time correction
     if params.correct_rt:
         intensities = []
-        for n in names:
+        for n in params.sample_metadata['SINGLE_FILE_PATH']:
             df = pd.read_csv(n, sep="\t", low_memory=False)
             intensities.append(np.sum(df["peak_height"]))
         # use the file with median total intensity as the reference file
-        anchor_selection_name = names[np.argsort(intensities)[len(intensities)//2]]
+        anchor_selection_name = params.sample_metadata['SINGLE_FILE_PATH'][np.argsort(intensities)[len(intensities)//2]]
         mz_ref, rt_ref = rt_anchor_selection(anchor_selection_name, num=100)
         rt_cor_functions = {}
     
     # STEP 2: read individual feature tables and align features
-    for i, file_name in enumerate(tqdm(params.sample_names)):
-        
-        if not os.path.exists(names[i]):
-            continue
-
+    for i in tqdm(range(len(params.sample_metadata))):
+        file_name = params.sample_metadata.iloc[i, 0]
         # read feature table
-        current_table = pd.read_csv(names[i], low_memory=False, sep="\t")
+        current_table = pd.read_csv(params.sample_metadata['SINGLE_FILE_PATH'][i], sep="\t", low_memory=False)
         current_table = current_table[current_table["MS2"].notna()|(current_table["total_scans"]>params.scan_number_cutoff)]
         
         # sort current table by peak height from high to low
@@ -170,14 +164,14 @@ def feature_alignment(path: str, params: Params):
                 availible_features[idx[0]] = False
                 # check if this file can be the reference file
                 if current_table.loc[idx[0], "peak_height"] > f.highest_intensity:
-                    _assign_reference_values(f=f, df=current_table, i=i, p=idx[0], file_name=file_name)
+                    _assign_reference_values(f=f, df=current_table, p=idx[0], file_name=file_name)
 
         # if an feature is not detected in the previous files, add it to the features
         for j, b in enumerate(availible_features):
             if b:
-                f = AlignedFeature(file_number=len(params.sample_names))
+                f = AlignedFeature(file_number=len(params.sample_metadata))
                 _assign_value_to_feature(f=f, df=current_table, i=i, p=j, file_name=file_name)
-                _assign_reference_values(f=f, df=current_table, i=i, p=j, file_name=file_name)
+                _assign_reference_values(f=f, df=current_table, p=j, file_name=file_name)
                 features.append(f)
 
         # summarize (calculate the average mz and rt) and reorder the features
@@ -251,7 +245,8 @@ def gap_filling(features, params: Params):
         else:
             rt_cor_functions = None
 
-        for i, file_name in enumerate(tqdm(params.sample_names)):
+        for i in tqdm(range(len(params.sample_metadata))):
+            file_name = params.sample_metadata.iloc[i, 0]
             fn = os.path.join(params.tmp_file_dir, file_name + ".mzpkl")
             if os.path.exists(fn):
                 d = read_raw_file_to_obj(fn, ms1_abs_int_tol=params.ms1_abs_int_tol, centroid_mz_tol=None)
@@ -367,7 +362,7 @@ def convert_features_to_df(features, sample_names, quant_method="peak_height"):
     results = []
     sample_names = list(sample_names)
     columns=["group_ID", "feature_ID", "m/z", "RT", "adduct", "is_isotope", "is_in_source_fragment", "Gaussian_similarity", "noise_score", 
-             "asymmetry_factor", "detection_rate", "detection_rate_gap_filled", "alignment_reference_file", "charge", "isotopes", "MS2_reference_file", "MS2", "matched_MS2", 
+             "asymmetry_factor", "peak_shape", "detection_rate", "detection_rate_gap_filled", "alignment_reference_file", "charge", "isotopes", "MS2_reference_file", "MS2", "matched_MS2", 
              "search_mode", "annotation", "formula", "similarity", "matched_peak_number", "SMILES", "InChIKey"] + sample_names
 
     for f in features:
@@ -381,7 +376,7 @@ def convert_features_to_df(features, sample_names, quant_method="peak_height"):
         quant = [int(x) for x in quant]
         
         results.append([f.feature_group_id, f.id, f.mz, f.rt, f.adduct_type, f.is_isotope, f.is_in_source_fragment, f.gaussian_similarity, f.noise_score,
-                        f.asymmetry_factor, f.detection_rate, f.detection_rate_gap_filled, f.reference_file, f.charge_state, f.isotope_signals, f.ms2_reference_file,
+                        f.asymmetry_factor, f.reference_peak_shape, f.detection_rate, f.detection_rate_gap_filled, f.reference_file, f.charge_state, f.isotope_signals, f.ms2_reference_file,
                         f.ms2, f.matched_ms2, f.search_mode, f.annotation, f.formula, f.similarity, f.matched_peak_number, f.smiles, f.inchikey] + quant)
         
     feature_table = pd.DataFrame(results, columns=columns)
@@ -644,7 +639,7 @@ def _assign_value_to_feature(f, df, i, p, file_name):
         f.ms2_seq.append([file_name, df.loc[p, "MS2"]])
 
 
-def _assign_reference_values(f, df, i, p, file_name):
+def _assign_reference_values(f, df, p, file_name):
     """
     Assign the reference values to the aligned feature.
 
@@ -654,8 +649,6 @@ def _assign_reference_values(f, df, i, p, file_name):
         The aligned feature.
     df: DataFrame
         The feature table from the individual file.
-    i: int
-        The file index among all files to be aligned.
     p: int
         The row index of the feature in the current individual file.
     file_name: str
@@ -666,6 +659,7 @@ def _assign_reference_values(f, df, i, p, file_name):
     f.rt = df.loc[p, "RT"]
     f.reference_file = file_name
     f.reference_scan_idx = df.loc[p, "scan_idx"]
+    f.reference_peak_shape = df.loc[p, "peak_shape"]
     f.highest_intensity = df.loc[p, "peak_height"]
     f.gaussian_similarity = df.loc[p, "Gaussian_similarity"]
     f.noise_score = df.loc[p, "noise_score"]
