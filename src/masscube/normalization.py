@@ -331,6 +331,9 @@ def lowess_normalization(array, is_qc, it=3, batch_ids=None, frac=None):
 
     # only use qc data > 0 for normalization
     valid_idx = is_qc & (array > 0)
+
+    if np.sum(valid_idx) < 3:
+        return {'model': None, 'fit_curve': None, 'normed_arr': array}
     
     if batch_ids is None:
         batch_ids = np.zeros(len(array), dtype=int)

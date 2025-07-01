@@ -267,7 +267,6 @@ def untargeted_metabolomics_workflow(path=None, return_results=False, only_proce
     # STEP 5. signal normalization
     if params.signal_normalization:
         print("Step 5: Running signal normalization...")
-        print(params.plot_normalization)
         if params.plot_normalization:
             feature_table = signal_normalization(feature_table, params.sample_metadata, params.signal_norm_method, output_plot_path=params.normalization_dir)
         else:

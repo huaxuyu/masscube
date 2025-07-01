@@ -593,6 +593,30 @@ def index_msp_to_pkl(msp_path, output_path=None):
     pickle.dump(entropy_search, open(os.path.join(output_path, file_name + ".pkl"), 'wb'))
 
 
+def index_json_to_pkl(json_path, output_path=None):
+    """
+    A function to index JSON file to pickle format.
+
+    Parameters
+    ----------
+    json_path : str
+        The path to the JSON file.
+    output_path : str
+        The path to the output pickle file.
+    """
+
+    file_name = os.path.basename(json_path).split(".")[0]
+
+    if output_path is None:
+        output_path = os.path.dirname(json_path)
+
+    db = json.load(open(json_path, 'r'))
+    entropy_search = FlashEntropySearch()
+    entropy_search.build_index(db)
+
+    pickle.dump(entropy_search, open(os.path.join(output_path, file_name + ".pkl"), 'wb'))
+
+
 def _correct_db(db):
     """
     Correct the MS2 database by changing the key names.
