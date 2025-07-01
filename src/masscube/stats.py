@@ -194,7 +194,7 @@ def umap_analysis(feature_table, params):
     df = df[(~df['is_qc']) & (~df['is_blank'])]
     n = df.iloc[:, 0].values
     data_arr = feature_table[n].values  # samples in columns and features in rows
-    keys = [i for i in df.columns[1:] if i not in ['is_qc', 'is_blank', 'analytical_order', 'time']]
+    keys = [i for i in df.columns[1:] if i not in ['is_qc', 'is_blank', 'analytical_order', 'time', 'ABSOLUTE_PATH', 'VALID']]
 
     # UMAP analysis
     data_arr = data_arr.T

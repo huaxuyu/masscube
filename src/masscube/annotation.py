@@ -219,8 +219,15 @@ def annotate_aligned_features(features, params, num=5):
     entropy_search = load_ms2_db(params.ms2_library_path)
 
     # ion mode filtering
-    ion_mode_mask = np.array([1 if (entropy_search[i]['ion_mode'].lower() == params.ion_mode) else 0 for 
-                              i in range(len(entropy_search.precursor_mz_array))], dtype=bool)
+    ion_mode_mask = []
+    for i in range(len(entropy_search.precursor_mz_array)):
+        if 'ion_mode' in entropy_search[i]:
+            ion_mode_mask.append(1 if (entropy_search[i]['ion_mode'].lower() == params.ion_mode) else 0)
+        elif 'ionmode' in entropy_search[i]:
+            ion_mode_mask.append(1 if (entropy_search[i]['ionmode'].lower() == params.ion_mode) else 0)
+        else:
+            ion_mode_mask.append(0)
+    ion_mode_mask = np.array(ion_mode_mask, dtype=bool)
 
     if params.consider_rt:
         rt_arr = np.zeros(len(entropy_search.precursor_mz_array))+np.inf
@@ -326,20 +333,27 @@ def annotate_features(d, sim_tol=None, fuzzy_search=True, ms2_library_path=None,
     """
 
     if ms2_library_path is None:
-        search_engine = load_ms2_db(d.params.ms2_library_path)
+        entropy_search = load_ms2_db(d.params.ms2_library_path)
     else:
-        search_engine = load_ms2_db(ms2_library_path)
+        entropy_search = load_ms2_db(ms2_library_path)
     
     # ion mode filtering
-    ion_mode_mask = np.array([1 if (search_engine[i]['ion_mode'].lower() == d.params.ion_mode) else 0 for
-                              i in range(len(search_engine.precursor_mz_array))], dtype=bool)
+    ion_mode_mask = []
+    for i in range(len(entropy_search.precursor_mz_array)):
+        if 'ion_mode' in entropy_search[i]:
+            ion_mode_mask.append(1 if (entropy_search[i]['ion_mode'].lower() == d.params.ion_mode) else 0)
+        elif 'ionmode' in entropy_search[i]:
+            ion_mode_mask.append(1 if (entropy_search[i]['ionmode'].lower() == d.params.ion_mode) else 0)
+        else:
+            ion_mode_mask.append(0)
+    ion_mode_mask = np.array(ion_mode_mask, dtype=bool)
 
     if sim_tol is None:
         sim_tol = d.params.ms2_sim_tol
     
     if consider_rt:
-        rt_arr = np.zeros(len(search_engine.precursor_mz_array))+np.inf
-        for i, ms2 in enumerate(search_engine):
+        rt_arr = np.zeros(len(entropy_search.precursor_mz_array))+np.inf
+        for i, ms2 in enumerate(entropy_search):
             if 'retention_time' in ms2:
                 rt_arr[i] = ms2['retention_time']
 
@@ -350,10 +364,10 @@ def annotate_features(d, sim_tol=None, fuzzy_search=True, ms2_library_path=None,
         
         matched = None
         matched_peak_num = None
-        signals = search_engine.clean_spectrum_for_search(precursor_mz=f.mz, peaks=f.ms2.signals, precursor_ions_removal_da=2.0)
+        signals = entropy_search.clean_spectrum_for_search(precursor_mz=f.mz, peaks=f.ms2.signals, precursor_ions_removal_da=2.0)
         if len(signals) == 0:
             continue
-        scores, peak_nums = search_engine.identity_search(precursor_mz=f.mz, peaks=signals, ms1_tolerance_in_da=d.params.mz_tol_ms1, 
+        scores, peak_nums = entropy_search.identity_search(precursor_mz=f.mz, peaks=signals, ms1_tolerance_in_da=d.params.mz_tol_ms1, 
                                                           ms2_tolerance_in_da=d.params.mz_tol_ms2, output_matched_peak_number=True)
         scores = ion_mode_mask
         if consider_rt:
@@ -361,7 +375,7 @@ def annotate_features(d, sim_tol=None, fuzzy_search=True, ms2_library_path=None,
             scores_rt = scores * rt_boo
             idx = np.argmax(scores_rt)
             if scores_rt[idx] > sim_tol:
-                matched = search_engine[idx]
+                matched = entropy_search[idx]
                 matched = {k.lower():v for k,v in matched.items()}
                 matched_peak_num = peak_nums[idx]
                 _assign_annotation_results_to_feature(f, score=scores_rt[idx], matched=matched, matched_peak_num=matched_peak_num, 
@@ -370,18 +384,18 @@ def annotate_features(d, sim_tol=None, fuzzy_search=True, ms2_library_path=None,
         if matched is None:
             idx = np.argmax(scores)
             if scores[idx] > sim_tol:
-                matched = search_engine[idx]
+                matched = entropy_search[idx]
                 matched = {k.lower():v for k,v in matched.items()}
                 matched_peak_num = peak_nums[idx]
                 _assign_annotation_results_to_feature(f, score=scores[idx], matched=matched, matched_peak_num=matched_peak_num,
                                                       search_mode='identity_search')
 
         if matched is None and fuzzy_search:
-            scores = search_engine.hybrid_search(precursor_mz=f.mz, peaks=signals, ms1_tolerance_in_da=d.params.mz_tol_ms1, 
+            scores = entropy_search.hybrid_search(precursor_mz=f.mz, peaks=signals, ms1_tolerance_in_da=d.params.mz_tol_ms1, 
                                                              ms2_tolerance_in_da=d.params.mz_tol_ms2)
             idx = np.argmax(scores)
             if scores[idx] > sim_tol:
-                matched = search_engine[idx]
+                matched = entropy_search[idx]
                 matched_peak_num = None
                 _assign_annotation_results_to_feature(f, score=scores[idx], matched=matched, matched_peak_num=matched_peak_num, 
                                                       search_mode='fuzzy_search')

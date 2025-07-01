@@ -310,10 +310,10 @@ def plot_lowess_normalization(arr, fit_curve, arr_new, is_qc_or_sample, qc_idx, 
     # use color band to show the 95% confidence interval
     tmp_new = arr_new[qc_idx]
     tmp_new = tmp_new[tmp_new > 0]
-    y_up = np.median(tmp_new) + 1.96 * np.std(tmp_new)
-    y_down = np.median(tmp_new) - 1.96 * np.std(tmp_new)
-    plt.fill_between(v, y_down, y_up, color='lightblue', alpha=0.5)
     if len(tmp_new) > 2:
+        y_up = np.median(tmp_new) + 1.96 * np.std(tmp_new)
+        y_down = np.median(tmp_new) - 1.96 * np.std(tmp_new)
+        plt.fill_between(v, y_down, y_up, color='lightblue', alpha=0.5)
         rsd = np.std(tmp_new) / np.mean(tmp_new) * 100
     else:
         rsd = np.nan
