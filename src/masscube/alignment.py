@@ -412,13 +412,16 @@ def output_feature_to_msp(feature_table, output_path):
                 f.write("\n")
                 continue
 
-            if feature_table['annotation'][i] is None:
+            if feature_table['annotation'][i] is None or feature_table['annotation'][i] != feature_table['annotation'][i]:
                 name = "Unknown"
             else:
                 name = str(feature_table['annotation'][i])
 
             peaks = re.findall(r"\d+\.\d+", feature_table['MS2'][i])
-            f.write("NAME: " + name + "\n")
+            try:
+                f.write("NAME: " + name + "\n")
+            except:
+                f.write("NAME: Unknown\n")
             f.write("PRECURSORMZ: " + str(feature_table['m/z'][i]) + "\n")
             f.write("PRECURSORTYPE: " + str(feature_table['adduct'][i]) + "\n")
             f.write("RETENTIONTIME: " + str(feature_table['RT'][i]) + "\n")

@@ -254,10 +254,10 @@ def untargeted_metabolomics_workflow(path=None, return_results=False, only_proce
         output_feature_table(feature_table, output_path)
         # output the acquired MS2 spectra to a MSP file (designed for MassWiki)
         output_path = os.path.join(params.project_file_dir, "features.msp")
+        output_feature_to_msp(feature_table, output_path)
         # output features as pickle file to the project directory
         with open(os.path.join(params.project_file_dir, "aligned_features.pkl"), "wb") as f:
             pickle.dump(features, f)
-        output_feature_to_msp(feature_table, output_path)
         print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
     else:
         print("Step 3: Feature alignment is skipped. Using the existing aligned feature table.")
