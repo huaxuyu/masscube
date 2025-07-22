@@ -9,7 +9,6 @@ import re
 import os
 from tqdm import tqdm
 from scipy.interpolate import interp1d
-from scipy.spatial import cKDTree
 import pickle
 from copy import deepcopy
 
@@ -114,6 +113,7 @@ def feature_alignment(path: str, params: Params):
     """
 
     # STEP 1: preparation
+    features = []
     params.sample_metadata['SINGLE_FILE_PATH'] = [os.path.join(path, f + ".txt") for f in params.sample_metadata.iloc[:, 0]]
     for i in range(len(params.sample_metadata)):
         if not os.path.exists(params.sample_metadata['SINGLE_FILE_PATH'][i]):
@@ -134,12 +134,10 @@ def feature_alignment(path: str, params: Params):
         rt_cor_functions = {}
     
     # STEP 2: read individual feature tables and align features
-    features = []
     for i in tqdm(range(len(params.sample_metadata))):
         file_name = params.sample_metadata.iloc[i, 0]
-        file_path = params.sample_metadata['SINGLE_FILE_PATH'][i]
         # read feature table
-        current_table = pd.read_csv(file_path, sep="\t", low_memory=False)
+        current_table = pd.read_csv(params.sample_metadata['SINGLE_FILE_PATH'][i], sep="\t", low_memory=False)
         current_table = current_table[current_table["MS2"].notna()|(current_table["total_scans"]>params.scan_number_cutoff)]
         
         # sort current table by peak height from high to low
@@ -241,8 +239,8 @@ def gap_filling(features, params: Params):
     if params.gap_filling_method == 'local_maximum':
 
         # if retention time correction is applied, read the model
-        if params.correct_rt and os.path.exists(os.path.join(params.project_dir, "rt_correction_models.pkl")):
-            with open(os.path.join(params.project_dir, "rt_correction_models.pkl"), "rb") as f:
+        if params.correct_rt and os.path.exists(os.path.join(params.project_file_dir, "rt_correction_models.pkl")):
+            with open(os.path.join(params.project_file_dir, "rt_correction_models.pkl"), "rb") as f:
                 rt_cor_functions = pickle.load(f)
         else:
             rt_cor_functions = None
@@ -265,7 +263,7 @@ def gap_filling(features, params: Params):
                             f.peak_height_arr[i] = np.max(eic_signals[:, 1])
                             f.peak_area_arr[i] = int(np.trapz(y=eic_signals[:, 1], x=eic_time_arr))
                             f.top_average_arr[i] = np.mean(np.sort(eic_signals[:, 1])[-3:])
-    
+
     # calculate the detection rate after gap filling (blank samples are not included)
     v = ~params.sample_metadata['is_blank']
     for f in features:

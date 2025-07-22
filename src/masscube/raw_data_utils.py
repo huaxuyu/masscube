@@ -491,35 +491,35 @@ class MSData:
             Scan index of the EIC.
         """
 
-        eic_time_arr = []
-        eic_signals = []
-        eic_scan_idx_arr = []
-
         if rt_range is None:
             if target_rt is None:
                 rt_range = [0, np.inf]
             else:
                 rt_range = [target_rt - rt_tol, target_rt + rt_tol]
+        # Extract times and filter by RT
+        times = np.array([self.scans[i].time for i in self.ms1_idx], dtype=np.float32)
+        mask_rt = (times >= rt_range[0]) & (times <= rt_range[1])
+        valid_idx = np.where(mask_rt)[0]
 
-        for i in self.ms1_idx:
-            if rt_range[0] < self.scans[i].time < rt_range[1]:
-                mz_diff = np.abs(self.scans[i].signals[:, 0] - target_mz)
-                # if scan is not empty and at least one ion is matched
-                if len(mz_diff) > 0 and np.min(mz_diff) < mz_tol:
-                    eic_time_arr.append(self.scans[i].time)
-                    eic_signals.append(self.scans[i].signals[np.argmin(mz_diff)])
-                    eic_scan_idx_arr.append(i)
-                else:
-                    eic_time_arr.append(self.scans[i].time)
-                    eic_signals.append([np.nan, 0])
-                    eic_scan_idx_arr.append(i)
+        if len(valid_idx) == 0:
+            return np.array([]), np.array([]), np.array([])
+    
+        eic_time_arr = times[valid_idx]
+        eic_scan_idx_arr = np.array([self.ms1_idx[k] for k in valid_idx], dtype=np.int32)
 
-            if self.scans[i].time > rt_range[1]:
-                break
-        
-        eic_time_arr = np.array(eic_time_arr, dtype=np.float32)
-        eic_signals = np.array(eic_signals, dtype=np.float32)
-        eic_scan_idx_arr = np.array(eic_scan_idx_arr, dtype=np.int32)
+        eic_signals = np.zeros((len(valid_idx), 2), dtype=np.float32)
+        eic_signals[:, 0] = np.nan  # Default m/z as NaN, intensity stays 0
+
+        # Fill values
+        for idx_out, idx_scan in enumerate(eic_scan_idx_arr):
+            signals = self.scans[idx_scan].signals  # shape: (n_peaks, 2)
+            if signals.shape[0] == 0:
+                continue  # leave as [nan, 0]
+            # Find the closest m/z to target_mz within tolerance
+            v = np.abs(signals[:, 0] - target_mz)
+            if np.min(v) < mz_tol:
+                # If multiple m/z values are found, take the first one
+                eic_signals[idx_out] = signals[np.argmin(v)]
 
         return eic_time_arr, eic_signals, eic_scan_idx_arr
     
