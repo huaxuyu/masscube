@@ -5,12 +5,13 @@
 # Import modules
 import os
 import multiprocessing
+from joblib import Parallel, delayed
+from tqdm import tqdm
 import pickle
 from copy import deepcopy
 import pandas as pd
 import numpy as np
 from importlib.metadata import version
-from scipy.stats import zscore
 import time
 
 from .raw_data_utils import read_raw_file_to_obj
@@ -183,25 +184,21 @@ def untargeted_metabolomics_workflow(path=None, return_results=False, only_proce
     # STEP 2. Process individual files
     print("Step 2: Processing individual files for feature detection...")
     processed_files = [f.split(".")[0] for f in os.listdir(params.single_file_dir) if f.lower().endswith(".txt")]
-    to_be_processed = []
-    for i in range(len(params.sample_metadata)):
-        f = params.sample_metadata.iloc[i, 0]
-        if f not in processed_files:
-            to_be_processed.append(params.sample_metadata.loc[i, 'ABSOLUTE_PATH'])
-    print("\t{} files to process out of {} files.".format(len(to_be_processed), len(params.sample_metadata)))
+    to_be_processed = [
+        params.sample_metadata.loc[i, 'ABSOLUTE_PATH']
+        for i in range(len(params.sample_metadata))
+        if params.sample_metadata.iloc[i, 0] not in processed_files
+    ]
+    print(f"\t{len(to_be_processed)} files to process out of {len(params.sample_metadata)} files.")
     
     workers = int(multiprocessing.cpu_count() * params.percent_cpu_to_use)
     print("\tA total of {} CPU cores are detected, {} cores are used.".format(multiprocessing.cpu_count(), workers))
-    for i in range(0, len(to_be_processed), params.batch_size):
-        if len(to_be_processed) - i < params.batch_size:
-            print("\tProcessing files from " + str(i) + " to " + str(len(to_be_processed)))
-        else:
-            print("\tProcessing files from " + str(i) + " to " + str(i+params.batch_size))
-        p = multiprocessing.Pool(workers)
-        p.starmap(process_single_file, [(f, params) for f in to_be_processed[i:i+params.batch_size]])
-        p.close()
-        p.join()
-        
+
+    Parallel(n_jobs=workers, backend="loky")(
+        delayed(process_single_file)(f, params)
+        for f in tqdm(to_be_processed, desc="Processing files", unit="file")
+    )
+
     metadata[2]["status"] = "completed"
     print("\tIndividual file processing is completed.")
     print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")

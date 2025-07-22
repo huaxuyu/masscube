@@ -4,23 +4,26 @@
 
 # imports
 import numpy as np
-
+from numpy import dot
 
 """
 Functions
 ------------------------------------------------------------------------------------------------------------------------
 """
 
-def calculate_gaussian_similarity(x, y):
+def calculate_gaussian_similarity(x, y, len_tol=5):
     """
-    calculate the gaussian similarity using dot product
+    calculate the gaussian similarity using Pearson correlation coefficient.
 
     Parameters
     ----------
     x: numpy array
-        Retention time
+        Retention times.
     y: numpy array
-        Intensity
+        MS1 signal intensities.
+    len_tol: int
+        Minimum length of the peak to calculate the similarity score. 
+        If the length of the peak is less than this value, return 0.
     
     Returns
     -------
@@ -28,13 +31,13 @@ def calculate_gaussian_similarity(x, y):
         similarity score
     """
 
-    if type(x) is not np.ndarray:
+    if not isinstance(x, np.ndarray):
         x = np.array(x)
-    if type(y) is not np.ndarray:
+    if not isinstance(y, np.ndarray):
         y = np.array(y)
 
-    # if the length of the peak is less than 5, return 0
-    if len(x) < 5:
+    # if the length of the peak is less than the tolerance, return 0
+    if len(x) < len_tol or np.max(y) <= 0:
         return 0.0
 
     # Estimate the parameters of the Gaussian function
@@ -43,55 +46,55 @@ def calculate_gaussian_similarity(x, y):
     idx = np.argmax(y)
     b = x[idx]
 
-    c1 = x[-1] - b
-    c2 = b - x[0]
+    # Compute approximate FWHM using half-height
+    right_idx = np.where(y[idx:] < a / 2)[0]
+    left_idx = np.where(y[:idx] < a / 2)[0]
 
-    if idx == len(y) - 1:
-        c1 = 0
-    else:
-        for i in range(idx, len(y)):
-            if y[i] < a / 2:
-                c1 = x[i] - b
-                break
-    if idx == 0:
-        c2 = 0
-    else:
-        for i in range(idx, 0, -1):
-            if y[i] < a / 2:
-                c2 = b - x[i]
-                break
-    c = (c1 + c2) / 2.355
+    c1 = (x[right_idx[0] + idx] - b) if len(right_idx) > 0 else (x[-1] - b)
+    c2 = (b - x[left_idx[-1]]) if len(left_idx) > 0 else (b - x[0])
 
-    y_fit = _gaussian(x, a, b, c)
+    fwhm = c1 + c2
+    c = fwhm / 2.355 if fwhm > 0 else 1e-6  # Avoid division by zero
 
-    similarity = np.corrcoef(y, y_fit)[0, 1]
+    # Generate fitted Gaussian curve
+    y_fit = a * np.exp(-0.5 * ((x - b) / c) ** 2)
+
+    # Fast correlation using dot product
+    y = y.astype(float)
+    y_fit = y_fit.astype(float)
+    y -= y.mean()
+    y_fit -= y_fit.mean()
+    similarity = dot(y, y_fit) / (np.linalg.norm(y) * np.linalg.norm(y_fit) + 1e-12)
     
-    return np.max([0, similarity])
+    return max(0, similarity)
 
 
-def calculate_noise_score(y, rel_int_tol=0.05, min_len=5):
+def calculate_noise_score(y, rel_int_tol=0.05, len_tol=5):
     """
     Calculate the noise score that reflect the signal fluctuation.
 
     Parameters
     ----------
-    y: numpy array
-        Intensity
+    y: array-like
+        Intensity values of the peak.
     rel_int_tol: float
-        Relative intensity tolerance.
-    min_len: int
-        Minimum length of the peak to calculate the noise score.
+        Relative intensity threshold (filter low signals).
+    len_tol: int
+        Minimum length of the peak to calculate the noise score. 
+        If the length of the peak is less than this value, return 0.
     
     Returns
     -------
     float
-        noise level
+        Noise score (0 = no noise, higher = noiser)
     """
 
+    y = np.array(y, dtype=float) if not isinstance(y, np.ndarray) else y
+    
     y = y[y > np.max(y) * rel_int_tol]
 
-    if len(y) < min_len:
-        return np.nan
+    if len(y) < len_tol:
+        return 0
 
     y = np.concatenate(([0], y, [0]))
     diff = np.diff(y)
@@ -99,45 +102,48 @@ def calculate_noise_score(y, rel_int_tol=0.05, min_len=5):
     return np.sum(np.abs(diff)) / np.max(y) / 2 - 1
 
 
-def calculate_asymmetry_factor(y):
+def calculate_asymmetry_factor(y, threshold_ratio=0.1):
     """
-    Calcualte the asymmetry factor of the peak at 10% of the peak height.
+    Calculate peak asymmetry at a given threshold level (default: 10%).
 
     Parameters
     ----------
-    y: numpy array
-        Intensity
+    y : array-like
+        Intensity values
+    threshold_ratio : float
+        Fraction of peak height to define tails (default = 0.1 = 10%)
 
     Returns
     -------
     float
-        asymmetry factor
+        Asymmetry factor:
+        - ~1 = symmetric
+        - >1 = right-skewed
+        - <1 = left-skewed
+        - np.inf = undefined
     """
 
-    if len(y) < 5:
-        return 1.0
+    y = np.array(y, dtype=float) if not isinstance(y, np.ndarray) else y
+
+    if len(y) < 5 or np.max(y) <= 0:
+        return np.inf
 
     idx = np.argmax(y)
 
-    if idx == 0:
+    # Define threshold
+    threshold = y[idx] * threshold_ratio
+
+    # Find last point before peak below threshold (left tail)
+    left_candidates = np.where(y[:idx] < threshold)[0]
+    left_idx = left_candidates[-1] if len(left_candidates) else 0
+
+    # Find first point after peak below threshold (right tail)
+    right_candidates = np.where(y[idx:] < threshold)[0]
+    right_idx = (right_candidates[0] + idx) if len(right_candidates) else (len(y) - 1)
+
+    # Avoid division by zero
+    if idx == left_idx:
         return 99.0
-    elif idx == len(y) - 1:
-        return 0.0
-
-    arr = y < 0.1 * y[idx]
-
-    left_idx = np.where(arr[:idx])[0]
-    right_idx = np.where(arr[idx:])[0]
-
-    if len(left_idx) == 0:
-        left_idx = 0
-    else:
-        left_idx = left_idx[-1]
-    
-    if len(right_idx) == 0:
-        right_idx = len(y) - 1
-    else:
-        right_idx = right_idx[0] + idx
 
     return (right_idx - idx) / (idx - left_idx)
 

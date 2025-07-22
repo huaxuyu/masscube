@@ -983,7 +983,8 @@ def _preprocess_signals_to_scan(level, id, scan_time, signals, params, precursor
         return Scan(level=level, id=id, scan_time=scan_time, signals=signals, precursor_mz=precursor_mz)
 
     if level == 1:
-        signals = clean_signals(signals, intensity_range=[params.ms1_abs_int_tol, np.inf])
+        signals = clean_signals(signals, mz_range=[params.mz_lower_limit, params.mz_upper_limit],
+                                intensity_range=[params.ms1_abs_int_tol, np.inf])
 
     elif level == 2:
         int_lower = max(params.ms2_abs_int_tol, np.max(signals[:, 1]) * params.ms2_rel_int_tol)

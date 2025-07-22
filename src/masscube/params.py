@@ -198,7 +198,9 @@ class Params:
         
         # STEP 2: check if the required files are prepared
         #         three items are required: raw MS data, sample table and parameter file
-        if not os.path.exists(self.sample_dir) or len(os.listdir(self.sample_dir)) == 0:
+        sample_files = [f for f in os.listdir(self.sample_dir) if not f.startswith(".") and 
+                        (f.lower().endswith(".mzml") or f.lower().endswith(".mzxml"))]
+        if not os.path.exists(self.sample_dir) or len(sample_files) == 0:
             raise ValueError("No raw MS data is found in the project directory.")
         if not os.path.exists(os.path.join(self.project_dir, "sample_table.csv")):
             print("No sample table is found in the project directory. Normalization and statistical analysis will NOT be performed.")
@@ -210,16 +212,9 @@ class Params:
             print("To perform feature annotation, please specify the path of MS/MS library in the parameter file.")
 
         # STEP 3: create the output directories if not exist
-        if not os.path.exists(self.single_file_dir):
-            os.makedirs(self.single_file_dir)
-        if not os.path.exists(self.tmp_file_dir):
-            os.makedirs(self.tmp_file_dir)
-        if not os.path.exists(self.ms2_matching_dir):
-            os.makedirs(self.ms2_matching_dir)
-        if not os.path.exists(self.bpc_dir):
-            os.makedirs(self.bpc_dir)
-        if not os.path.exists(self.project_file_dir):
-            os.makedirs(self.project_file_dir)
+        for d in [self.single_file_dir, self.tmp_file_dir, self.ms2_matching_dir,
+                self.bpc_dir, self.project_file_dir, self.statistics_dir, self.normalization_dir]:
+            os.makedirs(d, exist_ok=True)
         
         # STEP 4: read the parameters from csv file or use default values
         if os.path.exists(os.path.join(self.project_dir, "parameters.csv")):
@@ -227,17 +222,10 @@ class Params:
         else:
             print("Using default parameters...")
             # determine the type of MS and ion mode
-            file_names = os.listdir(self.sample_dir)
-            file_names = [f for f in file_names if f.lower().endswith(".mzml") or f.lower().endswith(".mzxml")]
-            file_name = os.path.join(self.sample_dir, file_names[0])
+            file_name = os.path.join(self.sample_dir, sample_files[0])
             ms_type, ion_mode, _ = find_ms_info(file_name)
             self.set_default(ms_type, ion_mode)
             self.plot_bpc = True
-        
-        if not os.path.exists(self.statistics_dir) and self.run_statistics:
-            os.makedirs(self.statistics_dir)
-        if not os.path.exists(self.normalization_dir) and (self.sample_normalization or self.signal_normalization):
-            os.makedirs(self.normalization_dir)
 
         # STEP 5: read the sample names and sample metadata from the sample table
         if os.path.exists(os.path.join(self.project_dir, "sample_table.csv")):
@@ -245,8 +233,7 @@ class Params:
             # find the absolute paths of the raw MS data in order
             self._check_raw_files_in_data_dir()
         else:
-            names = [f.split(".")[0] for f in os.listdir(self.sample_dir) if not f.startswith(".") and 
-                     (f.lower().endswith(".mzml") or f.lower().endswith(".mzxml"))]
+            names = [f.split(".")[0] for f in sample_files]
             self.sample_metadata = pd.DataFrame({'sample_name': names, 'is_qc': False, 'is_blank': False})
             self._check_raw_files_in_data_dir()
         
@@ -256,9 +243,7 @@ class Params:
 
         # find the start time of the raw MS data
         self.sample_metadata['time'] = [get_start_time(path) for path in self.sample_metadata['ABSOLUTE_PATH']]
-        for i in range(len(self.sample_metadata)):
-            if self.sample_metadata['time'][i] != self.sample_metadata['time'][i]:
-                self.sample_metadata.loc[i, 'VALID'] = False
+        self.sample_metadata['VALID'] = self.sample_metadata['time'].notna()
         
         # remove the invalid files
         self.sample_metadata = self.sample_metadata[self.sample_metadata['VALID'] == True]
@@ -384,12 +369,8 @@ def find_ms_info(file_name):
 
     # for mzml and mzxml
     if file_name.lower().endswith('.mzml') or file_name.lower().endswith('.mzxml'):
-        text = ""
         with open(file_name, 'r') as f:
-            for i, line in enumerate(f):
-                text += line
-                if i > 200:
-                    break
+            text = ''.join([next(f) for _ in range(200)])
         text = text.lower()
         if 'orbitrap' in text or 'q exactive' in text:
             ms_type = 'orbitrap'
