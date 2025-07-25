@@ -146,7 +146,11 @@ def label_batch_id(df, ratio_threshold=10):
         If the interval between two files is larger than ratio_threshold * the minimum interval,
         the two files are considered to be in different batches.
     """
-
+    
+    if len(df) == 1:
+        df['batch_id'] = [0]
+        return df
+    
     df = df.sort_values(by="time")
     time_diff = np.diff(df['time'])
     t0 = ratio_threshold * np.min(time_diff)

@@ -194,10 +194,30 @@ def untargeted_metabolomics_workflow(path=None, return_results=False, only_proce
     workers = int(multiprocessing.cpu_count() * params.percent_cpu_to_use)
     print("\tA total of {} CPU cores are detected, {} cores are used.".format(multiprocessing.cpu_count(), workers))
 
-    Parallel(n_jobs=workers, backend="loky")(
-        delayed(process_single_file)(f, params)
-        for f in tqdm(to_be_processed, desc="Processing files", unit="file")
-    )
+    import math
+    import gc
+    n_files = len(to_be_processed)
+    n_batches = math.ceil(n_files / params.batch_size)
+
+    for b in range(n_batches):
+        start = b * params.batch_size
+        end = min(start + params.batch_size, n_files)
+        batch = to_be_processed[start:end]
+
+        print(f"\nProcessing batch {b+1}/{n_batches} ({len(batch)} files)")
+
+        Parallel(n_jobs=workers, backend="loky")(
+            delayed(process_single_file)(f, params)
+            for f in tqdm(batch, desc=f"Batch {b+1}", unit="file")
+        )
+
+        # Clean up memory
+        gc.collect()
+
+    # Parallel(n_jobs=workers, backend="loky")(
+    #     delayed(process_single_file)(f, params)
+    #     for f in tqdm(to_be_processed, desc="Processing files", unit="file")
+    # )
 
     metadata[2]["status"] = "completed"
     print("\tIndividual file processing is completed.")
