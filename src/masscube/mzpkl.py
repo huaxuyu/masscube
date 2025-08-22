@@ -64,3 +64,18 @@ def read_mzpkl_to_MSData(d, file_path: str):
     d.ms1_idx = results["ms1_idx"]
     d.ms2_idx = results["ms2_idx"]
     d.scans = results["scans"]
+
+
+def raw_data_to_mzpkl(raw_data: str, output_dir: str = None):
+    """
+    Convert raw data to mzpkl format.
+
+    Parameters
+    ----------
+    raw_data: 
+        The raw MSData object.
+    output_dir: str
+        The path to the output directory.
+    """
+
+    return convert_MSData_to_mzpkl(raw_data, output_dir)

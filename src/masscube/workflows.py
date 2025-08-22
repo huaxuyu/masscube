@@ -27,7 +27,7 @@ from .utils_functions import convert_signals_to_string
 
 # 1. Untargeted feature detection for a single file
 def process_single_file(file_name, params=None, segment_feature=True, group_features=False, evaluate_peak_shape=True,
-                        annotate_ms2=False, ms2_library_path=None, remove_noise=False, output_dir=None):
+                        annotate_ms2=False, ms2_library_path=None, output_dir=None, return_data=True):
     """
     Untargeted data processing for a single file (mzML, mzXML, mzjson or compressed mzjson).
 
@@ -50,6 +50,8 @@ def process_single_file(file_name, params=None, segment_feature=True, group_feat
         Another way to specify the MS2 library path.
     output_dir : str
         The output directory for the single file. If None, the output is saved to the same directory as the raw file.
+    return_data : bool
+        Whether to return the processed data as MSData object or not. Default is True.
 
     Returns
     -------
@@ -91,9 +93,6 @@ def process_single_file(file_name, params=None, segment_feature=True, group_feat
             d.summarize_features(cal_g_score=True, cal_a_score=True)
         else:
             d.summarize_features(cal_g_score=False, cal_a_score=False)
-        
-        # if remove_noise:
-        #     d.remove_noise()
 
         # STEP 4. MS2 annotation
         if annotate_ms2:
@@ -106,7 +105,7 @@ def process_single_file(file_name, params=None, segment_feature=True, group_feat
         if group_features:
             group_features_single_file(d)
 
-        # STEP 6. Visualization and output
+        # STEP 6. visualization and output
         if d.params.plot_bpc and d.params.bpc_dir is not None:
             d.plot_bpc(output_dir=os.path.join(d.params.bpc_dir, d.params.file_name + "_bpc.png"))
         
@@ -120,7 +119,10 @@ def process_single_file(file_name, params=None, segment_feature=True, group_feat
         if d.params.tmp_file_dir is not None:
             d.convert_to_mzpkl()
 
-        return d
+        if return_data:
+            return d
+        else:
+            return None
     
     except:
         print("Error occurred during processing file: " + file_name)
@@ -207,17 +209,13 @@ def untargeted_metabolomics_workflow(path=None, return_results=False, only_proce
         print(f"\nProcessing batch {b+1}/{n_batches} ({len(batch)} files)")
 
         Parallel(n_jobs=workers, backend="loky")(
-            delayed(process_single_file)(f, params)
+            delayed(process_single_file)(f, params, return_data=False)
             for f in tqdm(batch, desc=f"Batch {b+1}", unit="file")
         )
 
         # Clean up memory
         gc.collect()
 
-    # Parallel(n_jobs=workers, backend="loky")(
-    #     delayed(process_single_file)(f, params)
-    #     for f in tqdm(to_be_processed, desc="Processing files", unit="file")
-    # )
 
     metadata[2]["status"] = "completed"
     print("\tIndividual file processing is completed.")

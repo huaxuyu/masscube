@@ -449,36 +449,23 @@ def centroid_signals(signals, mz_tol=0.005):
         Centroided signals.
     """
 
-    if mz_tol is None:
+    if mz_tol is None or len(signals) <= 1:
         return signals
-    
-    # sort signals by m/z
+
+    # Assume signals sorted by m/z
     signals = signals[signals[:, 0].argsort()]
+    mz = signals[:, 0]
+    intensity = signals[:, 1]
 
-    v = np.diff(signals[:, 0]) < mz_tol
+    diff = np.diff(mz)
+    group_starts = np.where(diff >= mz_tol)[0] + 1
+    group_boundaries = np.r_[0, group_starts, len(signals)]
 
-    if np.sum(v) == 0:
-        return signals
+    sum_intensity = np.add.reduceat(intensity, group_boundaries[:-1])
+    weighted_mz = np.add.reduceat(mz * intensity, group_boundaries[:-1]) / sum_intensity
+
+    merged_signals = np.column_stack((weighted_mz, sum_intensity)).astype(np.float32)
     
-    b = np.zeros(len(signals), dtype=int)
-    for i in range(len(v)):
-        if v[i]:
-            b[i+1] = b[i]
-        else:
-            b[i+1] = b[i] + 1
-    
-    # merge signals with m/z difference less than mz_tol
-    merged_signals = np.zeros((b[-1]+1, 2), dtype=np.float32)
-
-    for i in range(b[-1]+1):
-        if np.sum(b == i) == 1:
-            merged_signals[i, 0] = signals[b == i, 0][0]
-            merged_signals[i, 1] = signals[b == i, 1][0]
-        else:
-            tmp = signals[b == i]
-            merged_signals[i, 0] = np.average(tmp[:, 0], weights=tmp[:, 1])
-            merged_signals[i, 1] = np.sum(tmp[:, 1])
-
     return merged_signals
 
 
