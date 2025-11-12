@@ -216,7 +216,6 @@ def untargeted_metabolomics_workflow(path=None, return_results=False, only_proce
         # Clean up memory
         gc.collect()
 
-
     metadata[2]["status"] = "completed"
     print("\tIndividual file processing is completed.")
     print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")

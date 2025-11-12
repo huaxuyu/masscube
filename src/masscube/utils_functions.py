@@ -183,6 +183,7 @@ def get_start_time(file_name):
                 if "startTimeStamp" in str(l):
                     t = l.split("startTimeStamp")[1].split('"')[1]
                     return datetime.strptime(t, "%Y-%m-%dT%H:%M:%SZ")
+    return None
 
 
 ####################################################################################################
@@ -254,12 +255,10 @@ def formula_to_isotope_distribution(formula, adduct, prob_to_cover=0.9999, delta
     parsed_formula = parse_formula(formula)
 
     # combine with adduct
-    results = _combine_formula_with_adduct(parsed_formula, adduct)
-
-    if results is None:
-        return None
+    if adduct is not None:
+        parsed_formula, charge = _combine_formula_with_adduct(parsed_formula, adduct)
     else:
-        parsed_formula, charge = results
+        charge = 0
 
     sp = IsoTotalProb(formula=parsed_formula, prob_to_cover=prob_to_cover)
 
@@ -267,7 +266,9 @@ def formula_to_isotope_distribution(formula, adduct, prob_to_cover=0.9999, delta
     for m, i in sp:
         isotopes.append((m, i))
     isotopes = np.array(isotopes)
-    isotopes[:, 0] = (isotopes[:, 0] - charge * ELECTRON_MASS) / abs(charge)
+    if charge != 0:
+        isotopes[:, 0] = (isotopes[:, 0] - charge * ELECTRON_MASS) / abs(charge)
+
     isotopes = isotopes[isotopes[:, 0].argsort()]
 
     binned = centroid_signals(isotopes, delta_mass)

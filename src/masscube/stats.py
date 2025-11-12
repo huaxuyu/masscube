@@ -16,6 +16,9 @@ import random
 
 from .visualization import plot_pca
 
+import warnings
+warnings.simplefilter("ignore", FutureWarning)
+
 
 def full_statistical_analysis(feature_table, params, include_qc=False):
     """
@@ -72,8 +75,6 @@ def t_test(data_array, individual_sample_groups):
             p_values.append(1)
         else:
             p_values.append(ttest_ind(data_array[i, v1], data_array[i, v2]).pvalue)
-    
-    # adjusted_p_values = false_discovery_control(p_values)
 
     return p_values
 

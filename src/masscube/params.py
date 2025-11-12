@@ -277,7 +277,7 @@ class Params:
         """
 
         if ms_type == "orbitrap":
-            self.ms1_abs_int_tol = 30000
+            self.ms1_abs_int_tol = 50000
             self.ms2_abs_int_tol = 10000
         else:
             self.ms1_abs_int_tol = 1000

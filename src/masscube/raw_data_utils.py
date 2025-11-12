@@ -269,10 +269,11 @@ class MSData:
             Number of iterations to segment features. Increase this number may introduce more false positives.
         """
 
-        distance = np.clip(0.05 / np.mean(np.diff(self.ms1_time_arr)), 1, 5)
+        # distance = np.clip(0.05 / np.mean(np.diff(self.ms1_time_arr)), 1, 5)
 
         for _ in range(iteration):
-            self.features = [segment_feature(feature, peak_height_tol=self.params.ms1_abs_int_tol, distance=distance) for feature in self.features]
+            # self.features = [segment_feature(feature, peak_height_tol=self.params.ms1_abs_int_tol, distance=distance) for feature in self.features]
+            self.features = [segment_feature(feature) for feature in self.features]
             # flatten the list
             self.features = [item for sublist in self.features for item in sublist]
 
@@ -439,8 +440,10 @@ class MSData:
                     iso += str(np.round(s[0], decimals=4)) + ";" + str(np.round(s[1], decimals=0)) + "|"
                 iso = iso[:-1]
             if f.peak_shape is not None:
+                time_range = [f.rt-1, f.rt+1]
                 for p in f.peak_shape:
-                    peak_shape += str(np.round(p[0], decimals=3)) + ";" + str(np.round(p[1], decimals=0)) + "|"
+                    if time_range[0] < p[0] < time_range[1]:
+                        peak_shape += str(np.round(p[0], decimals=3)) + ";" + str(np.round(p[1], decimals=0)) + "|"
 
             temp = [f.feature_group_id, f.id, f.mz.__round__(4), f.rt.__round__(3), f.adduct_type, f.is_isotope, 
                     f.is_in_source_fragment, f.scan_idx, f.peak_area, f.peak_height, f.top_average, f.gaussian_similarity.__round__(2), 

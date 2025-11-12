@@ -267,9 +267,7 @@ def detect_features(d):
 
     return final_features
 
-
-def segment_feature(feature, sigma=1.2, prominence_ratio=0.05, distance=5, peak_height_tol=1000,
-                    length_tol=5, sse_tol=0.3):
+def segment_feature(feature, method="gf-prominence", length_tol=5, noise_tol=2):
     """
     Function to segment a feature into multiple features based on the edge detection.
 
@@ -294,34 +292,18 @@ def segment_feature(feature, sigma=1.2, prominence_ratio=0.05, distance=5, peak_
         A list of segmented features.
     """
 
-    # if peak height is too low or the length is too short, skip segmentation
-    peak_tmp = feature.signals[:,1]
-    dp = np.sum(peak_tmp > peak_height_tol)
-    if feature.peak_height < peak_height_tol or dp < length_tol:
+    # if the number of valid data points is less than length_tol, skip segmentation
+    arr = feature.signals[:,1]
+    dp = np.sum(arr > 0)
+    if dp < length_tol:
         return [feature]
     
-    # add zero to the front and the end of the signal to facilitate the edge detection
-    peak_tmp = np.concatenate(([0], peak_tmp, [0]))
-    ss = gaussian_filter1d(peak_tmp, sigma=sigma)
-    feature.sse = squared_error_to_smoothed_curve(original_signal=peak_tmp, fit_signal=ss)
-    if feature.sse > sse_tol:
+    noise_score = calculate_noise_score(arr)
+    if noise_score > noise_tol:
         return [feature]
 
-    # correction of prominence ratio and sigma based on noise level and data points
-    prominence_ratio = np.clip(0.03, prominence_ratio * feature.sse * 20, 0.1)
-    prominence = np.max(ss)*prominence_ratio
-    sigma = np.clip(0.5, sigma * dp / 33, 1.2)
-    ss = gaussian_filter1d(peak_tmp, sigma=sigma)   # recalculate the smoothed signal
-
-    peaks, _ = find_peaks(ss, prominence=prominence, distance=distance)
-
-    # baseline filter
-    peaks = peaks - 1   # correct the index
-    
-    baseline = np.median(peak_tmp)
-
-    # the resulting peaks should have a height larger than baseline
-    peaks = peaks[feature.signals[peaks,1] > baseline]
+    if method == "gf-prominence":
+        peaks = gaussian_filter_and_prominence_method(arr)
 
     if len(peaks) < 2:
         return [feature]
@@ -344,6 +326,43 @@ def segment_feature(feature, sigma=1.2, prominence_ratio=0.05, distance=5, peak_
         segmented_features.append(tmp)
 
     return segmented_features
+
+def gaussian_filter_and_prominence_method(arr, sigma=0.6, prominence_ratio=0.02, distance=2):
+    """
+    Peak segmentation using Gaussian filter coupled with peak prominence.
+
+    Parameters
+    ----------
+    arr: numpy array
+        1D array of intensity values.
+    sigma: float
+        The sigma value for Gaussian filter.
+    prominence_ratio: float
+        The prominence ratio for finding peaks. prom = np.max(y)*prominence_ratio
+    distance: int
+        The minimum distance between peaks.
+
+    Returns
+    -------
+    peaks: numpy array
+        Indices of detected peaks.
+    """
+    
+    # add zero to the front and the end of the signal to facilitate the edge detection
+    a = np.zeros(len(arr)+2)
+    a[1:-1] = arr
+    ss = gaussian_filter1d(a, sigma=sigma)
+    prominence = np.max(ss)*prominence_ratio
+    ss = gaussian_filter1d(a, sigma=sigma)   # recalculate the smoothed signal
+
+    peaks, _ = find_peaks(ss, prominence=prominence, distance=distance)
+
+    peaks = peaks - 1   # correct the index
+    
+    # the resulting peaks should have peak height larger than the baseline
+    peaks = peaks[a[peaks] > np.median(a)]
+
+    return peaks
 
 
 """
@@ -394,27 +413,27 @@ def _find_closest_index_ordered(array, target, tol=0.01):
         return None
 
 
-def _trim_signals(signals):
+def _trim_signals(signals: np.ndarray) -> tuple:
     """
-    Function to trim the signals by removing the zeros in the beginning and the end.
+    Return a (first, last) half-open slice that removes leading/trailing zeros
+    in the intensity column (assumed to be column index 1).
 
     Parameters
     ----------
-    signals: 2D numpy array
-        A numpy array of signals as [[mz, intensity], ...]
+    signals : np.ndarray
+        A 2D numpy array of signals shaped like [[mz, intensity], ...].
+
+    Returns
+    -------
+    first : int
+        Index of the first non-zero intensity.
+    last : int
+        One past the index of the last non-zero intensity (half-open slice).
+        If all intensities are zero, returns (0, 0).
     """
 
-    first = 0
-    for i in signals[:, 1]:
-        if i != 0.:
-            break
-        else:
-            first = first + 1
-    last = len(signals)
-    for i in signals[::-1, 1]:
-        if i != 0.:
-            break
-        else:
-            last = last - 1
-
-    return first, last
+    non_zero_indices = np.where(signals[:, 1] != 0)[0]
+    if non_zero_indices.size == 0:
+        return 0, 0
+    else:
+        return non_zero_indices[0], non_zero_indices[-1] + 1
