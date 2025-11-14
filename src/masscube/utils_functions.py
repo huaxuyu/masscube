@@ -402,9 +402,13 @@ def extract_signals_from_string(ms2):
     # Convert the extracted numbers from strings to floats
     numbers = [float(num) for num in numbers]
     
-    numbers = np.array(numbers).reshape(-1, 2)
+    if len(numbers) % 2 == 0:
+        numbers = np.array(numbers).reshape(-1, 2)
+        return numbers
 
-    return numbers
+    else:
+        # return an empty array with shape (0, 2)
+        return np.array([]).reshape(0, 2)
 
 
 def convert_signals_to_string(signals):
