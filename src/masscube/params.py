@@ -243,10 +243,6 @@ class Params:
 
         # find the start time of the raw MS data
         self.sample_metadata['time'] = [get_start_time(path) for path in self.sample_metadata['ABSOLUTE_PATH']]
-        self.sample_metadata['VALID'] = self.sample_metadata['time'].notna()
-        
-        # remove the invalid files
-        self.sample_metadata = self.sample_metadata[self.sample_metadata['VALID'] == True]
         
         # sort by time
         self.sample_metadata = self.sample_metadata.sort_values(by=['time'])

@@ -267,7 +267,7 @@ def detect_features(d):
 
     return final_features
 
-def segment_feature(feature, method="gf-prominence", length_tol=5, noise_tol=2):
+def segment_feature(feature, method="gf-prominence", length_tol=5, noise_tol=3):
     """
     Function to segment a feature into multiple features based on the edge detection.
 

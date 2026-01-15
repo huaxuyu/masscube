@@ -73,9 +73,9 @@ def process_single_file(file_name, params=None, segment_feature=True, group_feat
             print("No valid MS1 data were found in: " + file_name + ". Please check the file and MS1 intensity tolerance.")
             return d
 
-        # check if the file is centroided
+        # check if the file is centroid
         if not d.params.is_centroid:
-            print("File: " + file_name + " is not centroided and skipped.")
+            print("File: " + file_name + " is not centroid and skipped.")
             return None
         # set ms2 library path
         if ms2_library_path is not None:
@@ -154,9 +154,7 @@ def untargeted_metabolomics_workflow(path=None, return_results=False, only_proce
         Parameters for the workflow.
     """
 
-    print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-    print("Welcome to the untargeted metabolomics workflow.")
-    print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+    banner("Welcome to the untargeted metabolomics workflow.")
 
     # STEP 1. Prepare parameters for the workflow
     print("Step 1: Preparing the workflow...")
@@ -490,3 +488,20 @@ DATA_PROCESSING_METADATA = [
         "status": "not completed"
     }
 ]
+
+class C:
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+
+    RED = "\033[31m"
+    GREEN = "\033[32m"
+    YELLOW = "\033[33m"
+    BLUE = "\033[34m"
+    CYAN = "\033[36m"
+    GRAY = "\033[90m"
+
+def banner(title):
+    print(f"\n{C.BOLD}{C.CYAN}{'═'*60}")
+    print(f" {title}")
+    print(f"{'═'*60}{C.RESET}")

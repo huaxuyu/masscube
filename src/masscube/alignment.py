@@ -64,6 +64,7 @@ class AlignedFeature:
         self.reference_peak_shape = None            # the representative peak shape: [[rt, intensity], ...]
         self.highest_intensity = 0.0                # the highest peak height from individual files (which is the reference file)
         self.ms2 = None                             # representative MS2 spectrum
+        self.ms2_pif = None                         # precursor ion fraction for the representative MS2 spectrum
         self.ms2_reference_file = None              # the reference file for the representative MS2 spectrum
         self.gaussian_similarity = 0.0              # Gaussian similarity from the reference file
         self.noise_score = 0.0                      # noise level from the reference file
@@ -362,8 +363,9 @@ def convert_features_to_df(features, sample_names, quant_method="peak_height"):
     results = []
     sample_names = list(sample_names)
     columns=["group_ID", "feature_ID", "m/z", "RT", "adduct", "is_isotope", "is_in_source_fragment", "Gaussian_similarity", "noise_score", 
-             "asymmetry_factor", "peak_shape", "detection_rate", "detection_rate_gap_filled", "alignment_reference_file", "charge", "isotopes", "MS2_reference_file", "MS2", "matched_MS2", 
-             "search_mode", "annotation", "formula", "similarity", "matched_peak_number", "SMILES", "InChIKey"] + sample_names
+             "asymmetry_factor", "peak_shape", "detection_rate", "detection_rate_gap_filled", "alignment_reference_file", "charge", "isotopes", 
+             "MS2_reference_file", "MS2", "precursor_ion_fraction", "matched_MS2", "search_mode", "annotation", "formula", "similarity", 
+             "matched_peak_number", "SMILES", "InChIKey"] + sample_names
 
     for f in features:
         if quant_method == "peak_height":
@@ -377,7 +379,7 @@ def convert_features_to_df(features, sample_names, quant_method="peak_height"):
         
         results.append([f.feature_group_id, f.id, f.mz, f.rt, f.adduct_type, f.is_isotope, f.is_in_source_fragment, f.gaussian_similarity, f.noise_score,
                         f.asymmetry_factor, f.reference_peak_shape, f.detection_rate, f.detection_rate_gap_filled, f.reference_file, f.charge_state, f.isotope_signals, f.ms2_reference_file,
-                        f.ms2, f.matched_ms2, f.search_mode, f.annotation, f.formula, f.similarity, f.matched_peak_number, f.smiles, f.inchikey] + quant)
+                        f.ms2, f.ms2_pif, f.matched_ms2, f.search_mode, f.annotation, f.formula, f.similarity, f.matched_peak_number, f.smiles, f.inchikey] + quant)
         
     feature_table = pd.DataFrame(results, columns=columns)
     
@@ -667,3 +669,4 @@ def _assign_reference_values(f, df, p, file_name):
     f.gaussian_similarity = df.loc[p, "Gaussian_similarity"]
     f.noise_score = df.loc[p, "noise_score"]
     f.asymmetry_factor = df.loc[p, "asymmetry_factor"]
+    f.ms2_pif = df.loc[p, "precursor_ion_fraction"]

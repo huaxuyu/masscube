@@ -150,6 +150,10 @@ def label_batch_id(df, ratio_threshold=10):
     if len(df) == 1:
         df['batch_id'] = [0]
         return df
+    # if there is a none values in the time column, assign batch_id as 0 for all files
+    if np.sum(df['time'] == df['time']) < len(df):
+        df['batch_id'] = [0]*len(df)
+        return df
     
     df = df.sort_values(by="time")
     time_diff = np.diff(df['time'])
@@ -178,7 +182,8 @@ def get_start_time(file_name):
 
     if os.path.exists(str(file_name)):
         with open(file_name, "rb") as f:
-            for l in f:
+            # check the first 300 rows for the start time
+            for l in f.readlines()[:300]:
                 l = str(l)
                 if "startTimeStamp" in str(l):
                     t = l.split("startTimeStamp")[1].split('"')[1]

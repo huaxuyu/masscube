@@ -163,16 +163,20 @@ class MSData:
             if (level not in self.params.scan_levels) or (scan_time < self.params.rt_lower_limit) or (scan_time > self.params.rt_upper_limit):
                 self.scans.append(Scan(level=level, id=idx, scan_time=scan_time, signals=None, precursor_mz=None))
                 continue
-
+            
+            isolation_window = None
+            precursor_mz = None
             signals = np.array([spec['m/z array'], spec['intensity array']], dtype=np.float32).T
             
             if level == 2:
-                precursor_mz = spec['precursorList']['precursor'][0]['selectedIonList']['selectedIon'][0]['selected ion m/z']
-            else:
-                precursor_mz = None
+                precursor = spec['precursorList']['precursor'][0]
+                precursor_mz = precursor['selectedIonList']['selectedIon'][0]['selected ion m/z']
+                if 'isolationWindow' in precursor:
+                    isolation_window = [float(precursor['isolationWindow']['isolation window lower offset']), 
+                                        float(precursor['isolationWindow']['isolation window upper offset'])]
             
             self.scans.append(_preprocess_signals_to_scan(level=level, id=idx, scan_time=scan_time, signals=signals, 
-                                                          params=self.params, precursor_mz=precursor_mz))
+                                                          params=self.params, precursor_mz=precursor_mz, isolation_window=isolation_window))
         
         self.ms1_idx = np.array([s.id for s in self.scans if s.level == 1 and s.signals is not None and len(s.signals) > 0])
         self.ms2_idx = np.array([s.id for s in self.scans if s.level == 2 and s.signals is not None and len(s.signals) > 0])
@@ -212,16 +216,19 @@ class MSData:
             if (level not in self.params.scan_levels) or (scan_time < self.params.rt_lower_limit) or (scan_time > self.params.rt_upper_limit):
                 self.scans.append(Scan(level=level, id=idx, scan_time=scan_time, signals=None, precursor_mz=None))
                 continue
-
+            
+            precursor_mz = None
+            isolation_window = None
             signals = np.array([spec['m/z array'], spec['intensity array']], dtype=np.float32).T
             
             if level == 2:
                 precursor_mz = spec['precursorMz'][0]['precursorMz']
-            else:
-                precursor_mz = None
+                if "windowWideness" in spec['precursorMz'][0]:
+                    wideness = float(spec['precursorMz'][0]["windowWideness"])
+                    isolation_window = [wideness / 2, wideness / 2]             
             
             self.scans.append(_preprocess_signals_to_scan(level=level, id=idx, scan_time=scan_time, signals=signals,
-                                                          params=self.params, precursor_mz=precursor_mz))
+                                                          params=self.params, precursor_mz=precursor_mz, isolation_window=isolation_window))
         
         self.ms1_idx = np.array([s.id for s in self.scans if s.level == 1 and s.signals is not None and len(s.signals) > 0])
         self.ms2_idx = np.array([s.id for s in self.scans if s.level == 2 and s.signals is not None and len(s.signals) > 0])
@@ -307,11 +314,11 @@ class MSData:
         # allocate ms2 to features
         self.allocate_ms2_to_features()
 
-        # find best ms2 for each feature
+        # find best ms2 for each feature and evaluate its quality
         for feature in self.features:
             if len(feature.ms2_seq) > 0:
                 feature.ms2 = find_best_ms2(feature.ms2_seq)
-
+                feature.ms2.precursor_ion_fraction = cal_precursor_ion_fraction(self, feature.ms2)
 
     def allocate_ms2_to_features(self, mz_tol=0.015):
         """
@@ -431,10 +438,12 @@ class MSData:
             ms2 = ""
             iso = ""
             peak_shape = ""
+            pif = None
             if f.ms2 is not None:
                 for s in f.ms2.signals:
                     ms2 += str(np.round(s[0], decimals=4)) + ";" + str(np.round(s[1], decimals=0)) + "|"
                 ms2 = ms2[:-1]
+                pif = f.ms2.precursor_ion_fraction
             if f.isotope_signals is not None:
                 for s in f.isotope_signals:
                     iso += str(np.round(s[0], decimals=4)) + ";" + str(np.round(s[1], decimals=0)) + "|"
@@ -448,7 +457,7 @@ class MSData:
             temp = [f.feature_group_id, f.id, f.mz.__round__(4), f.rt.__round__(3), f.adduct_type, f.is_isotope, 
                     f.is_in_source_fragment, f.scan_idx, f.peak_area, f.peak_height, f.top_average, f.gaussian_similarity.__round__(2), 
                     f.noise_score.__round__(2), f.asymmetry_factor.__round__(2), f.charge_state, iso, f.rt_seq[0].__round__(3),
-                    f.rt_seq[-1].__round__(3), f.length, peak_shape, ms2, f.matched_ms2, f.search_mode, f.annotation, f.formula, f.similarity,
+                    f.rt_seq[-1].__round__(3), f.length, peak_shape, ms2, pif, f.matched_ms2, f.search_mode, f.annotation, f.formula, f.similarity,
                     f.matched_precursor_mz, f.matched_peak_number, f.smiles, f.inchikey]
 
             result.append(temp)
@@ -456,7 +465,7 @@ class MSData:
         # convert result to a pandas dataframe
         columns = [ "group_ID", "feature_ID", "m/z", "RT", "adduct", "is_isotope", "is_in_source_fragment", "scan_idx", "peak_area", "peak_height", "top_average",
                     "Gaussian_similarity", "noise_score", "asymmetry_factor", "charge", "isotopes", "RT_start", "RT_end", "total_scans", "peak_shape",
-                    "MS2", "matched_MS2", "search_mode", "annotation", "formula", "similarity", "matched_mz", "matched_peak_number", "SMILES", "InChIKey"]
+                    "MS2", "precursor_ion_fraction", "matched_MS2", "search_mode", "annotation", "formula", "similarity", "matched_mz", "matched_peak_number", "SMILES", "InChIKey"]
 
         df = pd.DataFrame(result, columns=columns)
         
@@ -795,7 +804,7 @@ class Scan:
     A class that represents a MS scan.
     """
 
-    def __init__(self, level=None, id=None, scan_time=None, signals=None, precursor_mz=None):
+    def __init__(self, level=None, id=None, scan_time=None, signals=None, precursor_mz=None, isolation_window=None):
         """
         Function to initiate MS1Scan by precursor mz,
         retention time.
@@ -819,6 +828,8 @@ class Scan:
         self.time = scan_time               # scan time in minute
         self.signals = signals              # MS signals for a scan as 2D numpy array in float32, organized as [[m/z, intensity], ...]
         self.precursor_mz = precursor_mz    # for MS2 only
+        self.isolation_window = isolation_window  # isolation window for MS2 only
+        self.precursor_ion_fraction = None  # precursor ion fraction for MS2 only
 
 
     def add_signals(self, signals, precursor_mz=None):
@@ -977,7 +988,7 @@ def find_best_ms2(ms2_list):
         return None
 
 
-def _preprocess_signals_to_scan(level, id, scan_time, signals, params, precursor_mz=None):
+def _preprocess_signals_to_scan(level, id, scan_time, signals, params, precursor_mz=None, isolation_window=None):
     """
     Function to generate a Scan object from signals.
     """
@@ -997,4 +1008,49 @@ def _preprocess_signals_to_scan(level, id, scan_time, signals, params, precursor
     if params.centroid_mz_tol is not None:
         signals = centroid_signals(signals, mz_tol=params.centroid_mz_tol)
     
-    return Scan(level=level, id=id, scan_time=scan_time, signals=signals, precursor_mz=precursor_mz)
+    return Scan(level=level, id=id, scan_time=scan_time, signals=signals, 
+                precursor_mz=precursor_mz, isolation_window=isolation_window)
+
+
+def cal_precursor_ion_fraction(d: MSData, ms2: Scan) -> float:
+    """
+    Calculate the precursor ion fraction for an MS2 spectrum.
+
+    Parameters
+    ----------
+    d : MSData
+        The MSData object containing the raw data.
+    ms2 : Scan
+        The MS2 scan object.
+    iso_window : list
+        The isolation window for the precursor ion, e.g. [0.5, 0.5] for +/- 0.5 Da.
+
+    Returns
+    -------
+    pif : float
+        The precursor ion fraction.
+    """
+
+    mz = ms2.precursor_mz
+    ms2_rt = ms2.time
+    time_arr = d.ms1_time_arr
+    
+    # find the ms1 scan cloest to the ms2 scan
+    idx = np.argmin(np.abs(time_arr - ms2_rt))
+    ms1_scan = d.scans[d.ms1_idx[idx]]
+
+    s = ms1_scan.signals
+    iso_window = ms2.isolation_window
+    s = s[(s[:,0] > mz - iso_window[0]) & (s[:,0] < mz + iso_window[1])]
+    
+    if len(s) == 0:
+        return 0.0
+    total_int = np.sum(s[:, 1])
+    ion_int = s[np.argmin(np.abs(s[:,0] - mz)), 1]
+    
+    if total_int > 0:
+        pif = ion_int / total_int
+    else:
+        pif = 0.0
+
+    return pif
