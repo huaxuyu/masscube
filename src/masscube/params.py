@@ -64,26 +64,28 @@ class Params:
         
         # feature grouping
         self.group_features_single_file = False     # whether to group features in a single file, default is False
-        self.scan_scan_cor_tol = 0.7                # scan-to-scan correlation tolerance for feature grouping, default is 0.7
-        self.mz_tol_feature_grouping = 0.015        # m/z tolerance for feature grouping, default is 0.01
-        self.rt_tol_feature_grouping = 0.1          # RT tolerance for feature grouping, default is 0.1
-        self.valid_charge_states = [1]              # valid charge states for feature grouping, list of integers
+        self.scan_scan_cor_tol = 0.9                # scan-to-scan correlation tolerance for feature grouping, default is 0.7
+        self.mz_tol_feature_grouping = 0.01         # m/z tolerance for feature grouping, default is 0.01
+        self.rt_tol_feature_grouping = 0.05          # RT tolerance for feature grouping, default is 0.1
+        self.isotope_rel_int_limit = 1.5            # intensity upper limit of isotopes cannot exceed the base peak intensity * isotope_rel_int_limit, default is 1.5
 
         # feature alignment
         self.mz_tol_alignment = 0.01                # m/z tolerance for alignment, default is 0.01
         self.rt_tol_alignment = 0.2                 # RT tolerance for alignment, default is 0.2
+        self.noise_tol = 2.0                        # noise score tolerance for alignment, default is 2.0
+        self.gaussian_similarity_tol = 0.7          # Gaussian similarity tolerance for alignment, default is 0.6
         self.rt_tol_rt_correction = 0.5             # Expected maximum RT shift for RT correction, default is 0.5 minutes
         self.correct_rt = True                      # whether to perform RT correction, default is True
         self.scan_number_cutoff = 5                 # feature with non-zero scan number greater than the cutoff will be aligned, default is 5
         self.detection_rate_cutoff = 0.1            # features detected need to be >rate*(qc+sample), default rate is 0.1
         self.merge_features = True                  # whether to merge features with almost the same m/z and RT, default is True
-        self.mz_tol_merge_features = 0.01           # m/z tolerance for merging features, default is 0.01
-        self.rt_tol_merge_features = 0.02           # RT tolerance for merging features, default is 0.02
+        self.mz_tol_merge_features = 0.005           # m/z tolerance for merging features, default is 0.005
+        self.rt_tol_merge_features = 0.03           # RT tolerance for merging features, default is 0.03
         self.group_features_after_alignment = True  # whether to group features after alignment, default is False
         self.fill_gaps = True                       # whether to fill the gaps in the aligned features, default is True
         self.gap_filling_method = "local_maximum"   # method for gap filling, default is "  local_maximum", string
         self.gap_filling_rt_window = 0.05           # RT window for finding local maximum, default is 0.05 minutes
-        self.isotope_rel_int_limit = 1.5            # intensity upper limit of isotopes cannot exceed the base peak intensity * isotope_rel_int_limit, default is 1.5
+
 
         # feature annotation
         self.ms2_library_path = None        # path to the MS2 library (.msp or .pickle), character string
@@ -203,13 +205,13 @@ class Params:
         if not os.path.exists(self.sample_dir) or len(sample_files) == 0:
             raise ValueError("No raw MS data is found in the project directory.")
         if not os.path.exists(os.path.join(self.project_dir, "sample_table.csv")):
-            print("No sample table is found in the project directory. Normalization and statistical analysis will NOT be performed.")
+            print("\tNo sample table is found in the project directory. Normalization and statistical analysis will NOT be performed.")
             self.run_statistics = False
             self.sample_normalization = False
             self.signal_normalization = False
         if not os.path.exists(os.path.join(self.project_dir, "parameters.csv")):
-            print("No parameter file is found in the project directory. Default parameters will be used.")
-            print("To perform feature annotation, please specify the path of MS/MS library in the parameter file.")
+            print("\tNo parameter file is found in the project directory. Default parameters will be used.")
+            print("\tTo perform feature annotation, please specify the path of MS/MS library in the parameter file.")
 
         # STEP 3: create the output directories if not exist
         for d in [self.single_file_dir, self.tmp_file_dir, self.ms2_matching_dir,

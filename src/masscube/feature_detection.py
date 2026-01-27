@@ -9,7 +9,7 @@ from scipy.ndimage import gaussian_filter1d
 from copy import deepcopy
 import bisect
 
-from .feature_evaluation import calculate_noise_score, calculate_gaussian_similarity, calculate_asymmetry_factor, squared_error_to_smoothed_curve
+from .feature_evaluation import calculate_noise_score, calculate_gaussian_similarity, calculate_asymmetry_factor
 
 
 """
@@ -48,11 +48,13 @@ class Feature:
         self.asymmetry_factor = 0.0          # asymmetry factor
         self.sse = 0.0                       # squared error to the smoothed curve
         self.is_segmented = False            # whether the feature is segmented from a larger feature
-        self.is_isotope = None               # whether the feature is an isotope
+        self.is_isotope = False              # whether the feature is an isotope
         self.charge_state = 1                # charge state of the feature
         self.isotope_signals = None          # isotope signals [[mz, intensity], ...]
-        self.is_in_source_fragment = None    # whether the feature is an in-source fragment
+        self.is_in_source_fragment = False   # whether the feature is an in-source fragment
         self.adduct_type = None              # adduct type
+        self.isotope_state = "M+0"           # isotope state, e.g., M+0, M+1, M+2, etc.
+        self.scan_scan_cor = None            # scan-scan correlation to the most abundant ion in the same feature group
 
         self.annotation_algorithm = None     # annotation algorithm. Not used now.
         self.search_mode = None              # 'identity search', 'fuzzy search', or 'mzrt_search'
@@ -267,6 +269,7 @@ def detect_features(d):
 
     return final_features
 
+
 def segment_feature(feature, method="gf-prominence", length_tol=5, noise_tol=3):
     """
     Function to segment a feature into multiple features based on the edge detection.
@@ -310,11 +313,8 @@ def segment_feature(feature, method="gf-prominence", length_tol=5, noise_tol=3):
     
     positions = [0]
     for i in range(len(peaks)-1):
-        lowest_int = 1e10
-        for j in range(peaks[i], peaks[i+1]):
-            if feature.signals[:,1][j] < lowest_int:
-                lowest_int = feature.signals[j,1]
-                lowest_int_idx = j
+        # get the index of the lowest intensity point between peaks[i] and peaks[i+1]
+        lowest_int_idx = peaks[i] + np.argmin(arr[peaks[i]:peaks[i+1]])
         positions.append(lowest_int_idx)
     positions.append(len(feature.signals)-1)
     
@@ -327,7 +327,8 @@ def segment_feature(feature, method="gf-prominence", length_tol=5, noise_tol=3):
 
     return segmented_features
 
-def gaussian_filter_and_prominence_method(arr, sigma=0.6, prominence_ratio=0.02, distance=2):
+
+def gaussian_filter_and_prominence_method(arr, sigma=0.6, prominence_ratio=0.03, distance=2):
     """
     Peak segmentation using Gaussian filter coupled with peak prominence.
 

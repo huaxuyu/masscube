@@ -164,16 +164,18 @@ class MSData:
                 self.scans.append(Scan(level=level, id=idx, scan_time=scan_time, signals=None, precursor_mz=None))
                 continue
             
-            isolation_window = None
-            precursor_mz = None
             signals = np.array([spec['m/z array'], spec['intensity array']], dtype=np.float32).T
+            precursor_mz = None
+            isolation_window = None
             
             if level == 2:
+                isolation_window = [1.5, 1.5]
                 precursor = spec['precursorList']['precursor'][0]
                 precursor_mz = precursor['selectedIonList']['selectedIon'][0]['selected ion m/z']
                 if 'isolationWindow' in precursor:
-                    isolation_window = [float(precursor['isolationWindow']['isolation window lower offset']), 
-                                        float(precursor['isolationWindow']['isolation window upper offset'])]
+                    if 'isolation window lower offset' in precursor['isolationWindow'] and 'isolation window upper offset' in precursor['isolationWindow']:
+                        isolation_window = [float(precursor['isolationWindow']['isolation window lower offset']), 
+                                            float(precursor['isolationWindow']['isolation window upper offset'])]
             
             self.scans.append(_preprocess_signals_to_scan(level=level, id=idx, scan_time=scan_time, signals=signals, 
                                                           params=self.params, precursor_mz=precursor_mz, isolation_window=isolation_window))
@@ -223,9 +225,10 @@ class MSData:
             
             if level == 2:
                 precursor_mz = spec['precursorMz'][0]['precursorMz']
+                isolation_window = [1.5, 1.5]  # default 3 Da isolation window
                 if "windowWideness" in spec['precursorMz'][0]:
                     wideness = float(spec['precursorMz'][0]["windowWideness"])
-                    isolation_window = [wideness / 2, wideness / 2]             
+                    isolation_window = [wideness / 2, wideness / 2]        
             
             self.scans.append(_preprocess_signals_to_scan(level=level, id=idx, scan_time=scan_time, signals=signals,
                                                           params=self.params, precursor_mz=precursor_mz, isolation_window=isolation_window))
@@ -276,10 +279,7 @@ class MSData:
             Number of iterations to segment features. Increase this number may introduce more false positives.
         """
 
-        # distance = np.clip(0.05 / np.mean(np.diff(self.ms1_time_arr)), 1, 5)
-
         for _ in range(iteration):
-            # self.features = [segment_feature(feature, peak_height_tol=self.params.ms1_abs_int_tol, distance=distance) for feature in self.features]
             self.features = [segment_feature(feature) for feature in self.features]
             # flatten the list
             self.features = [item for sublist in self.features for item in sublist]
@@ -305,7 +305,7 @@ class MSData:
 
         # index the features
         for idx in range(len(self.features)):
-            self.features[idx].id = idx
+            self.features[idx].id = idx + 1
 
         # extract mz and rt of all features for further use (feature grouping)
         self.feature_mz_arr = np.array([feature.mz for feature in self.features])
@@ -439,11 +439,13 @@ class MSData:
             iso = ""
             peak_shape = ""
             pif = None
+            ms2_scan_id = None
             if f.ms2 is not None:
                 for s in f.ms2.signals:
                     ms2 += str(np.round(s[0], decimals=4)) + ";" + str(np.round(s[1], decimals=0)) + "|"
                 ms2 = ms2[:-1]
                 pif = f.ms2.precursor_ion_fraction
+                ms2_scan_id = f.ms2.id
             if f.isotope_signals is not None:
                 for s in f.isotope_signals:
                     iso += str(np.round(s[0], decimals=4)) + ";" + str(np.round(s[1], decimals=0)) + "|"
@@ -457,7 +459,7 @@ class MSData:
             temp = [f.feature_group_id, f.id, f.mz.__round__(4), f.rt.__round__(3), f.adduct_type, f.is_isotope, 
                     f.is_in_source_fragment, f.scan_idx, f.peak_area, f.peak_height, f.top_average, f.gaussian_similarity.__round__(2), 
                     f.noise_score.__round__(2), f.asymmetry_factor.__round__(2), f.charge_state, iso, f.rt_seq[0].__round__(3),
-                    f.rt_seq[-1].__round__(3), f.length, peak_shape, ms2, pif, f.matched_ms2, f.search_mode, f.annotation, f.formula, f.similarity,
+                    f.rt_seq[-1].__round__(3), f.length, peak_shape, ms2, ms2_scan_id, pif, f.matched_ms2, f.search_mode, f.annotation, f.formula, f.similarity,
                     f.matched_precursor_mz, f.matched_peak_number, f.smiles, f.inchikey]
 
             result.append(temp)
@@ -465,7 +467,7 @@ class MSData:
         # convert result to a pandas dataframe
         columns = [ "group_ID", "feature_ID", "m/z", "RT", "adduct", "is_isotope", "is_in_source_fragment", "scan_idx", "peak_area", "peak_height", "top_average",
                     "Gaussian_similarity", "noise_score", "asymmetry_factor", "charge", "isotopes", "RT_start", "RT_end", "total_scans", "peak_shape",
-                    "MS2", "precursor_ion_fraction", "matched_MS2", "search_mode", "annotation", "formula", "similarity", "matched_mz", "matched_peak_number", "SMILES", "InChIKey"]
+                    "MS2", "MS2_scan_id", "precursor_ion_fraction", "matched_MS2", "search_mode", "annotation", "formula", "similarity", "matched_mz", "matched_peak_number", "SMILES", "InChIKey"]
 
         df = pd.DataFrame(result, columns=columns)
         

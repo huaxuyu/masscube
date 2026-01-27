@@ -26,8 +26,10 @@ from .utils_functions import convert_signals_to_string
 
 
 # 1. Untargeted feature detection for a single file
-def process_single_file(file_name, params=None, segment_feature=True, group_features=False, evaluate_peak_shape=True,
-                        annotate_ms2=False, ms2_library_path=None, output_dir=None, return_data=True):
+def process_single_file(file_name: str, params: Params = None, segment_feature: bool = True, 
+                        group_features: bool = False, evaluate_peak_shape: bool = True,
+                        annotate_ms2: bool = False, ms2_library_path: str = None, 
+                        output_dir: str = None, return_data: bool = True):
     """
     Untargeted data processing for a single file (mzML, mzXML, mzjson or compressed mzjson).
 
@@ -59,8 +61,11 @@ def process_single_file(file_name, params=None, segment_feature=True, group_feat
         An MSData object containing the processed data.
     """
 
+    step = "INIT"
+
     try:
         # STEP 1. data reading, parsing, and parameter preparation
+        step = "STEP 1: data reading and parameter preparation"
         if params is None:
             params = Params()
             ms_type, ion_mode, _ = find_ms_info(file_name)
@@ -81,20 +86,22 @@ def process_single_file(file_name, params=None, segment_feature=True, group_feat
         if ms2_library_path is not None:
             d.params.ms2_library_path = ms2_library_path
         
-
         # STEP 2. feature detection and segmentation
+        step = "STEP 2: feature detection and segmentation"
         d.detect_features()
 
         if segment_feature:
             d.segment_features()
 
         # STEP 3. feature evaluation
+        step = "STEP 3: feature evaluation"
         if evaluate_peak_shape:
             d.summarize_features(cal_g_score=True, cal_a_score=True)
         else:
             d.summarize_features(cal_g_score=False, cal_a_score=False)
 
         # STEP 4. MS2 annotation
+        step = "STEP 4: MS2 annotation"
         if annotate_ms2:
             if ms2_library_path is None:
                 ms2_library_path = d.params.ms2_library_path
@@ -102,13 +109,15 @@ def process_single_file(file_name, params=None, segment_feature=True, group_feat
                 annotate_features(d=d, sim_tol=d.params.ms2_sim_tol, fuzzy_search=True, ms2_library_path=ms2_library_path)
 
         # STEP 5. feature grouping
+        step = "STEP 5: feature grouping"
         if group_features:
             group_features_single_file(d)
 
         # STEP 6. visualization and output
+        step = "STEP 6: visualization and output"
         if d.params.plot_bpc and d.params.bpc_dir is not None:
             d.plot_bpc(output_dir=os.path.join(d.params.bpc_dir, d.params.file_name + "_bpc.png"))
-        
+     
         if output_dir is not None:
             d.output_single_file(os.path.join(output_dir, d.params.file_name + ".txt"))
         
@@ -125,13 +134,13 @@ def process_single_file(file_name, params=None, segment_feature=True, group_feat
             return None
     
     except:
-        print("Error occurred during processing file: " + file_name)
+        print("\tError occurred: " + file_name.split("/")[-1])
+        print(f"\t\tFailed at {step}.")
         return None
 
-
 # 2. Untargeted metabolomics workflow
-def untargeted_metabolomics_workflow(path=None, return_results=False, only_process_single_files=False,
-                                     return_params_only=False):
+def untargeted_metabolomics_workflow(path: str = None, return_results: bool = False, only_process_single_files: bool = False,
+                                     return_params_only: bool = False):
     """
     The untargeted metabolomics workflow. See the documentation for details.
 
@@ -154,7 +163,7 @@ def untargeted_metabolomics_workflow(path=None, return_results=False, only_proce
         Parameters for the workflow.
     """
 
-    banner("Welcome to the untargeted metabolomics workflow.")
+    banner("Welcome to the untargeted metabolomics workflow")
 
     # STEP 1. Prepare parameters for the workflow
     print("Step 1: Preparing the workflow...")

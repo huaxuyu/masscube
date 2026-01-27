@@ -362,8 +362,10 @@ def _combine_formula_with_adduct(parsed_formula, adduct):
     """
 
     # adduct
-    if adduct in ADDUCTS.keys():
-        tmp = ADDUCTS[adduct]
+    if adduct in POS_ADDUCTS.keys():
+        tmp = POS_ADDUCTS[adduct]
+    elif adduct in NEG_ADDUCTS.keys():
+        tmp = NEG_ADDUCTS[adduct]
     else:
         print(f"Adduct {adduct} not found in the database. Please check the adduct name.")
         return None
@@ -516,7 +518,7 @@ class Adduct:
     considered: bool     # whether the adduct is considered in the analysis
 
 
-ADDUCTS = {
+POS_ADDUCTS = {
     # Positive adducts
     '[M+H]+': Adduct('[M+H]+', 1.00782503227, Counter({'H': 1}), 1, 1, True),
     '[M+NH4]+': Adduct('[M+NH4]+', 18.03437413328, Counter({'N': 1, 'H': 4}), 1, 1, True),
@@ -541,7 +543,9 @@ ADDUCTS = {
     '[M+Ag]+': Adduct('[M+Ag]+', 106.905092, Counter({'Ag': 1}), 1, 1, False),
     '[M+Ca]2+': Adduct('[M+Ca]2+', 39.96259092, Counter({'Ca': 1}), 2, 1, False),
     '[M+Fe]2+': Adduct('[M+Fe]2+', 55.9349363, Counter({'Fe': 1}), 2, 1, False),
-    
+}
+
+NEG_ADDUCTS = {
     # Negative adducts
     '[M-H]-': Adduct('[M-H]-', -1.00782503227, Counter({'H': -1}), -1, 1, True),
     '[M+Cl]-': Adduct('[M+Cl]-', 34.96885273, Counter({'Cl': 1}), -1, 1, True),
