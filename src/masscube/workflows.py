@@ -74,7 +74,7 @@ def process_single_file(file_name: str, params: Params = None, segment_feature: 
         d = read_raw_file_to_obj(file_name, params=params)
 
         # check if the MS1 data is valid (no MS1 data found when intensity tolerance is too high)
-        if len(d.ms1_idx) == 0:
+        if len(d.ms1_idx_arr) == 0:
             print("No valid MS1 data were found in: " + file_name + ". Please check the file and MS1 intensity tolerance.")
             return d
 

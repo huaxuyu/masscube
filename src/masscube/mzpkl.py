@@ -31,8 +31,8 @@ def convert_MSData_to_mzpkl(d, output_dir: str = None):
         "name": d.params.file_name,
         "ion_mode": d.params.ion_mode,
         "ms1_time_arr": d.ms1_time_arr,
-        "ms1_idx": d.ms1_idx,
-        "ms2_idx": d.ms2_idx,
+        "ms1_idx_arr": d.ms1_idx_arr,
+        "ms2_idx_arr": d.ms2_idx_arr,
         "scans": d.scans
     }
 
@@ -61,8 +61,8 @@ def read_mzpkl_to_MSData(d, file_path: str):
     d.params.file_name = results["name"]
     d.params.ion_mode = results["ion_mode"]
     d.ms1_time_arr = results["ms1_time_arr"]
-    d.ms1_idx = results["ms1_idx"]
-    d.ms2_idx = results["ms2_idx"]
+    d.ms1_idx_arr = results["ms1_idx_arr"]
+    d.ms2_idx_arr = results["ms2_idx_arr"]
     d.scans = results["scans"]
 
 

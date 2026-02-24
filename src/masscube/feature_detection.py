@@ -212,16 +212,15 @@ def detect_features(d):
     final_features = []
 
     # Initiate a set of rois using the first MS1 scan
-    s = d.scans[d.ms1_idx[0]]    # The first scan
+    s = d.scans[d.ms1_idx_arr[0]]    # The first scan
 
     for i in range(len(s.signals)):
         feature = Feature()
-        feature.extend(rt=s.time, signal=s.signals[i], scan_idx=d.ms1_idx[0])
+        feature.extend(rt=s.time, signal=s.signals[i], scan_idx=d.ms1_idx_arr[0])
         features.append(feature)
 
     # Loop over all MS1 scans
-    for ms1_idx in d.ms1_idx[1:]:
-
+    for ms1_idx in d.ms1_idx_arr[1:]:
         s = d.scans[ms1_idx]                                  # The current MS1 scan
         if len(s.signals) == 0:
             continue
@@ -328,7 +327,7 @@ def segment_feature(feature, method="gf-prominence", length_tol=5, noise_tol=3):
     return segmented_features
 
 
-def gaussian_filter_and_prominence_method(arr, sigma=0.6, prominence_ratio=0.03, distance=2):
+def gaussian_filter_and_prominence_method(arr, sigma=0.6, prominence_ratio=0.03, distance=3):
     """
     Peak segmentation using Gaussian filter coupled with peak prominence.
 
@@ -354,14 +353,13 @@ def gaussian_filter_and_prominence_method(arr, sigma=0.6, prominence_ratio=0.03,
     a[1:-1] = arr
     ss = gaussian_filter1d(a, sigma=sigma)
     prominence = np.max(ss)*prominence_ratio
-    ss = gaussian_filter1d(a, sigma=sigma)   # recalculate the smoothed signal
 
     peaks, _ = find_peaks(ss, prominence=prominence, distance=distance)
 
     peaks = peaks - 1   # correct the index
     
     # the resulting peaks should have peak height larger than the baseline
-    peaks = peaks[a[peaks] > np.median(a)]
+    peaks = peaks[arr[peaks] > np.median(arr)]
 
     return peaks
 

@@ -236,68 +236,63 @@ def annotate_aligned_features(features, params, num=5):
                 rt_arr[i] = ms2['retention_time']
 
     for f in tqdm(features):
+        
         if len(f.ms2_seq) == 0:
             continue
         
-        matched = None  # matched MS2 spectrum in the database
+        parsed_ms2 = f.ms2_seq[:num]
 
-        parsed_ms2 = [] # experimental MS2 spectra (top num) to search
-        for file_name, ms2 in f.ms2_seq:
-            signals = extract_signals_from_string(ms2)
-            signals = entropy_search.clean_spectrum_for_search(f.mz, signals, precursor_ions_removal_da=params.precursor_mz_offset)
-            if len(signals) == 0:
-                continue
-            parsed_ms2.append([file_name, signals])
+        for s in parsed_ms2:
+            s.signals = entropy_search.clean_spectrum_for_search(f.mz, s.signals, precursor_ions_removal_da=params.precursor_mz_offset)
         
-        if len(parsed_ms2) == 0:
-            continue
-        
-        parsed_ms2.sort(key=lambda x: np.sum(x[1][:, 1]), reverse=True)
-        parsed_ms2 = parsed_ms2[:num]
-        f.ms2_reference_file = parsed_ms2[0][0]
-        f.ms2 = parsed_ms2[0][1]
+        f.ms2 = parsed_ms2[0]
 
         if params.consider_rt:
-            rt_boo = np.abs(rt_arr - f.rt) < params.rt_tol_annotation
+            rt_mask = np.abs(rt_arr - f.rt) < params.rt_tol_annotation
 
         similarities = []
         matched_nums = []
+        matched = None  # matched MS2 spectrum in the database
 
-        for file_name, signals in parsed_ms2:
-            similarity, matched_num = entropy_search.identity_search(precursor_mz=f.mz, peaks=signals, ms1_tolerance_in_da=params.mz_tol_ms1,
+        for s in parsed_ms2:
+            similarity, matched_num = entropy_search.identity_search(precursor_mz=f.mz, peaks=s.signals, ms1_tolerance_in_da=params.mz_tol_ms1,
                                                                      ms2_tolerance_in_da=params.mz_tol_ms2, output_matched_peak_number=True)
             similarities.append(similarity * ion_mode_mask)
             matched_nums.append(matched_num)
         
         if params.consider_rt:
-            similarities_rt = [s*rt_boo for s in similarities]
+            similarities_rt = [s*rt_mask for s in similarities]
             tmp = [np.max(s) for s in similarities_rt]
             if np.max(tmp) > params.ms2_sim_tol:
                 idx_tmp = np.argmax(tmp)
-                f.ms2_reference_file = parsed_ms2[idx_tmp][0]
-                f.ms2 = parsed_ms2[idx_tmp][1]
+                f.ms2_reference_file = parsed_ms2[idx_tmp].file_name
+                f.ms2 = parsed_ms2[idx_tmp]
                 matched_idx = np.argmax(similarities_rt[idx_tmp])
                 matched = entropy_search[matched_idx]
                 matched = {k.lower():v for k,v in matched.items()}
                 _assign_annotation_results_to_feature(f, score=similarities_rt[idx_tmp][matched_idx],matched=matched, 
-                                                      matched_peak_num=matched_nums[idx_tmp][matched_idx], search_mode='identity_search_with_rt')
+                                                      matched_peak_num=matched_nums[idx_tmp][matched_idx], search_mode='identity_search_with_rt',
+                                                      ms2_scan_idx=f.ms2.id, precursor_ion_fraction=f.ms2.precursor_ion_fraction)
+                                                      
         
         # if the feature cannot be annotated by considering retention time
         if matched is None:
             tmp = [np.max(s) for s in similarities]
             if np.max(tmp) > params.ms2_sim_tol:    
                 idx_tmp = np.argmax(tmp)
-                f.ms2_reference_file = parsed_ms2[idx_tmp][0]
-                f.ms2 = parsed_ms2[idx_tmp][1]
+                f.ms2_reference_file = parsed_ms2[idx_tmp].file_name
+                f.ms2 = parsed_ms2[idx_tmp]
                 matched_idx = np.argmax(similarities[idx_tmp])
                 matched = entropy_search[matched_idx]
                 matched = {k.lower():v for k,v in matched.items()}
                 _assign_annotation_results_to_feature(f, score=similarities[idx_tmp][matched_idx], matched=matched,
-                                                      matched_peak_num=matched_nums[idx_tmp][matched_idx], search_mode='identity_search')
+                                                      matched_peak_num=matched_nums[idx_tmp][matched_idx], search_mode='identity_search',
+                                                      ms2_scan_idx=f.ms2.id, precursor_ion_fraction=f.ms2.precursor_ion_fraction)
 
         # if the feature cannot be annotated by MS2 identity search
         if matched is None and params.fuzzy_search:
-            similarity = entropy_search.hybrid_search(precursor_mz=f.mz, peaks=f.ms2, ms1_tolerance_in_da=params.mz_tol_ms1, 
+            s = parsed_ms2[0]
+            similarity = entropy_search.hybrid_search(precursor_mz=f.mz, peaks=s.signals, ms1_tolerance_in_da=params.mz_tol_ms1, 
                                                       ms2_tolerance_in_da=params.mz_tol_ms2)
             similarity = similarity * ion_mode_mask
             idx = np.argmax(similarity)
@@ -305,9 +300,10 @@ def annotate_aligned_features(features, params, num=5):
                 matched = entropy_search[idx]
                 matched = {k.lower():v for k,v in matched.items()}
                 _assign_annotation_results_to_feature(f, score=similarity[idx], matched=matched, 
-                                                      matched_peak_num=None, search_mode='fuzzy_search')
+                                                      matched_peak_num=None, search_mode='fuzzy_search',
+                                                      ms2_scan_idx=s.id, precursor_ion_fraction=s.precursor_ion_fraction)
         
-        f.ms2 = convert_signals_to_string(f.ms2)
+        f.ms2 = convert_signals_to_string(f.ms2.signals)
 
     return features
 
@@ -362,11 +358,12 @@ def annotate_features(d, sim_tol=None, fuzzy_search=True, ms2_library_path=None,
         if f.ms2 is None:
             continue
         
-        matched = None
-        matched_peak_num = None
         signals = entropy_search.clean_spectrum_for_search(precursor_mz=f.mz, peaks=f.ms2.signals, precursor_ions_removal_da=2.0)
         if len(signals) == 0:
             continue
+        
+        matched = None
+        matched_peak_num = None
         scores, peak_nums = entropy_search.identity_search(precursor_mz=f.mz, peaks=signals, ms1_tolerance_in_da=d.params.mz_tol_ms1, 
                                                           ms2_tolerance_in_da=d.params.mz_tol_ms2, output_matched_peak_number=True)
         scores = ion_mode_mask
@@ -379,7 +376,7 @@ def annotate_features(d, sim_tol=None, fuzzy_search=True, ms2_library_path=None,
                 matched = {k.lower():v for k,v in matched.items()}
                 matched_peak_num = peak_nums[idx]
                 _assign_annotation_results_to_feature(f, score=scores_rt[idx], matched=matched, matched_peak_num=matched_peak_num, 
-                                                      search_mode='identity_search_with_rt')
+                                                      search_mode='identity_search_with_rt', ms2_scan_idx=f.ms2_scan_idx, precursor_ion_fraction=f.ms2_pif)
         
         if matched is None:
             idx = np.argmax(scores)
@@ -629,7 +626,8 @@ def _correct_db(db):
             a['precursor_mz'] = float(a.pop(similar_key[0]))
 
 
-def _assign_annotation_results_to_feature(f, score, matched, matched_peak_num, search_mode):
+def _assign_annotation_results_to_feature(f, score, matched, matched_peak_num, search_mode,
+                                          ms2_scan_idx=None, precursor_ion_fraction=None):
     """
     Assign annotation results to a feature.
 
@@ -659,6 +657,8 @@ def _assign_annotation_results_to_feature(f, score, matched, matched_peak_num, s
     f.matched_adduct_type = matched['precursor_type'] if 'precursor_type' in matched else None
     if search_mode == 'identity_search':
         f.adduct_type = matched['precursor_type'] if 'precursor_type' in matched else None
+    f.ms2_pif = precursor_ion_fraction
+    f.ms2_scan_idx = ms2_scan_idx
 
 
 def _assign_mzrt_annotation_results_to_feature(f, annotation, adduct, inchikey, formula, smiles, matched_precursor_mz, 

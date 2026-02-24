@@ -297,6 +297,8 @@ def parse_formula(formula):
         For example, for "C6H12O6", it returns Counter({'C': 6, 'H': 12, 'O': 6}).
     """
     
+    formula = _expand_parentheses(formula)
+    
     formula_matches = re.findall(r'([A-Z][a-z]*)(\d*)', formula)
     atom_counts = Counter()
     for element, count in formula_matches:
@@ -366,6 +368,8 @@ def _combine_formula_with_adduct(parsed_formula, adduct):
         tmp = POS_ADDUCTS[adduct]
     elif adduct in NEG_ADDUCTS.keys():
         tmp = NEG_ADDUCTS[adduct]
+    elif adduct == "":
+        return parsed_formula, 0
     else:
         print(f"Adduct {adduct} not found in the database. Please check the adduct name.")
         return None
@@ -381,6 +385,22 @@ def _combine_formula_with_adduct(parsed_formula, adduct):
     parsed_formula = parsed_formula + tmp.modification
 
     return parsed_formula, tmp.charge
+
+
+def _expand_parentheses(formula: str) -> str:
+    """
+    Expand simple (GROUP)n patterns.
+    Does NOT support nested parentheses.
+    """
+    pattern = re.compile(r'\(([^()]+)\)(\d+)')
+
+    while pattern.search(formula):
+        formula = pattern.sub(
+            lambda m: m.group(1) * int(m.group(2)),
+            formula
+        )
+
+    return formula
 
 
 ####################################################################################################

@@ -58,7 +58,7 @@ def group_features_after_alignment(features: list, params: Params):
 
     # cache for raw data objects
     from collections import OrderedDict
-    RAW_CACHE_MAXSIZE = 20
+    RAW_CACHE_MAXSIZE = 40
     raw_data_cache = OrderedDict()
 
     def get_raw(ref_file: str):
@@ -71,7 +71,8 @@ def group_features_after_alignment(features: list, params: Params):
         # miss → load
         fn = os.path.join(params.tmp_file_dir, ref_file + ".mzpkl")
         if not os.path.exists(fn):
-            raise FileNotFoundError(f"Reference file {fn} not found.")
+            print(f"Reference file {fn} not found for feature grouping. Skipping...")
+            return None
 
         d = read_raw_file_to_obj(fn)
 
@@ -105,6 +106,9 @@ def group_features_after_alignment(features: list, params: Params):
             f.adduct_type = default_adduct
 
         d = get_raw(f.reference_file)
+        if d is None:
+            feature_group_id += 1
+            continue
         
         # feature EIC needs to be extracted again
         _, eic_a, _ = d.get_eic_data(f.mz, f.rt, mz_tol=0.01, rt_tol=0.2)
@@ -116,7 +120,7 @@ def group_features_after_alignment(features: list, params: Params):
 
         k = np.argmin(np.abs(d.ms1_time_arr-f.rt))
 
-        f.isotope_signals = find_isotope_signals(mz=f.mz, signals=d.scans[d.ms1_idx[k]].signals, 
+        f.isotope_signals = find_isotope_signals(mz=f.mz, signals=d.scans[d.ms1_idx_arr[k]].signals, 
                                                  mz_tol=params.mz_tol_feature_grouping, 
                                                  rel_int_limit=params.isotope_rel_int_limit)
         
@@ -165,7 +169,7 @@ def group_features_after_alignment(features: list, params: Params):
                         features[vi].adduct_type = f.adduct_type
                     # find isotopes for this ion
                     features[vi].isotope_signals = find_isotope_signals(features[vi].mz,
-                                                                        signals=d.scans[d.ms1_idx[k]].signals,
+                                                                        signals=d.scans[d.ms1_idx_arr[k]].signals,
                                                                         mz_tol=params.mz_tol_feature_grouping,
                                                                         rel_int_limit=params.isotope_rel_int_limit)
                     # retrieve the isotope signals from the feature list

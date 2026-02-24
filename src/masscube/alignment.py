@@ -11,7 +11,7 @@ from tqdm import tqdm
 from scipy.interpolate import interp1d
 import pickle
 
-from .raw_data_utils import read_raw_file_to_obj
+from .raw_data_utils import read_raw_file_to_obj, Scan
 from .params import Params
 from .utils_functions import convert_signals_to_string, extract_signals_from_string
 
@@ -46,6 +46,7 @@ class AlignedFeature:
         self.peak_area_arr = np.zeros(file_number)                  # peak area
         self.top_average_arr = np.zeros(file_number)                # average of the highest three intensities
         self.ms2_seq = []                                           # representative MS2 spectrum from each file (default: highest total intensity)
+                                                                    # a list of Scan objects
         self.length_arr = np.zeros(file_number, dtype=int)          # length (i.e. non-zero scans in the peak)
         self.gaussian_similarity_arr = np.zeros(file_number)        # Gaussian similarity
         self.noise_score_arr = np.zeros(file_number)                # noise score
@@ -203,14 +204,12 @@ def feature_alignment(path: str, params: Params):
     for f in features:
         if len(f.ms2_seq) == 0:
             continue
-        parsed_ms2 = []
-        for file_name, ms2 in f.ms2_seq:
-            signals = extract_signals_from_string(ms2)
-            parsed_ms2.append([file_name, signals])
         # sort parsed ms2 by summed intensity
-        parsed_ms2.sort(key=lambda x: np.sum(x[1][:, 1]), reverse=True)
-        f.ms2_reference_file = parsed_ms2[0][0]
-        f.ms2 = convert_signals_to_string(parsed_ms2[0][1])
+        f.ms2_seq.sort(key=lambda x: np.sum(x.signals[:, 1]), reverse=True)
+        f.ms2_reference_file = f.ms2_seq[0].file_name
+        f.ms2 = convert_signals_to_string(f.ms2_seq[0].signals)
+        f.ms2_scan_idx = f.ms2_seq[0].id
+        f.ms2_pif = f.ms2_seq[0].precursor_ion_fraction
     
     # STEP 3: calculate the detection rate and drop features using the detection rate cutoff
     v = ~params.sample_metadata['is_blank']
@@ -664,7 +663,9 @@ def _assign_value_to_feature(f, df, i, p, file_name):
     f.asymmetry_factor_arr[i] = df.loc[p, "asymmetry_factor"]
     f.scan_idx_arr[i] = df.loc[p, "scan_idx"]
     if df.loc[p, "MS2"] == df.loc[p, "MS2"]:
-        f.ms2_seq.append([file_name, df.loc[p, "MS2"]])
+        f.ms2_seq.append(Scan(file_name=file_name, signals=extract_signals_from_string(df.loc[p, "MS2"]),
+                              id=df.loc[p, "MS2_scan_id"], 
+                              precursor_ion_fraction=df.loc[p, "precursor_ion_fraction"]))
 
 
 def _assign_reference_values(f, df, p, file_name):
@@ -692,8 +693,6 @@ def _assign_reference_values(f, df, p, file_name):
     f.gaussian_similarity = df.loc[p, "Gaussian_similarity"]
     f.noise_score = df.loc[p, "noise_score"]
     f.asymmetry_factor = df.loc[p, "asymmetry_factor"]
-    f.ms2_pif = df.loc[p, "precursor_ion_fraction"]
-    f.ms2_scan_idx = df.loc[p, "MS2_scan_id"]
 
 
 """

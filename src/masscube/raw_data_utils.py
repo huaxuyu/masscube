@@ -28,16 +28,21 @@ class MSData:
     """
 
     def __init__(self):
-
+        
         self.scans = []                 # A list of Scan objects for mass spectra
-        self.ms1_idx = []               # Scan indexes of MS1 spectra
+        self.ms1_idx_arr = []           # Scan indexes of MS1 spectra
         self.ms1_time_arr = []          # Time of MS1 scans
-        self.ms2_idx = []               # Scan indexes of MS2 spectra
-        self.params = None              # A Params object that contains all parameters
+        self.ms2_idx_arr = []           # Scan indexes of MS2 spectra
         self.base_peak_arr = []         # Base peak chromatogram, [[m/z, intensity], ...]
+
+        self.params = None              # A Params object that contains all parameters
+
         self.features = []              # A list of features
-        self.feature_mz_arr = None      # m/z of all ROIs
-        self.feature_rt_arr = None      # Retention time of all ROIs
+        self.feature_mz_arr = None      # m/z of all features
+        self.feature_rt_arr = None      # Retention time of all features
+        
+        self.mass_err_model_arr = None  # np.array of mass error model, [[ref_mz, measured_mz], ...]
+        
 
 
     def read_raw_data(self, file_name, params=None, scan_levels=[1,2], centroid_mz_tol=0.005, 
@@ -95,12 +100,12 @@ class MSData:
         # set intensity tolerance for MS1 scans if not provided
         if params.ms1_abs_int_tol is None:
             # 30000 for orbitrap, 1000 for other types
-            if ms_type == "orbitrap":
+            if params.ms_type == "orbitrap":
                 params.ms1_abs_int_tol = 30000
             else:
                 params.ms1_abs_int_tol = 1000
         if params.ms2_abs_int_tol is None:
-            if ms_type == "orbitrap":
+            if params.ms_type == "orbitrap":
                 params.ms2_abs_int_tol = 10000
             else:
                 params.ms2_abs_int_tol = 500
@@ -180,10 +185,10 @@ class MSData:
             self.scans.append(_preprocess_signals_to_scan(level=level, id=idx, scan_time=scan_time, signals=signals, 
                                                           params=self.params, precursor_mz=precursor_mz, isolation_window=isolation_window))
         
-        self.ms1_idx = np.array([s.id for s in self.scans if s.level == 1 and s.signals is not None and len(s.signals) > 0])
-        self.ms2_idx = np.array([s.id for s in self.scans if s.level == 2 and s.signals is not None and len(s.signals) > 0])
-        self.ms1_time_arr = np.array([self.scans[i].time for i in self.ms1_idx])
-        self.base_peak_arr = np.array([self.scans[i].signals[np.argmax(self.scans[i].signals[:, 1])] for i in self.ms1_idx])
+        self.ms1_idx_arr = np.array([s.id for s in self.scans if s.level == 1 and s.signals is not None and len(s.signals) > 0])
+        self.ms2_idx_arr = np.array([s.id for s in self.scans if s.level == 2 and s.signals is not None and len(s.signals) > 0])
+        self.ms1_time_arr = np.array([self.scans[i].time for i in self.ms1_idx_arr])
+        self.base_peak_arr = np.array([self.scans[i].signals[np.argmax(self.scans[i].signals[:, 1])] for i in self.ms1_idx_arr])
 
 
     def extract_scan_mzxml(self, scans):
@@ -233,10 +238,10 @@ class MSData:
             self.scans.append(_preprocess_signals_to_scan(level=level, id=idx, scan_time=scan_time, signals=signals,
                                                           params=self.params, precursor_mz=precursor_mz, isolation_window=isolation_window))
         
-        self.ms1_idx = np.array([s.id for s in self.scans if s.level == 1 and s.signals is not None and len(s.signals) > 0])
-        self.ms2_idx = np.array([s.id for s in self.scans if s.level == 2 and s.signals is not None and len(s.signals) > 0])
-        self.ms1_time_arr = np.array([self.scans[i].time for i in self.ms1_idx])
-        self.base_peak_arr = np.array([self.scans[i].signals[np.argmax(self.scans[i].signals[:, 1])] for i in self.ms1_idx])
+        self.ms1_idx_arr = np.array([s.id for s in self.scans if s.level == 1 and s.signals is not None and len(s.signals) > 0])
+        self.ms2_idx_arr = np.array([s.id for s in self.scans if s.level == 2 and s.signals is not None and len(s.signals) > 0])
+        self.ms1_time_arr = np.array([self.scans[i].time for i in self.ms1_idx_arr])
+        self.base_peak_arr = np.array([self.scans[i].signals[np.argmax(self.scans[i].signals[:, 1])] for i in self.ms1_idx_arr])
 
 
     def drop_ms1_ions_by_intensity(self, int_tol):
@@ -249,7 +254,7 @@ class MSData:
             Abolute intensity tolerance.
         """
 
-        for idx in self.ms1_idx:
+        for idx in self.ms1_idx_arr:
             self.scans[idx].signals = self.scans[idx].signals[self.scans[idx].signals[:, 1] > int_tol]
 
     """
@@ -262,7 +267,7 @@ class MSData:
         Run feature detection. Parameters are specified in self.params (Params object).
         """
 
-        if len(self.ms1_idx) == 0:
+        if len(self.ms1_idx_arr) == 0:
             return []
 
         self.features = detect_features(self)
@@ -316,13 +321,22 @@ class MSData:
 
         # find best ms2 for each feature and evaluate its quality
         for feature in self.features:
-            if len(feature.ms2_seq) > 0:
-                feature.ms2 = find_best_ms2(feature.ms2_seq)
-                feature.ms2.precursor_ion_fraction = cal_precursor_ion_fraction(self, feature.ms2)
+            try:
+                if len(feature.ms2_seq) > 0:
+                    feature.ms2 = find_best_ms2(feature.ms2_seq)
+                    feature.ms2.precursor_ion_fraction = cal_precursor_ion_fraction(self, feature.ms2)
+            except:
+                print("PIF of m/z={} and RT={} is not calculated".format(feature.mz, feature.rt))
 
-    def allocate_ms2_to_features(self, mz_tol=0.015):
+    def allocate_ms2_to_features(self, mz_tol=0.1):
         """
-        Function to allocate MS2 scans to ROIs.
+        Function to allocate MS2 scans to features by matching 
+        the precursor m/z of MS2 scans to the m/z of features. 
+        
+        If multiple features are matched, the MS2 scan will be allocated 
+        to the feature with the highest peak height.
+
+        One MS2 scan can only be matched to one feature.
 
         Parameters
         ----------
@@ -330,7 +344,7 @@ class MSData:
             m/z tolerance to match the precursor m/z of MS2 scans to features.
         """
 
-        for i in self.ms2_idx:
+        for i in self.ms2_idx_arr:
             if len(self.scans[i].signals) == 0:
                 continue
             idx = np.where(np.abs(self.feature_mz_arr - self.scans[i].precursor_mz) < mz_tol)[0]
@@ -343,38 +357,6 @@ class MSData:
             elif len(matched_features) > 1:
                 # assign ms2 to the feature with the highest peak height
                 matched_features[np.argmax([feature.peak_height for feature in matched_features])].ms2_seq.append(self.scans[i])
-
-
-    def drop_features_without_ms2(self):
-        """
-        Function to drop features without MS2 scans.
-        """
-
-        self.features = [feature for feature in self.features if len(feature.ms2_seq) > 0]
-
-
-    def drop_features_by_length(self, length=5):
-        """
-        Function to drop features by length (number of non-zero scans).
-        """
-
-        self.features = [feature for feature in self.features if feature.length >= length]
-
-
-    def drop_isotope_features(self):
-        """
-        Function to drop features annotated as isotopes.
-        """
-
-        self.features = [feature for feature in self.features if not feature.is_isotope]
-    
-
-    def drop_in_source_fragment_features(self):
-        """
-        Function to discard in-source fragments.
-        """
-
-        self.features = [feature for feature in self.features if not feature.is_in_source_fragment]
     
 
     """
@@ -479,62 +461,54 @@ class MSData:
 
 
     def get_eic_data(self, target_mz, target_rt=None, mz_tol=0.005, rt_tol=0.3, rt_range=None):
-        """
-        To get the EIC data of a target m/z.
-
-        Parameters
-        ----------
-        target_mz: float
-            Target m/z.
-        target_rt: float
-            Target retention time.
-        mz_tol: float
-            m/z tolerance.
-        rt_tol: float
-            Retention time tolerance.
-        rt_range: list
-            Retention time range [start, end]. The unit is minute.
-
-        Returns
-        -------
-        eic_time_arr: numpy array
-            Retention time of the EIC.
-        eic_signals: numpy array
-            m/z and intensity of the EIC organized as [[m/z, intensity], ...].
-        eic_scan_idx_arr: numpy array
-            Scan index of the EIC.
-        """
-
         if rt_range is None:
             if target_rt is None:
-                rt_range = [0, np.inf]
+                rt0, rt1 = 0.0, np.inf
             else:
-                rt_range = [target_rt - rt_tol, target_rt + rt_tol]
-        # Extract times and filter by RT
-        times = np.array([self.scans[i].time for i in self.ms1_idx], dtype=np.float32)
-        mask_rt = (times >= rt_range[0]) & (times <= rt_range[1])
-        valid_idx = np.where(mask_rt)[0]
+                rt0, rt1 = target_rt - rt_tol, target_rt + rt_tol
+        else:
+            rt0, rt1 = rt_range[0], rt_range[1]
 
-        if len(valid_idx) == 0:
-            return np.array([]), np.array([]), np.array([])
-    
-        eic_time_arr = times[valid_idx]
-        eic_scan_idx_arr = np.array([self.ms1_idx[k] for k in valid_idx], dtype=np.int32)
+        times = self.ms1_time_arr          # (n_ms1,) float32/float64, sorted
+        ms1_idx = self.ms1_idx_arr         # (n_ms1,) int32, aligned to times
+        scans = self.scans                 # local bind
 
-        eic_signals = np.zeros((len(valid_idx), 2), dtype=np.float32)
-        eic_signals[:, 0] = np.nan  # Default m/z as NaN, intensity stays 0
+        # RT window -> contiguous slice via binary search (much faster than mask+where)
+        left = np.searchsorted(times, rt0, side="left")
+        right = np.searchsorted(times, rt1, side="right")
+        if right <= left:
+            return _EMPTY_F32, _EMPTY_SIG, _EMPTY_I32
 
-        # Fill values
-        for idx_out, idx_scan in enumerate(eic_scan_idx_arr):
-            signals = self.scans[idx_scan].signals  # shape: (n_peaks, 2)
-            if signals.shape[0] == 0:
-                continue  # leave as [nan, 0]
-            # Find the closest m/z to target_mz within tolerance
-            v = np.abs(signals[:, 0] - target_mz)
-            if np.min(v) < mz_tol:
-                # If multiple m/z values are found, take the first one
-                eic_signals[idx_out] = signals[np.argmin(v)]
+        eic_time_arr = times[left:right]
+        eic_scan_idx_arr = ms1_idx[left:right]
+        n = eic_scan_idx_arr.size
 
+        # allocate outputs as two 1D arrays (faster than (n,2) then column ops)
+        eic_mz = np.full(n, np.nan, dtype=np.float32)
+        eic_int = np.zeros(n, dtype=np.float32)
+
+        mz0 = float(target_mz)
+        lo = mz0 - mz_tol
+        hi = mz0 + mz_tol
+
+        for out_i, scan_i in enumerate(eic_scan_idx_arr):
+            sig = scans[int(scan_i)].signals
+            if sig is None or sig.shape[0] == 0:
+                continue
+
+            mzs = sig[:, 0]  # sorted ascending
+            # find m/z window indices in O(log n_peaks)
+            l = np.searchsorted(mzs, lo, side="left")
+            r = np.searchsorted(mzs, hi, side="right")
+            if r <= l:
+                continue
+
+            ints = sig[:, 1]
+            j = l + int(np.argmax(ints[l:r]))
+            eic_mz[out_i] = mzs[j]
+            eic_int[out_i] = ints[j]
+
+        eic_signals = np.column_stack((eic_mz, eic_int)).astype(np.float32, copy=False)
         return eic_time_arr, eic_signals, eic_scan_idx_arr
     
 
@@ -627,7 +601,7 @@ class MSData:
 
         matched_ms2 = []
 
-        for id in self.ms2_idx:
+        for id in self.ms2_idx_arr:
             if abs(self.scans[id].time - rt_target) < rt_tol and abs(self.scans[id].precursor_mz - mz_target) < mz_tol:
                 matched_ms2.append(self.scans[id])
 
@@ -686,7 +660,7 @@ class MSData:
 
         idx = np.argmin(np.abs(self.ms1_time_arr - rt_target))
 
-        return self.scans[self.ms1_idx[idx]]
+        return self.scans[self.ms1_idx_arr[idx]]
     
     
     def correct_retention_time(self, f):
@@ -703,52 +677,6 @@ class MSData:
         all_rts = f(all_rts)
         for i in range(len(self.scans)):
             self.scans[i].time = all_rts[i]
-
-
-    def plot_feature(self, feature_idx, mz_tol=0.005, rt_range=[0, np.inf], rt_window=None, output=False):
-        """
-        Function to plot EIC of a ROI.
-
-        Parameters
-        ----------
-        feature_idx: int
-            Index of the ROI.
-        mz_tol: float
-            m/z tolerance.
-        rt_range: list
-            Retention time range [start, end]. The unit is minute.
-        rt_window: float
-            Retention time window.
-        output: str
-            Output file name. If not specified, the plot will be shown.
-        """
-
-        if rt_window is not None:
-            rt_range = [self.features[feature_idx].rt - rt_window, self.features[feature_idx].rt + rt_window]
-
-        # get the eic data
-        eic_rt, eic_int, _, eic_scan_idx = self.get_eic_data(self.features[feature_idx].mz, mz_tol=mz_tol, rt_range=rt_range)
-        idx_start = np.where(eic_scan_idx == self.features[feature_idx].scan_idx_seq[0])[0][0]
-        idx_end = np.where(eic_scan_idx == self.features[feature_idx].scan_idx_seq[-1])[0][0] + 1
-
-        plt.figure(figsize=(7, 3))
-        plt.rcParams['font.size'] = 14
-        if 'Arial' in [f.name for f in fm.fontManager.ttflist]:
-            plt.rcParams['font.family'] = 'Arial'
-        plt.plot(eic_rt, eic_int, linewidth=1, color="black")
-        plt.fill_between(eic_rt[idx_start:idx_end], eic_int[idx_start:idx_end], color="black", alpha=0.4)
-        plt.xlabel("Retention Time (min)", fontsize=18)
-        plt.ylabel("Intensity", fontsize=18)
-        plt.xticks(fontsize=14)
-        plt.yticks(fontsize=14)
-
-        if output:
-            plt.savefig(output, dpi=300, bbox_inches="tight")
-            plt.close()
-            return None
-        else:
-            plt.show()
-            return eic_rt[np.argmax(eic_int)], np.max(eic_int), eic_scan_idx[np.argmax(eic_int)]
 
 
     def convert_to_mzpkl(self):
@@ -779,7 +707,7 @@ class MSData:
             Dictionary from a pickle file.
         """
         
-        self.ms1_idx = [i for i in range(len(data['time']))]
+        self.ms1_idx_arr = [i for i in range(len(data['time']))]
         self.ms1_time_arr = data['time']
         self.scans = [Scan(level=1, id=i, scan_time=self.ms1_time_arr[i], 
                            signals=data['signals'][i]) for i in range(len(data['time']))]
@@ -806,7 +734,8 @@ class Scan:
     A class that represents a MS scan.
     """
 
-    def __init__(self, level=None, id=None, scan_time=None, signals=None, precursor_mz=None, isolation_window=None):
+    def __init__(self, level=None, id=None, scan_time=None, signals=None, precursor_mz=None, 
+                 isolation_window=None, file_name=None, precursor_ion_fraction=None):
         """
         Function to initiate MS1Scan by precursor mz,
         retention time.
@@ -831,7 +760,8 @@ class Scan:
         self.signals = signals              # MS signals for a scan as 2D numpy array in float32, organized as [[m/z, intensity], ...]
         self.precursor_mz = precursor_mz    # for MS2 only
         self.isolation_window = isolation_window  # isolation window for MS2 only
-        self.precursor_ion_fraction = None  # precursor ion fraction for MS2 only
+        self.precursor_ion_fraction = precursor_ion_fraction  # precursor ion fraction for MS2 only
+        self.file_name = file_name          # file name for this scan
 
 
     def add_signals(self, signals, precursor_mz=None):
@@ -1039,7 +969,7 @@ def cal_precursor_ion_fraction(d: MSData, ms2: Scan) -> float:
     
     # find the ms1 scan cloest to the ms2 scan
     idx = np.argmin(np.abs(time_arr - ms2_rt))
-    ms1_scan = d.scans[d.ms1_idx[idx]]
+    ms1_scan = d.scans[d.ms1_idx_arr[idx]]
 
     s = ms1_scan.signals
     iso_window = ms2.isolation_window
@@ -1056,3 +986,9 @@ def cal_precursor_ion_fraction(d: MSData, ms2: Scan) -> float:
         pif = 0.0
 
     return pif
+
+
+
+_EMPTY_F32 = np.empty(0, dtype=np.float32)
+_EMPTY_I32 = np.empty(0, dtype=np.int32)
+_EMPTY_SIG = np.empty((0, 2), dtype=np.float32)
