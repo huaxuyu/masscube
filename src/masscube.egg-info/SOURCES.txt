@@ -4,10 +4,12 @@ pyproject.toml
 src/masscube/__init__.py
 src/masscube/alignment.py
 src/masscube/annotation.py
+src/masscube/calibration.py
 src/masscube/classifier_builder.py
 src/masscube/feature_detection.py
 src/masscube/feature_evaluation.py
 src/masscube/feature_grouping.py
+src/masscube/mzh5.py
 src/masscube/mzpkl.py
 src/masscube/network.py
 src/masscube/normalization.py

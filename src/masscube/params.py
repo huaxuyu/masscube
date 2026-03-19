@@ -49,7 +49,7 @@ class Params:
         self.rt_lower_limit = 0.0           # lower limit of RT in minutes, float
         self.rt_upper_limit = 10000.0       # upper limit of RT in minutes, float
         self.scan_levels = [1,2]            # scan levels to be read, list of integers
-        self.centroid_mz_tol = 0.005        # m/z tolerance for centroiding, default is 0.005. set to None to disable centroiding
+        self.centroid_mz_tol = 0.002        # m/z tolerance for centroiding, default is 0.002. set to None to disable centroiding
         self.ms1_abs_int_tol = 1000.0       # absolute intensity threshold for MS1, recommend 30000 for Orbitrap and 1000 for QTOF
         self.ms2_abs_int_tol = 500          # absolute intensity threshold for MS2, recommend 10000 for Orbitrap and 500 for QTOF
         self.ms2_rel_int_tol = 0.01         # relative intensity threshold to base peak for MS2, default is 0.01

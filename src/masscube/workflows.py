@@ -219,7 +219,7 @@ def untargeted_metabolomics_workflow(path: str = None, return_results: bool = Fa
         results = Parallel(
             n_jobs=workers,
             backend="loky",
-            return_as="generator_unordered"
+            return_as="generator"
         )(
             delayed(process_single_file)(f, params, return_data=False)
             for f in batch

@@ -1,7 +1,5 @@
 # MassCube
 
-[![Generic badge](https://img.shields.io/badge/masscube-ver_1.1.10-%3CCOLOR%3E.svg)](https://github.com/huaxuyu/masscube/)
-![Maintainer](https://img.shields.io/badge/maintainer-Huaxu_Yu-blue)
 [![PyPI Downloads](https://img.shields.io/pypi/dm/bago.svg?label=PyPI%20downloads)](https://pypi.org/project/masscube/)
 
 **masscube** is an integrated Python package for liquid chromatography-mass spectrometry (LC-MS) data processing.

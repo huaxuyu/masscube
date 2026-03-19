@@ -654,7 +654,7 @@ def _assign_value_to_feature(f, df, i, p, file_name):
 
     f.feature_id_arr[i] = df.loc[p, "feature_ID"]
     f.mz_arr[i] = df.loc[p, "m/z"]
-    f.mz = np.mean(f.mz_arr[f.feature_id_arr != -1])  # update the m/z of the aligned feature by the mean of detected m/z values
+    f.mz = np.median(f.mz_arr[f.feature_id_arr != -1])  # update the m/z of the aligned feature by the median of detected m/z values
     f.rt_arr[i] = df.loc[p, "RT"]
     f.peak_height_arr[i] = df.loc[p, "peak_height"]
     f.peak_area_arr[i] = df.loc[p, "peak_area"]
