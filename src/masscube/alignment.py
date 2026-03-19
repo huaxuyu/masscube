@@ -167,19 +167,18 @@ def feature_alignment(path: str, params: Params):
 
         table_mz = current_table["m/z"].values
         table_rt = current_table["RT"].values
+        mz_order = np.argsort(table_mz)
+        sorted_table_mz = table_mz[mz_order]
 
         
         for f in features:
-            v1 = np.abs(f.mz - table_mz) < mz_tol
-            v2 = np.abs(f.rt - table_rt) < rt_tol
-            idx = np.where(v1 & v2 & availible_features)[0]
-            
-            if len(idx) > 0:
-                _assign_value_to_feature(f=f, df=current_table, i=i, p=idx[0], file_name=file_name)
-                availible_features[idx[0]] = False
+            best_idx = _find_best_match_idx(f, table_mz, table_rt, availible_features, mz_order, sorted_table_mz, mz_tol, rt_tol)
+            if best_idx != -1:
+                _assign_value_to_feature(f=f, df=current_table, i=i, p=best_idx, file_name=file_name)
+                availible_features[best_idx] = False
                 # check if this file can be the reference file
-                if current_table.loc[idx[0], "peak_height"] > f.highest_intensity:
-                    _assign_reference_values(f=f, df=current_table, p=idx[0], file_name=file_name)
+                if current_table.loc[best_idx, "peak_height"] > f.highest_intensity:
+                    _assign_reference_values(f=f, df=current_table, p=best_idx, file_name=file_name)
 
         # if an feature is not detected in the previous files, add it to the features
         for j, b in enumerate(availible_features):
@@ -189,9 +188,8 @@ def feature_alignment(path: str, params: Params):
                 _assign_reference_values(f=f, df=current_table, p=j, file_name=file_name)
                 features.append(f)
 
-        # discard features likely to be noise
-        features = [f for f in features if (f.ms2 is not None) or (f.gaussian_similarity > params.gaussian_similarity_tol
-                    and f.noise_score < params.noise_tol)]
+        # Keep the intermediate alignment state compact without being too aggressive.
+        features = [f for f in features if _should_keep_feature_during_alignment(f, params, i + 1)]
         # resort features by highest intensity
         features = sorted(features, key=lambda x: x.highest_intensity, reverse=True)
     
@@ -210,6 +208,9 @@ def feature_alignment(path: str, params: Params):
         f.ms2 = convert_signals_to_string(f.ms2_seq[0].signals)
         f.ms2_scan_idx = f.ms2_seq[0].id
         f.ms2_pif = f.ms2_seq[0].precursor_ion_fraction
+
+    # discard features likely to be noise after all files have been processed
+    features = [f for f in features if _should_keep_feature_final(f, params)]
     
     # STEP 3: calculate the detection rate and drop features using the detection rate cutoff
     v = ~params.sample_metadata['is_blank']
@@ -653,6 +654,7 @@ def _assign_value_to_feature(f, df, i, p, file_name):
 
     f.feature_id_arr[i] = df.loc[p, "feature_ID"]
     f.mz_arr[i] = df.loc[p, "m/z"]
+    f.mz = np.mean(f.mz_arr[f.feature_id_arr != -1])  # update the m/z of the aligned feature by the mean of detected m/z values
     f.rt_arr[i] = df.loc[p, "RT"]
     f.peak_height_arr[i] = df.loc[p, "peak_height"]
     f.peak_area_arr[i] = df.loc[p, "peak_area"]
@@ -684,7 +686,7 @@ def _assign_reference_values(f, df, p, file_name):
         The name of the reference file
     """
 
-    f.mz = df.loc[p, "m/z"]
+    # f.mz = df.loc[p, "m/z"]
     f.rt = df.loc[p, "RT"]
     f.reference_file = file_name
     f.reference_scan_idx = df.loc[p, "scan_idx"]
@@ -693,6 +695,72 @@ def _assign_reference_values(f, df, p, file_name):
     f.gaussian_similarity = df.loc[p, "Gaussian_similarity"]
     f.noise_score = df.loc[p, "noise_score"]
     f.asymmetry_factor = df.loc[p, "asymmetry_factor"]
+
+
+def _find_best_match_idx(f, table_mz, table_rt, availible_features, mz_order, sorted_table_mz, mz_tol, rt_tol):
+    """
+    Find the best candidate in the current file using an m/z-indexed lookup.
+    """
+
+    left = np.searchsorted(sorted_table_mz, f.mz - mz_tol, side="left")
+    right = np.searchsorted(sorted_table_mz, f.mz + mz_tol, side="right")
+    if left >= right:
+        return -1
+
+    idx = mz_order[left:right]
+    idx = idx[availible_features[idx]]
+    if len(idx) == 0:
+        return -1
+
+    mz_diff = np.abs(f.mz - table_mz[idx])
+    mz_mask = mz_diff < mz_tol
+    if not np.any(mz_mask):
+        return -1
+
+    idx = idx[mz_mask]
+    mz_diff = mz_diff[mz_mask]
+
+    rt_diff = np.abs(f.rt - table_rt[idx])
+    rt_mask = rt_diff < rt_tol
+    if not np.any(rt_mask):
+        return -1
+
+    idx = idx[rt_mask]
+    mz_diff = mz_diff[rt_mask]
+    rt_diff = rt_diff[rt_mask]
+    if len(idx) == 1:
+        return idx[0]
+
+    # Prefer the closest RT match and use m/z only as a tiebreaker.
+    return idx[np.lexsort((mz_diff, rt_diff))[0]]
+
+
+def _passes_alignment_quality(f, params: Params):
+    """
+    Check whether a feature passes the alignment quality filter.
+    """
+
+    return f.gaussian_similarity > params.gaussian_similarity_tol and f.noise_score < params.noise_tol
+
+
+def _should_keep_feature_during_alignment(f, params: Params, processed_file_count: int):
+    """
+    Keep promising features during alignment so the intermediate feature list stays manageable.
+    """
+
+    detection_count = np.sum(f.feature_id_arr[:processed_file_count] != -1)
+    has_ms2 = len(f.ms2_seq) > 0
+    is_high_intensity = f.highest_intensity >= params.ms1_abs_int_tol * 10
+
+    return has_ms2 or _passes_alignment_quality(f, params) or detection_count > 1 or is_high_intensity
+
+
+def _should_keep_feature_final(f, params: Params):
+    """
+    Final noise filter after all files have been aligned.
+    """
+
+    return len(f.ms2_seq) > 0 or _passes_alignment_quality(f, params)
 
 
 """

@@ -62,7 +62,7 @@ def sample_normalization(feature_table, sample_metadata=None, method='pqn', feat
         print("\tSample normalization failed: sample metadata is required.")
         return feature_table
 
-    data = feature_table[sample_metadata.iloc[:, 0]].values
+    data = feature_table[sample_metadata.iloc[:, 0]].to_numpy(copy=True)
 
     if feature_selection:
         hq_data = high_quality_feature_selection(data, is_qc=sample_metadata['is_qc'], is_blank=sample_metadata['is_blank'])
@@ -284,7 +284,7 @@ def signal_normalization(feature_table, sample_metadata, method='lowess', output
     is_qc_or_sample = ~tmp['is_blank'].values
     batch_ids = tmp['batch_id'].values
 
-    arr = feature_table.loc[:, samples].values
+    arr = feature_table.loc[:, samples].to_numpy(copy=True)
     n = len(samples)
 
     # STEP 3: normalize samples

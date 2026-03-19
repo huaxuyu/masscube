@@ -10,6 +10,8 @@ __all__ = [
     "untargeted_metabolomics_workflow",
     "run_evaluation",
     "batch_file_processing",
+    "convert_raw_to_mzh5",
+    "batch_convert_raw_to_mzh5",
     "read_raw_file_to_obj",
     "generate_sample_table",
     "get_timestamps",
@@ -19,6 +21,10 @@ __all__ = [
 def __getattr__(name):
     if name in {"process_single_file", "untargeted_metabolomics_workflow", "run_evaluation", "batch_file_processing"}:
         mod = importlib.import_module(".workflows", __name__)
+        return getattr(mod, name)
+
+    if name in {"convert_raw_to_mzh5", "batch_convert_raw_to_mzh5"}:
+        mod = importlib.import_module(".mzh5", __name__)
         return getattr(mod, name)
 
     if name == "read_raw_file_to_obj":

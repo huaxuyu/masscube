@@ -715,22 +715,6 @@ class MSData:
         output_path = os.path.join(self.params.tmp_file_dir, self.params.file_name + ".mzpkl")
         convert_MSData_to_mzpkl(self, output_path)
     
-
-    def read_mzpkl(self, data):
-        """
-        Function to read pickle file.
-
-        Parameters
-        ----------
-        data: dict
-            Dictionary from a pickle file.
-        """
-        
-        self.ms1_idx_arr = [i for i in range(len(data['time']))]
-        self.ms1_time_arr = data['time']
-        self.scans = [Scan(level=1, id=i, scan_time=self.ms1_time_arr[i], 
-                           signals=data['signals'][i]) for i in range(len(data['time']))]
-    
     
     def get_spectral_rate(self):
         """
@@ -980,7 +964,7 @@ def _preprocess_signals_to_scan(level, id, scan_time, signals, params, precursor
         if precursor_mz is None or not np.isfinite(precursor_mz):
             mz_upper = np.inf
         else:
-            mz_upper = precursor_mz - params.precursor_mz_offset
+            mz_upper = precursor_mz - params.precursor_mz_offset if params.precursor_mz_offset is not None else np.inf
         signals = clean_signals(signals, mz_range=[0, mz_upper],
                                 intensity_range=[int_lower, np.inf])
     

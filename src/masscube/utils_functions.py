@@ -407,35 +407,28 @@ def _expand_parentheses(formula: str) -> str:
 # Spectral utility functions
 ####################################################################################################
 
-def extract_signals_from_string(ms2):
+def extract_signals_from_string(ms2: str) -> np.ndarray:
     """
-    Extract signals from MS2 spectrum in string format.
-
+    Extract m/z and intensity values from a string representation of MS2 signals.
+    
     Parameters
     ----------
     ms2 : str
-        MS2 spectrum in string format. Format: "mz1;intensity1|mz2;intensity2|..."
-        example: "100.0;1000.0|200.0;2000.0|300.0;3000.0|"
-    
-    returns
-    ----------
-    peaks : numpy.array
-        Peaks in numpy array format.
+        A string representation of MS2 signals, where each signal is represented as "mz;intensity" 
+        and signals are separated by "|". For example: "100.0;1000.0|200.0;2000.0|300.0;3000.0".
+
+    Returns
+    -------
+    signals : numpy.array
+        A numpy array with two columns: the first column contains m/z values and the second column contains intensity values.
     """
     
-    # Use findall function to extract all numbers matching the pattern
-    numbers = re.findall(r'\d+\.\d+', ms2)
+    arr = np.fromstring(ms2.replace("|", " ").replace(";", " "), sep=" ", dtype=np.float32)
     
-    # Convert the extracted numbers from strings to floats
-    numbers = [float(num) for num in numbers]
-    
-    if len(numbers) % 2 == 0:
-        numbers = np.array(numbers).reshape(-1, 2)
-        return numbers
+    if arr.size % 2 != 0:
+        raise ValueError("Malformed MS2 string: expected mz/int pairs")
 
-    else:
-        # return an empty array with shape (0, 2)
-        return np.array([]).reshape(0, 2)
+    return arr.reshape(-1, 2)
 
 
 def convert_signals_to_string(signals):

@@ -216,10 +216,17 @@ def untargeted_metabolomics_workflow(path: str = None, return_results: bool = Fa
 
         print(f"\nProcessing batch {b+1}/{n_batches} ({len(batch)} files)")
 
-        Parallel(n_jobs=workers, backend="loky")(
+        results = Parallel(
+            n_jobs=workers,
+            backend="loky",
+            return_as="generator_unordered"
+        )(
             delayed(process_single_file)(f, params, return_data=False)
-            for f in tqdm(batch, desc=f"Batch {b+1}", unit="file")
+            for f in batch
         )
+
+        for _ in tqdm(results, total=len(batch), desc=f"Batch {b+1}", unit="file"):
+            pass
 
         # Clean up memory
         gc.collect()
