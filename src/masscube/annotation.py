@@ -15,15 +15,15 @@ from ms_entropy import read_one_spectrum, FlashEntropySearch
 from .utils_functions import extract_signals_from_string, convert_signals_to_string
 
 """
-Format of MS2 database in MassCube
+MS/MS database format
 ====================================================================================
 
 1. pickle format
 
-A FlashEntropySearch object that contains the MS2 database. ms_entropy version 1.2.2 is highly recommended
+A FlashEntropySearch object that contains the MS/MS database. ms_entropy version 1.2.2 is highly recommended
 to generate this object (other versions may not work). See masscube documentation for how to generate this object.
 
-https://huaxuyu.github.io/masscubedocs/docs/workflows/database/
+https://huaxuyu.github.io/masscubedocs/docs/untargeted_metabolomics/database/
 
 2. msp format
 
@@ -43,8 +43,8 @@ Within each block, key is defined as:
     - DATABASE: the database name
     - COMMENT: the comment
     - Num Peaks: the number of peaks
-    - [mz1 intensity1]: the m/z and intensity of each fragment
-    - [mz2 intensity2]: the m/z and intensity of each fragment
+    - mz1 intensity1: the m/z and intensity of each fragment
+    - mz2 intensity2: the m/z and intensity of each fragment
     - ...
 
 Example:
@@ -124,77 +124,58 @@ Features (i.e. unique m/z-RT pairs) can be annotated in different ways with diff
 
 1. mz_rt_ms2_match
 
-Features are matched to database compounds with m/z, retention time and MS2 spectra.
+Matched by precursor m/z, retention time and MS/MS spectra.
 
 2. mz_rt_match
 
-Features are matched to database compounds with m/z and retention time.
+Matched by precursor m/z and retention time.
 
 3. mz_ms2_match
 
-Features are matched to database compounds with m/z and MS2 spectra.
+Matched by precursor m/z and MS/MS spectra.
 
-4. fuzzy_search (ms2 match or analog search)
+4. fuzzy_search (also called analog search or hybrid search)
 
-Features are matched to database compounds with MS2 spectra using fuzzy search. Experimental and database precursor m/z values can be different.
-
-Because matching by m/z value only is very likely to have false positives, this function is not provided in MassCube.
-
+Hybrid search: https://www.nature.com/articles/s41592-023-02012-9
 """
 
 
-def load_ms2_db(path):
+def load_ms2_db(path: str):
     """
-    Load MS2 database in pickle, msp, or json format.
+    Load a MS/MS database in either pickle, msp, or json format.
 
     Parameters
     ----------
     path : str
-        The path to the MS2 database.
+        The path to the MS/MS database.
 
     Returns
     -------
     entropy_search : FlashEntropySearch object
-        The MS2 database.
     """
 
-    print("\tLoading MS2 database...")
+    print("\tLoading MS/MS database...")
+    
+    entropy_search = None
+    
     # get extension of path
     ext = os.path.splitext(path)[1]
 
     if ext.lower() == '.msp':
-        db =[]
-        for a in read_one_spectrum(path):
-            if 'precursortype' in a.keys():
-                a['precursor_type'] = a.pop('precursortype')
-            if 'ionmode' in a.keys():
-                a['ion_mode'] = a.pop('ionmode')
-            if 'retentiontime' in a.keys() and a['retentiontime'] != '':
-                a['retention_time'] = float(a.pop('retentiontime'))
-            db.append(a)
-        _correct_db(db)
-        entropy_search = FlashEntropySearch(intensity_weight=None)
-        entropy_search.build_index(db)
-        print("\tMS2 database has been loaded.")
-        return entropy_search
+        entropy_search = _read_msp(path)
     
     elif ext.lower() == '.pkl':
-        entropy_search = pickle.load(open(path, 'rb'))
-        print("\tMS2 database has been loaded.")
-        # check if intensity_weight is an attribute
-        if not hasattr(entropy_search.entropy_search, 'intensity_weight'):
-            raise ValueError("Please new MS/MS database is required for MassCube ver. 1.2 or later. Please download from: https://zenodo.org/records/14991522.")
-        return entropy_search
+        entropy_search = _read_pickle(path)
     
     elif ext.lower() == '.json':
-        db = json.load(open(path, 'r'))
-        entropy_search = FlashEntropySearch(intensity_weight=None)
-        entropy_search.build_index(db)
-        print("\tMS2 database has been loaded.")
-        return entropy_search
+        entropy_search = _read_json(path)
     else:
         print("The MS2 database format {} is not supported.".format(ext))
         print("Please provide a MS2 database in pkl (best), msp, or json format.")
+    
+    print("\tMS/MS database has been loaded.")
+    
+    return entropy_search
 
 
 def annotate_aligned_features(features, params, num=5):
@@ -366,7 +347,8 @@ def annotate_features(d, sim_tol=None, fuzzy_search=True, ms2_library_path=None,
         matched_peak_num = None
         scores, peak_nums = entropy_search.identity_search(precursor_mz=f.mz, peaks=signals, ms1_tolerance_in_da=d.params.mz_tol_ms1, 
                                                           ms2_tolerance_in_da=d.params.mz_tol_ms2, output_matched_peak_number=True)
-        scores = ion_mode_mask
+        
+        scores = ion_mode_mask * scores
         if consider_rt:
             rt_boo = np.abs(rt_arr - f.rt) < d.params.rt_tol_annotation
             scores_rt = scores * rt_boo
@@ -390,6 +372,7 @@ def annotate_features(d, sim_tol=None, fuzzy_search=True, ms2_library_path=None,
         if matched is None and fuzzy_search:
             scores = entropy_search.hybrid_search(precursor_mz=f.mz, peaks=signals, ms1_tolerance_in_da=d.params.mz_tol_ms1, 
                                                              ms2_tolerance_in_da=d.params.mz_tol_ms2)
+            scores = ion_mode_mask * scores
             idx = np.argmax(scores)
             if scores[idx] > sim_tol:
                 matched = entropy_search[idx]
@@ -556,40 +539,6 @@ def output_ms2_to_msp(feature_table, output_path):
             f.write("\n")
 
 
-def index_msp_to_pkl(msp_path, output_path=None):
-    """
-    A function to index MSP file to pickle format.
-
-    Parameters
-    ----------
-    msp_path : str
-        The path to the MSP file.
-    output_path : str
-        The path to the output pickle file.
-    """
-
-    file_name = os.path.basename(msp_path).split(".")[0]
-
-    if output_path is None:
-        output_path = os.path.dirname(msp_path)
-
-    db = []
-    for a in read_one_spectrum(msp_path):
-        if 'precursortype' in a.keys():
-            a['precursor_type'] = a.pop('precursortype')
-        if 'ionmode' in a.keys():
-            a['ion_mode'] = a.pop('ionmode')
-        if 'retentiontime' in a.keys():
-            a['retention_time'] = a.pop('retentiontime')
-        db.append(a)
-
-    _correct_db(db)
-    entropy_search = FlashEntropySearch()
-    entropy_search.build_index(db)
-
-    pickle.dump(entropy_search, open(os.path.join(output_path, file_name + ".pkl"), 'wb'))
-
-
 def index_json_to_pkl(json_path, output_path=None):
     """
     A function to index JSON file to pickle format.
@@ -614,16 +563,88 @@ def index_json_to_pkl(json_path, output_path=None):
     pickle.dump(entropy_search, open(os.path.join(output_path, file_name + ".pkl"), 'wb'))
 
 
-def _correct_db(db):
+def _preprocess_msp_list(db: list):
     """
-    Correct the MS2 database by changing the key names.
+    Preprocess the MSP format MS/MS database.
     """
 
-    # make sure precursor_mz is in the db
-    if 'precursor_mz' not in db[0].keys():
-        for a in db:
-            similar_key = [k for k in a.keys() if 'prec' in k and 'mz' in k]
-            a['precursor_mz'] = float(a.pop(similar_key[0]))
+    for a in db:
+        if 'precursortype' in a:
+            a['precursor_type'] = a.pop('precursortype')
+        if not 'precursor_mz' in a:
+            tmp = [k for k in a.keys() if 'prec' in k and 'mz' in k]
+            a['precursor_mz'] = float(a.pop(tmp[0])) if len(tmp) > 0 else None
+        if 'ionmode' in a:
+            a['ion_mode'] = a.pop('ionmode')
+        if 'retentiontime' in a and a['retentiontime'] != '':
+            a['retention_time'] = float(a.pop('retentiontime'))
+    
+    # drop the entries that do not have precursor m/z
+    db = [a for a in db if 'precursor_mz' in a and a['precursor_mz'] is not None]
+
+
+def _read_msp(path: str):
+    """
+    A helper function to read MSP file and return a list of dictionaries.
+
+    Parameters
+    ----------
+    path : str
+        The path to the MSP file.
+
+    Returns
+    -------
+    entropy_search : FlashEntropySearch object
+         The FlashEntropySearch object built from the MSP file.
+    """
+    db = [a for a in read_one_spectrum(path)]
+    _preprocess_msp_list(db)
+    entropy_search = FlashEntropySearch(intensity_weight=None)
+    entropy_search.build_index(db)
+    return entropy_search
+
+
+def _read_pickle(path: str):
+    """
+    A helper function to read pickle file and return a FlashEntropySearch object.
+
+    Parameters
+    ----------
+    path : str
+        The path to the pickle file.
+
+    Returns
+    -------
+    entropy_search : FlashEntropySearch object
+         The FlashEntropySearch object built from the pickle file.
+    """
+
+    entropy_search = pickle.load(open(path, 'rb'))
+    # check if intensity_weight is an attribute
+    if not hasattr(entropy_search.entropy_search, 'intensity_weight'):
+        raise ValueError("Please download the newest MS/MS database from: https://zenodo.org/records/14991522.")
+    return entropy_search
+
+
+def _read_json(path: str):
+    """
+    A helper function to read json file and return a FlashEntropySearch object.
+
+    Parameters
+    ----------
+    path : str
+        The path to the json file.
+
+    Returns
+    -------
+    entropy_search : FlashEntropySearch object
+         The FlashEntropySearch object built from the json file.
+    """
+
+    db = json.load(open(path, 'r'))
+    entropy_search = FlashEntropySearch(intensity_weight=None)
+    entropy_search.build_index(db)
+    return entropy_search
 
 
 def _assign_annotation_results_to_feature(f, score, matched, matched_peak_num, search_mode,

@@ -133,9 +133,10 @@ def process_single_file(file_name: str, params: Params = None, segment_feature: 
         else:
             return None
     
-    except:
-        print("\tError occurred: " + file_name.split("/")[-1])
+    except Exception as e:
+        print("\tError occurred: " + file_name)
         print(f"\t\tFailed at {step}.")
+        print(f"\t\t{type(e).__name__}: {e}")
         return None
 
 # 2. Untargeted metabolomics workflow

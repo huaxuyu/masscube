@@ -176,11 +176,15 @@ class MSData:
             if level == 2:
                 isolation_window = [1.5, 1.5]
                 precursor = spec['precursorList']['precursor'][0]
-                precursor_mz = precursor['selectedIonList']['selectedIon'][0]['selected ion m/z']
+                precursor_mz = _safe_float(
+                    precursor['selectedIonList']['selectedIon'][0].get('selected ion m/z')
+                )
                 if 'isolationWindow' in precursor:
                     if 'isolation window lower offset' in precursor['isolationWindow'] and 'isolation window upper offset' in precursor['isolationWindow']:
-                        isolation_window = [float(precursor['isolationWindow']['isolation window lower offset']), 
-                                            float(precursor['isolationWindow']['isolation window upper offset'])]
+                        isolation_window = [
+                            _safe_float(precursor['isolationWindow']['isolation window lower offset'], default=1.5),
+                            _safe_float(precursor['isolationWindow']['isolation window upper offset'], default=1.5),
+                        ]
             
             self.scans.append(_preprocess_signals_to_scan(level=level, id=idx, scan_time=scan_time, signals=signals, 
                                                           params=self.params, precursor_mz=precursor_mz, isolation_window=isolation_window))
@@ -229,10 +233,10 @@ class MSData:
             signals = np.array([spec['m/z array'], spec['intensity array']], dtype=np.float32).T
             
             if level == 2:
-                precursor_mz = spec['precursorMz'][0]['precursorMz']
+                precursor_mz = _safe_float(spec['precursorMz'][0].get('precursorMz'))
                 isolation_window = [1.5, 1.5]  # default 3 Da isolation window
                 if "windowWideness" in spec['precursorMz'][0]:
-                    wideness = float(spec['precursorMz'][0]["windowWideness"])
+                    wideness = _safe_float(spec['precursorMz'][0]["windowWideness"], default=3.0)
                     isolation_window = [wideness / 2, wideness / 2]        
             
             self.scans.append(_preprocess_signals_to_scan(level=level, id=idx, scan_time=scan_time, signals=signals,
@@ -302,8 +306,14 @@ class MSData:
             Whether to calculate asymmetry factor.
         """      
 
+        valid_features = []
         for feature in self.features:
-            feature.summarize(g_score=cal_g_score, a_score=cal_a_score)
+            try:
+                feature.summarize(g_score=cal_g_score, a_score=cal_a_score)
+                valid_features.append(feature)
+            except Exception:
+                continue
+        self.features = valid_features
 
         # sort features by m/z
         self.features.sort(key=lambda x: x.mz)
@@ -344,12 +354,21 @@ class MSData:
             m/z tolerance to match the precursor m/z of MS2 scans to features.
         """
 
+        if self.feature_mz_arr is None or len(self.feature_mz_arr) == 0:
+            return None
+
         for i in self.ms2_idx_arr:
             if len(self.scans[i].signals) == 0:
                 continue
-            idx = np.where(np.abs(self.feature_mz_arr - self.scans[i].precursor_mz) < mz_tol)[0]
+            precursor_mz = _safe_float(self.scans[i].precursor_mz)
+            if precursor_mz is None or not np.isfinite(precursor_mz):
+                continue
+
+            idx = np.where(np.abs(self.feature_mz_arr - precursor_mz) < mz_tol)[0]
             matched_features = []
             for j in idx:
+                if len(self.features[j].rt_seq) == 0:
+                    continue
                 if self.features[j].rt_seq[0] < self.scans[i].time < self.features[j].rt_seq[-1]:
                     matched_features.append(self.features[j])
             if len(matched_features) == 1:
@@ -862,6 +881,28 @@ def clean_signals(signals, mz_range=[0,np.inf], intensity_range=[0,np.inf]):
                    (signals[:, 1] > intensity_range[0]) & (signals[:, 1] < intensity_range[1])]
 
 
+def _safe_float(value, default=None):
+    """
+    Safely cast a value to float. Returns `default` if conversion fails.
+    """
+
+    if value is None:
+        return default
+
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        if isinstance(value, str):
+            normalized = value.strip()
+            if normalized.count(",") == 1 and "." not in normalized:
+                normalized = normalized.replace(",", ".")
+            try:
+                return float(normalized)
+            except ValueError:
+                return default
+        return default
+
+
 def read_raw_file_to_obj(file_name, params=None, scan_levels=[1,2], centroid_mz_tol=0.005, 
                          ms1_abs_int_tol=1000, ms2_abs_int_tol=0, ms2_rel_int_tol=0.01, 
                          precursor_mz_offset=2):
@@ -925,6 +966,8 @@ def _preprocess_signals_to_scan(level, id, scan_time, signals, params, precursor
     Function to generate a Scan object from signals.
     """
 
+    precursor_mz = _safe_float(precursor_mz)
+
     if len(signals) == 0:
         return Scan(level=level, id=id, scan_time=scan_time, signals=signals, precursor_mz=precursor_mz)
 
@@ -934,7 +977,11 @@ def _preprocess_signals_to_scan(level, id, scan_time, signals, params, precursor
 
     elif level == 2:
         int_lower = max(params.ms2_abs_int_tol, np.max(signals[:, 1]) * params.ms2_rel_int_tol)
-        signals = clean_signals(signals, mz_range=[0, precursor_mz - params.precursor_mz_offset],
+        if precursor_mz is None or not np.isfinite(precursor_mz):
+            mz_upper = np.inf
+        else:
+            mz_upper = precursor_mz - params.precursor_mz_offset
+        signals = clean_signals(signals, mz_range=[0, mz_upper],
                                 intensity_range=[int_lower, np.inf])
     
     if params.centroid_mz_tol is not None:
@@ -963,9 +1010,14 @@ def cal_precursor_ion_fraction(d: MSData, ms2: Scan) -> float:
         The precursor ion fraction.
     """
 
-    mz = ms2.precursor_mz
+    mz = _safe_float(ms2.precursor_mz)
+    if mz is None or not np.isfinite(mz):
+        return 0.0
+
     ms2_rt = ms2.time
     time_arr = d.ms1_time_arr
+    if len(time_arr) == 0:
+        return 0.0
     
     # find the ms1 scan cloest to the ms2 scan
     idx = np.argmin(np.abs(time_arr - ms2_rt))
@@ -973,6 +1025,8 @@ def cal_precursor_ion_fraction(d: MSData, ms2: Scan) -> float:
 
     s = ms1_scan.signals
     iso_window = ms2.isolation_window
+    if iso_window is None or len(iso_window) != 2:
+        return 0.0
     s = s[(s[:,0] > mz - iso_window[0]) & (s[:,0] < mz + iso_window[1])]
     
     if len(s) == 0:
