@@ -92,6 +92,7 @@ class AlignedFeature:
         self.matched_adduct_type = None             # matched adduct type
         self.matched_ms2 = None                     # matched ms2 spectra
         self.matched_spectra = []                   # list of matched spectra (dictionaries)
+        self.database = None                        # database for annotation
 
 
 """
@@ -485,8 +486,8 @@ def output_feature_table(feature_table, output_path):
     feature_table['detection_rate_gap_filled'] = feature_table['detection_rate_gap_filled'].apply(lambda x: round(x, 2))
     feature_table['similarity'] = feature_table['similarity'].astype(float)
     feature_table['similarity'] = feature_table['similarity'].apply(lambda x: round(x, 4))
-    feature_table['scan-scan-cor'] = feature_table['scan-scan-cor'].astype(float)
-    feature_table['scan-scan-cor'] = feature_table['scan-scan-cor'].apply(lambda x: round(x, 3))
+    feature_table['scan_scan_cor'] = feature_table['scan_scan_cor'].astype(float)
+    feature_table['scan_scan_cor'] = feature_table['scan_scan_cor'].apply(lambda x: round(x, 3))
 
     feature_table.to_csv(output_path, index=False, sep="\t")
 
@@ -777,7 +778,7 @@ FEATURE_EXPORT_SCHEMA = [
     {"col": "isotope_state", "attr": "isotope_state", "export": True},
     {"col": "is_isotope", "attr": "is_isotope", "export": True},
     {"col": "is_in_source_fragment", "attr": "is_in_source_fragment", "export": True},
-    {"col": "scan-scan-cor", "attr": "scan_scan_cor", "export": True},
+    {"col": "scan_scan_cor", "attr": "scan_scan_cor", "export": True},
     {"col": "Gaussian_similarity", "attr": "gaussian_similarity", "export": True},
     {"col": "noise_score", "attr": "noise_score", "export": True},
     {"col": "asymmetry_factor", "attr": "asymmetry_factor", "export": True},
@@ -799,4 +800,5 @@ FEATURE_EXPORT_SCHEMA = [
     {"col": "matched_peak_number", "attr": "matched_peak_number", "export": True},
     {"col": "SMILES", "attr": "smiles", "export": True},
     {"col": "InChIKey", "attr": "inchikey", "export": True},
+    {"col": "database", "attr": "database", "export": True},
 ]

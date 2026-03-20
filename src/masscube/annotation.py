@@ -680,6 +680,7 @@ def _assign_annotation_results_to_feature(f, score, matched, matched_peak_num, s
         f.adduct_type = matched['precursor_type'] if 'precursor_type' in matched else None
     f.ms2_pif = precursor_ion_fraction
     f.ms2_scan_idx = ms2_scan_idx
+    f.database = matched['database'] if 'database' in matched else None
 
 
 def _assign_mzrt_annotation_results_to_feature(f, annotation, adduct, inchikey, formula, smiles, matched_precursor_mz, 
