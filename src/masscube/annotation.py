@@ -8,7 +8,6 @@ import pickle
 import numpy as np
 import pandas as pd
 import json
-import re
 from tqdm import tqdm
 from ms_entropy import read_one_spectrum, FlashEntropySearch
 
@@ -136,7 +135,7 @@ Matched by precursor m/z and MS/MS spectra.
 
 4. fuzzy_search (also called analog search or hybrid search)
 
-Hybrid search: https://www.nature.com/articles/s41592-023-02012-9
+More about hybrid search: https://www.nature.com/articles/s41592-023-02012-9
 """
 
 
@@ -154,33 +153,41 @@ def load_ms2_db(path: str):
     entropy_search : FlashEntropySearch object
     """
 
-    print("\tLoading MS/MS database...")
-    
-    entropy_search = None
-    
-    # get extension of path
-    ext = os.path.splitext(path)[1]
+    if path is None or _is_missing_value(path) or str(path).strip() == "":
+        raise ValueError("MS/MS database path is required.")
 
-    if ext.lower() == '.msp':
+    path = os.path.expanduser(str(path))
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"MS/MS database file does not exist: {path}")
+
+    print("\tLoading MS/MS database...")
+
+    ext = os.path.splitext(path)[1].lower()
+
+    if ext == '.msp':
         entropy_search = _read_msp(path)
     
-    elif ext.lower() == '.pkl':
+    elif ext == '.pkl':
         entropy_search = _read_pickle(path)
     
-    elif ext.lower() == '.json':
+    elif ext == '.json':
         entropy_search = _read_json(path)
     else:
-        print("The MS2 database format {} is not supported.".format(ext))
-        print("Please provide a MS2 database in pkl (best), msp, or json format.")
+        raise ValueError(
+            "Unsupported MS/MS database format '{}'. Please provide pkl, msp, or json.".format(ext)
+        )
+
+    if entropy_search is None or len(entropy_search.precursor_mz_array) == 0:
+        raise ValueError(f"No valid MS/MS spectra were loaded from: {path}")
     
     print("\tMS/MS database has been loaded.")
     
     return entropy_search
 
 
-def annotate_aligned_features(features, params, num=5):
+def annotate_aligned_features(features: list, params, num: int = 5):
     """
-    Annotate feature's MS2 using database.
+    Annotate aligned features using MS/MS databases.
     
     Parameters
     ----------
@@ -199,34 +206,31 @@ def annotate_aligned_features(features, params, num=5):
 
     entropy_search = load_ms2_db(params.ms2_library_path)
 
-    # ion mode filtering
-    ion_mode_mask = []
-    for i in range(len(entropy_search.precursor_mz_array)):
-        if 'ion_mode' in entropy_search[i]:
-            ion_mode_mask.append(1 if (entropy_search[i]['ion_mode'].lower() == params.ion_mode) else 0)
-        elif 'ionmode' in entropy_search[i]:
-            ion_mode_mask.append(1 if (entropy_search[i]['ionmode'].lower() == params.ion_mode) else 0)
-        else:
-            ion_mode_mask.append(0)
-    ion_mode_mask = np.array(ion_mode_mask, dtype=bool)
+    ion_mode_mask = _build_ion_mode_mask(entropy_search, params.ion_mode)
 
     if params.consider_rt:
-        rt_arr = np.zeros(len(entropy_search.precursor_mz_array))+np.inf
-        for i, ms2 in enumerate(entropy_search):
-            if 'retention_time' in ms2:
-                rt_arr[i] = ms2['retention_time']
+        rt_arr = _build_retention_time_array(entropy_search)
 
     for f in tqdm(features):
         
         if len(f.ms2_seq) == 0:
             continue
         
-        parsed_ms2 = f.ms2_seq[:num]
+        parsed_ms2 = []
+        for s in f.ms2_seq[:num]:
+            signals = _clean_ms2_signals(
+                entropy_search=entropy_search,
+                precursor_mz=f.mz,
+                signals=s.signals,
+                precursor_mz_offset=params.precursor_mz_offset,
+            )
+            if len(signals) > 0:
+                parsed_ms2.append((s, signals))
 
-        for s in parsed_ms2:
-            s.signals = entropy_search.clean_spectrum_for_search(f.mz, s.signals, precursor_ions_removal_da=params.precursor_mz_offset)
-        
-        f.ms2 = parsed_ms2[0]
+        if len(parsed_ms2) == 0:
+            continue
+
+        selected_scan, selected_signals = parsed_ms2[0]
 
         if params.consider_rt:
             rt_mask = np.abs(rt_arr - f.rt) < params.rt_tol_annotation
@@ -235,8 +239,8 @@ def annotate_aligned_features(features, params, num=5):
         matched_nums = []
         matched = None  # matched MS2 spectrum in the database
 
-        for s in parsed_ms2:
-            similarity, matched_num = entropy_search.identity_search(precursor_mz=f.mz, peaks=s.signals, ms1_tolerance_in_da=params.mz_tol_ms1,
+        for scan, signals in parsed_ms2:
+            similarity, matched_num = entropy_search.identity_search(precursor_mz=f.mz, peaks=signals, ms1_tolerance_in_da=params.mz_tol_ms1,
                                                                      ms2_tolerance_in_da=params.mz_tol_ms2, output_matched_peak_number=True)
             similarities.append(similarity * ion_mode_mask)
             matched_nums.append(matched_num)
@@ -246,14 +250,13 @@ def annotate_aligned_features(features, params, num=5):
             tmp = [np.max(s) for s in similarities_rt]
             if np.max(tmp) > params.ms2_sim_tol:
                 idx_tmp = np.argmax(tmp)
-                f.ms2_reference_file = parsed_ms2[idx_tmp].file_name
-                f.ms2 = parsed_ms2[idx_tmp]
+                selected_scan, selected_signals = parsed_ms2[idx_tmp]
+                f.ms2_reference_file = getattr(selected_scan, "file_name", None)
                 matched_idx = np.argmax(similarities_rt[idx_tmp])
-                matched = entropy_search[matched_idx]
-                matched = {k.lower():v for k,v in matched.items()}
+                matched = _normalize_record(entropy_search[matched_idx])
                 _assign_annotation_results_to_feature(f, score=similarities_rt[idx_tmp][matched_idx],matched=matched, 
                                                       matched_peak_num=matched_nums[idx_tmp][matched_idx], search_mode='identity_search_with_rt',
-                                                      ms2_scan_idx=f.ms2.id, precursor_ion_fraction=f.ms2.precursor_ion_fraction)
+                                                      ms2_scan_idx=selected_scan.id, precursor_ion_fraction=selected_scan.precursor_ion_fraction)
                                                       
         
         # if the feature cannot be annotated by considering retention time
@@ -261,30 +264,34 @@ def annotate_aligned_features(features, params, num=5):
             tmp = [np.max(s) for s in similarities]
             if np.max(tmp) > params.ms2_sim_tol:    
                 idx_tmp = np.argmax(tmp)
-                f.ms2_reference_file = parsed_ms2[idx_tmp].file_name
-                f.ms2 = parsed_ms2[idx_tmp]
+                selected_scan, selected_signals = parsed_ms2[idx_tmp]
+                f.ms2_reference_file = getattr(selected_scan, "file_name", None)
                 matched_idx = np.argmax(similarities[idx_tmp])
-                matched = entropy_search[matched_idx]
-                matched = {k.lower():v for k,v in matched.items()}
+                matched = _normalize_record(entropy_search[matched_idx])
                 _assign_annotation_results_to_feature(f, score=similarities[idx_tmp][matched_idx], matched=matched,
                                                       matched_peak_num=matched_nums[idx_tmp][matched_idx], search_mode='identity_search',
-                                                      ms2_scan_idx=f.ms2.id, precursor_ion_fraction=f.ms2.precursor_ion_fraction)
+                                                      ms2_scan_idx=selected_scan.id, precursor_ion_fraction=selected_scan.precursor_ion_fraction)
 
         # if the feature cannot be annotated by MS2 identity search
         if matched is None and params.fuzzy_search:
-            s = parsed_ms2[0]
-            similarity = entropy_search.hybrid_search(precursor_mz=f.mz, peaks=s.signals, ms1_tolerance_in_da=params.mz_tol_ms1, 
+            selected_scan, selected_signals = parsed_ms2[0]
+            similarity = entropy_search.hybrid_search(precursor_mz=f.mz, peaks=selected_signals, ms1_tolerance_in_da=params.mz_tol_ms1, 
                                                       ms2_tolerance_in_da=params.mz_tol_ms2)
             similarity = similarity * ion_mode_mask
             idx = np.argmax(similarity)
             if similarity[idx] > params.ms2_sim_tol:
-                matched = entropy_search[idx]
-                matched = {k.lower():v for k,v in matched.items()}
+                matched = _normalize_record(entropy_search[idx])
                 _assign_annotation_results_to_feature(f, score=similarity[idx], matched=matched, 
                                                       matched_peak_num=None, search_mode='fuzzy_search',
-                                                      ms2_scan_idx=s.id, precursor_ion_fraction=s.precursor_ion_fraction)
+                                                      ms2_scan_idx=selected_scan.id, precursor_ion_fraction=selected_scan.precursor_ion_fraction)
         
-        f.ms2 = convert_signals_to_string(f.ms2.signals)
+        if getattr(f, "ms2_reference_file", None) is None:
+            f.ms2_reference_file = getattr(selected_scan, "file_name", None)
+        if getattr(f, "ms2_scan_idx", None) is None:
+            f.ms2_scan_idx = getattr(selected_scan, "id", None)
+        if getattr(f, "ms2_pif", None) is None:
+            f.ms2_pif = getattr(selected_scan, "precursor_ion_fraction", None)
+        f.ms2 = convert_signals_to_string(selected_signals)
 
     return features
 
@@ -314,32 +321,25 @@ def annotate_features(d, sim_tol=None, fuzzy_search=True, ms2_library_path=None,
     else:
         entropy_search = load_ms2_db(ms2_library_path)
     
-    # ion mode filtering
-    ion_mode_mask = []
-    for i in range(len(entropy_search.precursor_mz_array)):
-        if 'ion_mode' in entropy_search[i]:
-            ion_mode_mask.append(1 if (entropy_search[i]['ion_mode'].lower() == d.params.ion_mode) else 0)
-        elif 'ionmode' in entropy_search[i]:
-            ion_mode_mask.append(1 if (entropy_search[i]['ionmode'].lower() == d.params.ion_mode) else 0)
-        else:
-            ion_mode_mask.append(0)
-    ion_mode_mask = np.array(ion_mode_mask, dtype=bool)
+    ion_mode_mask = _build_ion_mode_mask(entropy_search, d.params.ion_mode)
 
     if sim_tol is None:
         sim_tol = d.params.ms2_sim_tol
     
     if consider_rt:
-        rt_arr = np.zeros(len(entropy_search.precursor_mz_array))+np.inf
-        for i, ms2 in enumerate(entropy_search):
-            if 'retention_time' in ms2:
-                rt_arr[i] = ms2['retention_time']
+        rt_arr = _build_retention_time_array(entropy_search)
 
     for f in tqdm(d.features):
     
         if f.ms2 is None:
             continue
         
-        signals = entropy_search.clean_spectrum_for_search(precursor_mz=f.mz, peaks=f.ms2.signals, precursor_ions_removal_da=2.0)
+        signals = _clean_ms2_signals(
+            entropy_search=entropy_search,
+            precursor_mz=f.mz,
+            signals=f.ms2.signals,
+            precursor_mz_offset=d.params.precursor_mz_offset,
+        )
         if len(signals) == 0:
             continue
         
@@ -354,20 +354,22 @@ def annotate_features(d, sim_tol=None, fuzzy_search=True, ms2_library_path=None,
             scores_rt = scores * rt_boo
             idx = np.argmax(scores_rt)
             if scores_rt[idx] > sim_tol:
-                matched = entropy_search[idx]
-                matched = {k.lower():v for k,v in matched.items()}
+                matched = _normalize_record(entropy_search[idx])
                 matched_peak_num = peak_nums[idx]
                 _assign_annotation_results_to_feature(f, score=scores_rt[idx], matched=matched, matched_peak_num=matched_peak_num, 
-                                                      search_mode='identity_search_with_rt', ms2_scan_idx=f.ms2_scan_idx, precursor_ion_fraction=f.ms2_pif)
+                                                      search_mode='identity_search_with_rt',
+                                                      ms2_scan_idx=getattr(f.ms2, "id", None),
+                                                      precursor_ion_fraction=getattr(f.ms2, "precursor_ion_fraction", None))
         
         if matched is None:
             idx = np.argmax(scores)
             if scores[idx] > sim_tol:
-                matched = entropy_search[idx]
-                matched = {k.lower():v for k,v in matched.items()}
+                matched = _normalize_record(entropy_search[idx])
                 matched_peak_num = peak_nums[idx]
                 _assign_annotation_results_to_feature(f, score=scores[idx], matched=matched, matched_peak_num=matched_peak_num,
-                                                      search_mode='identity_search')
+                                                      search_mode='identity_search',
+                                                      ms2_scan_idx=getattr(f.ms2, "id", None),
+                                                      precursor_ion_fraction=getattr(f.ms2, "precursor_ion_fraction", None))
 
         if matched is None and fuzzy_search:
             scores = entropy_search.hybrid_search(precursor_mz=f.mz, peaks=signals, ms1_tolerance_in_da=d.params.mz_tol_ms1, 
@@ -375,10 +377,12 @@ def annotate_features(d, sim_tol=None, fuzzy_search=True, ms2_library_path=None,
             scores = ion_mode_mask * scores
             idx = np.argmax(scores)
             if scores[idx] > sim_tol:
-                matched = entropy_search[idx]
+                matched = _normalize_record(entropy_search[idx])
                 matched_peak_num = None
                 _assign_annotation_results_to_feature(f, score=scores[idx], matched=matched, matched_peak_num=matched_peak_num, 
-                                                      search_mode='fuzzy_search')
+                                                      search_mode='fuzzy_search',
+                                                      ms2_scan_idx=getattr(f.ms2, "id", None),
+                                                      precursor_ion_fraction=getattr(f.ms2, "precursor_ion_fraction", None))
 
 
 def feature_annotation_mzrt(features, path, mz_tol=0.01, rt_tol=0.3):
@@ -402,100 +406,42 @@ def feature_annotation_mzrt(features, path, mz_tol=0.01, rt_tol=0.3):
         A list of features with annotation.
     """
 
-    # load the mzrt file
     df = pd.read_csv(path)
-    features.sort(key=lambda x: x.highest_intensity, reverse=True)
+    name_col, mz_col, rt_col = _resolve_mzrt_columns(df)
+    features.sort(key=lambda x: getattr(x, "highest_intensity", getattr(x, "peak_height", 0)) or 0, reverse=True)
     
     # match and annotate features
     feature_mz = np.array([f.mz for f in features])
     feature_rt = np.array([f.rt for f in features])
     to_anno = np.ones(len(features), dtype=bool)
 
-    if 'adduct' not in df.columns:
-        df['adduct'] = None
-    if 'inchikey' not in df.columns:
-        df['inchikey'] = None
-    if 'formula' not in df.columns:
-        df['formula'] = None
-    if 'smiles' not in df.columns:
-        df['smiles'] = None
+    adduct_col = _find_optional_column(df, ["adduct", "precursor_type", "precursortype"])
+    inchikey_col = _find_optional_column(df, ["inchikey", "inchi_key"])
+    formula_col = _find_optional_column(df, ["formula", "molecular_formula"])
+    smiles_col = _find_optional_column(df, ["smiles"])
 
-    for i in range(len(df)):
-        mz = df.iloc[i,1]
-        rt = df.iloc[i,2]
+    for _, row in df.iterrows():
+        mz = _safe_float(row[mz_col])
+        rt = _safe_float(row[rt_col])
+        if not np.isfinite(mz) or not np.isfinite(rt):
+            continue
         v1 = np.abs(feature_mz - mz) < mz_tol
         v2 = np.abs(feature_rt - rt) < rt_tol
         matched_v = np.where(v1 & v2 & to_anno)[0]
         if len(matched_v) > 0:
-            matched_idx = matched_v[0]
-            _assign_mzrt_annotation_results_to_feature(f=features[matched_idx], annotation=df.iloc[i,0], adduct=df['adduct'][i], 
-                                                       inchikey=df['inchikey'][i], formula=df['formula'][i], smiles=df['smiles'][i],
+            mz_score = np.abs(feature_mz[matched_v] - mz) / max(mz_tol, 1e-12)
+            rt_score = np.abs(feature_rt[matched_v] - rt) / max(rt_tol, 1e-12)
+            matched_idx = matched_v[np.argmin(mz_score + rt_score)]
+            _assign_mzrt_annotation_results_to_feature(f=features[matched_idx],
+                                                       annotation=row[name_col],
+                                                       adduct=_row_value(row, adduct_col),
+                                                       inchikey=_row_value(row, inchikey_col),
+                                                       formula=_row_value(row, formula_col),
+                                                       smiles=_row_value(row, smiles_col),
                                                        matched_precursor_mz=mz, matched_retention_time=rt)
             to_anno[matched_idx] = False
 
     return features
-
-
-def feature_to_feature_search(feature_list):
-    """
-    A function to calculate the MS2 similarity between features using fuzzy search.
-
-    Parameters
-    ----------
-    feature_list : list
-        A list of AlignedFeature objects.
-    
-    Returns
-    -------
-    similarity_matrix : pandas.DataFrame
-        similarity matrix between features.
-    """
-
-    entropy_search = index_feature_list(feature_list)
-    dim = len(entropy_search.precursor_mz_array)
-    ref_id = [item['id'] for item in entropy_search]
-    results = np.zeros((dim, dim))
-
-    for i, f in enumerate(feature_list):
-        similarities = entropy_search.search(precursor_mz=f.mz, peaks=f.best_ms2.peaks)["hybrid_search"]
-        matched = np.argmax(similarities)
-        results[i, matched] = similarities[matched]
-
-    df = pd.DataFrame(results, index=ref_id, columns=ref_id)
-    
-    return df
-
-
-def index_feature_list(feature_list):
-    """
-    A helper function to index a list of features for spectrum entropy search.
-
-    Parameters
-    ----------
-    feature_list : list
-        A list of AlignedFeature objects.
-
-    Returns
-    -------
-    entropy_search : FlashEntropySearch object
-        The indexed feature list.
-    """
-    
-    db = []
-    for f in feature_list:
-        if f.ms2 is not None:
-            tmp = {
-                "id": f.id,
-                "name": f.annotation,
-                "precursor_mz": f.mz,
-                "peaks": f.ms2.signals
-            }
-            db.append(tmp)
-
-    entropy_search = FlashEntropySearch()
-    entropy_search.build_index(db)
-
-    return entropy_search
 
 
 def output_ms2_to_msp(feature_table, output_path):
@@ -514,29 +460,196 @@ def output_ms2_to_msp(feature_table, output_path):
     if not output_path.lower().endswith(".msp"):
         raise ValueError("The output path must be a .msp file.")
 
+    required_cols = ["MS2", "m/z", "adduct", "RT", "search_mode", "formula", "InChIKey", "SMILES"]
+    missing_cols = [col for col in required_cols if col not in feature_table.columns]
+    if len(missing_cols) > 0:
+        raise ValueError("Feature table is missing required columns: {}".format(", ".join(missing_cols)))
+
     with open(output_path, "w") as f:
-        for i in range(len(feature_table)):
-            if feature_table['MS2'][i] is None:
+        for _, row in feature_table.iterrows():
+            ms2 = row["MS2"]
+            if _is_missing_value(ms2):
                 continue
 
-            if feature_table['annotation'][i] is None:
-                name = "Unknown"
-            else:
-                name = str(feature_table['annotation'][i])
+            name = _format_text(row["annotation"], default="Unknown") if "annotation" in feature_table.columns else "Unknown"
+            peaks = extract_signals_from_string(str(ms2))
 
-            peaks = re.findall(r"\d+\.\d+", feature_table['MS2'][i])
             f.write("NAME: " + name + "\n")
-            f.write("PRECURSORMZ: " + str(feature_table['m/z'][i]) + "\n")
-            f.write("PRECURSORTYPE: " + str(feature_table['adduct'][i]) + "\n")
-            f.write("RETENTIONTIME: " + str(feature_table['RT'][i]) + "\n")
-            f.write("SEARCHMODE: " + str(feature_table['search_mode'][i]) + "\n")
-            f.write("FORMULA: " + str(feature_table['formula'][i]) + "\n")
-            f.write("INCHIKEY: " + str(feature_table['InChIKey'][i]) + "\n")
-            f.write("SMILES: " + str(feature_table['SMILES'][i]) + "\n")
-            f.write("Num Peaks: " + str(int(len(peaks)/2)) + "\n")
-            for j in range(len(peaks)//2):
-                f.write(str(peaks[2*j]) + "\t" + str(peaks[2*j+1]) + "\n")
+            f.write("PRECURSORMZ: " + _format_text(row["m/z"]) + "\n")
+            f.write("PRECURSORTYPE: " + _format_text(row["adduct"]) + "\n")
+            f.write("RETENTIONTIME: " + _format_text(row["RT"]) + "\n")
+            f.write("SEARCHMODE: " + _format_text(row["search_mode"]) + "\n")
+            f.write("FORMULA: " + _format_text(row["formula"]) + "\n")
+            f.write("INCHIKEY: " + _format_text(row["InChIKey"]) + "\n")
+            f.write("SMILES: " + _format_text(row["SMILES"]) + "\n")
+            f.write("Num Peaks: " + str(len(peaks)) + "\n")
+            for peak in peaks:
+                f.write(str(peak[0]) + "\t" + str(peak[1]) + "\n")
             f.write("\n")
+
+
+def _is_missing_value(value):
+    """
+    Return True for scalar missing values while leaving arrays/lists alone.
+    """
+
+    if value is None:
+        return True
+    if isinstance(value, (list, tuple, np.ndarray)):
+        return False
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def _safe_float(value, default=np.nan):
+    """
+    Convert a scalar to float, returning default for missing or invalid values.
+    """
+
+    if _is_missing_value(value):
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _normalize_record(record):
+    """
+    Normalize database keys and common aliases for downstream access.
+    """
+
+    normalized = {str(k).strip().lower(): v for k, v in dict(record).items()}
+
+    aliases = {
+        "precursortype": "precursor_type",
+        "ionmode": "ion_mode",
+        "retentiontime": "retention_time",
+    }
+    for old_key, new_key in aliases.items():
+        if old_key in normalized and new_key not in normalized:
+            normalized[new_key] = normalized[old_key]
+
+    if "precursor_mz" not in normalized:
+        mz_keys = [k for k in normalized.keys() if "prec" in k and "mz" in k]
+        if len(mz_keys) > 0:
+            normalized["precursor_mz"] = normalized[mz_keys[0]]
+
+    return normalized
+
+
+def _normalize_ion_mode(value):
+    if _is_missing_value(value):
+        return None
+    value = str(value).strip().lower()
+    if "positive" in value or value in {"pos", "+"}:
+        return "positive"
+    if "negative" in value or value in {"neg", "-"}:
+        return "negative"
+    return value
+
+
+def _build_ion_mode_mask(entropy_search, ion_mode):
+    """
+    Build a mask for database entries matching ion mode.
+
+    Missing ion-mode metadata is treated as compatible rather than excluding
+    otherwise valid libraries.
+    """
+
+    target = _normalize_ion_mode(ion_mode)
+    mask = np.ones(len(entropy_search.precursor_mz_array), dtype=bool)
+    if target in {None, "", "unknown", "none"}:
+        return mask
+
+    for i in range(len(entropy_search.precursor_mz_array)):
+        ms2 = _normalize_record(entropy_search[i])
+        db_ion_mode = _normalize_ion_mode(ms2.get('ion_mode'))
+        if db_ion_mode is not None:
+            mask[i] = db_ion_mode == target
+
+    return mask
+
+
+def _build_retention_time_array(entropy_search):
+    """
+    Return database retention times, using inf where RT is missing.
+    """
+
+    rt_arr = np.zeros(len(entropy_search.precursor_mz_array)) + np.inf
+    for i, ms2 in enumerate(entropy_search):
+        ms2 = _normalize_record(ms2)
+        if 'retention_time' in ms2:
+            rt_arr[i] = _safe_float(ms2['retention_time'], default=np.inf)
+    return rt_arr
+
+
+def _clean_ms2_signals(entropy_search, precursor_mz, signals, precursor_mz_offset):
+    """
+    Clean a spectrum for search without mutating the original Scan object.
+    """
+
+    if signals is None or len(signals) == 0:
+        return np.empty((0, 2), dtype=np.float32)
+
+    cleaned = entropy_search.clean_spectrum_for_search(
+        precursor_mz=precursor_mz,
+        peaks=signals,
+        precursor_ions_removal_da=precursor_mz_offset,
+    )
+    if cleaned is None:
+        return np.empty((0, 2), dtype=np.float32)
+    return cleaned
+
+
+def _normalize_column_name(name):
+    return str(name).strip().lower().replace(" ", "").replace("_", "").replace("/", "")
+
+
+def _find_optional_column(df, candidates):
+    normalized = {_normalize_column_name(col): col for col in df.columns}
+    for candidate in candidates:
+        col = normalized.get(_normalize_column_name(candidate))
+        if col is not None:
+            return col
+    return None
+
+
+def _resolve_mzrt_columns(df):
+    name_col = _find_optional_column(df, ["annotation", "name", "compound", "compound_name"])
+    mz_col = _find_optional_column(df, ["mz", "m/z", "precursor_mz", "precursormz", "matched_mz"])
+    rt_col = _find_optional_column(df, ["rt", "retention_time", "retentiontime"])
+
+    if name_col is None and df.shape[1] > 0:
+        name_col = df.columns[0]
+    if mz_col is None and df.shape[1] > 1:
+        mz_col = df.columns[1]
+    if rt_col is None and df.shape[1] > 2:
+        rt_col = df.columns[2]
+
+    missing = [
+        label for label, col in [("annotation/name", name_col), ("m/z", mz_col), ("RT", rt_col)]
+        if col is None
+    ]
+    if len(missing) > 0:
+        raise ValueError("mzRT file is missing required columns: {}".format(", ".join(missing)))
+
+    return name_col, mz_col, rt_col
+
+
+def _row_value(row, col, default=None):
+    if col is None:
+        return default
+    value = row[col]
+    return default if _is_missing_value(value) else value
+
+
+def _format_text(value, default=""):
+    if _is_missing_value(value):
+        return default
+    return str(value)
 
 
 def index_json_to_pkl(json_path, output_path=None):
@@ -556,11 +669,14 @@ def index_json_to_pkl(json_path, output_path=None):
     if output_path is None:
         output_path = os.path.dirname(json_path)
 
-    db = json.load(open(json_path, 'r'))
+    with open(json_path, 'r') as f:
+        db = json.load(f)
+    db = _preprocess_msp_list(db)
     entropy_search = FlashEntropySearch()
     entropy_search.build_index(db)
 
-    pickle.dump(entropy_search, open(os.path.join(output_path, file_name + ".pkl"), 'wb'))
+    with open(os.path.join(output_path, file_name + ".pkl"), 'wb') as f:
+        pickle.dump(entropy_search, f)
 
 
 def _preprocess_msp_list(db: list):
@@ -568,19 +684,35 @@ def _preprocess_msp_list(db: list):
     Preprocess the MSP format MS/MS database.
     """
 
-    for a in db:
-        if 'precursortype' in a:
+    processed = []
+    for item in db:
+        a = _normalize_record(item)
+
+        if 'precursortype' in a and 'precursor_type' not in a:
             a['precursor_type'] = a.pop('precursortype')
-        if not 'precursor_mz' in a:
-            tmp = [k for k in a.keys() if 'prec' in k and 'mz' in k]
-            a['precursor_mz'] = float(a.pop(tmp[0])) if len(tmp) > 0 else None
-        if 'ionmode' in a:
+
+        if 'precursor_mz' not in a:
+            mz_keys = [k for k in a.keys() if 'prec' in k and 'mz' in k]
+            a['precursor_mz'] = a.pop(mz_keys[0]) if len(mz_keys) > 0 else None
+        a['precursor_mz'] = _safe_float(a.get('precursor_mz'))
+
+        if 'ionmode' in a and 'ion_mode' not in a:
             a['ion_mode'] = a.pop('ionmode')
-        if 'retentiontime' in a and a['retentiontime'] != '':
-            a['retention_time'] = float(a.pop('retentiontime'))
-    
-    # drop the entries that do not have precursor m/z
-    db = [a for a in db if 'precursor_mz' in a and a['precursor_mz'] is not None]
+
+        if 'retentiontime' in a and 'retention_time' not in a:
+            a['retention_time'] = a.pop('retentiontime')
+        if 'retention_time' in a:
+            rt = _safe_float(a.get('retention_time'))
+            if np.isfinite(rt):
+                a['retention_time'] = rt
+            else:
+                a.pop('retention_time', None)
+
+        if not np.isfinite(a['precursor_mz']) or 'peaks' not in a or len(a['peaks']) == 0:
+            continue
+        processed.append(a)
+
+    return processed
 
 
 def _read_msp(path: str):
@@ -597,8 +729,9 @@ def _read_msp(path: str):
     entropy_search : FlashEntropySearch object
          The FlashEntropySearch object built from the MSP file.
     """
-    db = [a for a in read_one_spectrum(path)]
-    _preprocess_msp_list(db)
+    db = _preprocess_msp_list([a for a in read_one_spectrum(path)])
+    if len(db) == 0:
+        raise ValueError(f"No valid spectra were found in MSP file: {path}")
     entropy_search = FlashEntropySearch(intensity_weight=None)
     entropy_search.build_index(db)
     return entropy_search
@@ -619,9 +752,14 @@ def _read_pickle(path: str):
          The FlashEntropySearch object built from the pickle file.
     """
 
-    entropy_search = pickle.load(open(path, 'rb'))
+    with open(path, 'rb') as f:
+        entropy_search = pickle.load(f)
+
+    if not hasattr(entropy_search, 'precursor_mz_array'):
+        raise ValueError(f"Invalid MS/MS database pickle: {path}")
+
     # check if intensity_weight is an attribute
-    if not hasattr(entropy_search.entropy_search, 'intensity_weight'):
+    if hasattr(entropy_search, 'entropy_search') and not hasattr(entropy_search.entropy_search, 'intensity_weight'):
         raise ValueError("Please download the newest MS/MS database from: https://zenodo.org/records/14991522.")
     return entropy_search
 
@@ -641,7 +779,11 @@ def _read_json(path: str):
          The FlashEntropySearch object built from the json file.
     """
 
-    db = json.load(open(path, 'r'))
+    with open(path, 'r') as f:
+        db = json.load(f)
+    db = _preprocess_msp_list(db)
+    if len(db) == 0:
+        raise ValueError(f"No valid spectra were found in JSON file: {path}")
     entropy_search = FlashEntropySearch(intensity_weight=None)
     entropy_search.build_index(db)
     return entropy_search
@@ -668,19 +810,21 @@ def _assign_annotation_results_to_feature(f, score, matched, matched_peak_num, s
 
     f.search_mode = search_mode
     f.similarity = score
-    f.annotation = matched['name'] if 'name' in matched else None
-    f.formula = matched['formula'] if 'formula' in matched else None
+    f.annotation = matched.get('name')
+    f.formula = matched.get('formula')
     f.matched_peak_number = matched_peak_num
-    f.smiles = matched['smiles'] if 'smiles' in matched else None
-    f.inchikey = matched['inchikey'] if 'inchikey' in matched else None
-    f.matched_ms2 = convert_signals_to_string(matched['peaks'])
-    f.matched_precursor_mz = matched['precursor_mz'] if 'precursor_mz' in matched else None
-    f.matched_adduct_type = matched['precursor_type'] if 'precursor_type' in matched else None
-    if search_mode == 'identity_search':
-        f.adduct_type = matched['precursor_type'] if 'precursor_type' in matched else None
+    f.smiles = matched.get('smiles')
+    f.inchikey = matched.get('inchikey')
+    f.matched_ms2 = convert_signals_to_string(matched.get('peaks'))
+    f.matched_precursor_mz = matched.get('precursor_mz')
+    f.matched_adduct_type = matched.get('precursor_type')
+    if search_mode.startswith('identity_search'):
+        f.adduct_type = matched.get('precursor_type')
     f.ms2_pif = precursor_ion_fraction
     f.ms2_scan_idx = ms2_scan_idx
-    f.database = matched['database'] if 'database' in matched else None
+    f.database = matched.get('database')
+    if hasattr(f, 'matched_spectra'):
+        f.matched_spectra.append(matched)
 
 
 def _assign_mzrt_annotation_results_to_feature(f, annotation, adduct, inchikey, formula, smiles, matched_precursor_mz, 

@@ -9,7 +9,7 @@ import json
 from importlib.metadata import version
 import numpy as np
 
-from .utils_functions import get_start_time, label_batch_id
+from .utils_functions import get_start_time, label_batch_id, find_ms_info
 
 
 class Params:
@@ -42,7 +42,7 @@ class Params:
         self.ion_mode = "positive"          # MS ion mode, "positive" or "negative", string
         self.ms_type = None                 # type of MS, "orbitrap", "qtof", "tripletof" or "others", string
         self.is_centroid = True             # whether the raw data is centroid data, boolean
-        self.file_format = None             # file type in lower case, 'mzml', 'mzxml', 'mzjson' or 'mzjson.gz', string
+        self.file_format = None             # file type in lower case, 'mzml', string
         self.scan_time_unit = "minute"      # time unit of the scan time, "minute" or "second", string
         self.mz_lower_limit = 0.0           # lower limit of m/z in Da, float
         self.mz_upper_limit = 100000.0      # upper limit of m/z in Da, float
@@ -51,9 +51,10 @@ class Params:
         self.scan_levels = [1,2]            # scan levels to be read, list of integers
         self.centroid_mz_tol = 0.002        # m/z tolerance for centroiding, default is 0.002. set to None to disable centroiding
         self.ms1_abs_int_tol = 1000.0       # absolute intensity threshold for MS1, recommend 30000 for Orbitrap and 1000 for QTOF
-        self.ms2_abs_int_tol = 500          # absolute intensity threshold for MS2, recommend 10000 for Orbitrap and 500 for QTOF
-        self.ms2_rel_int_tol = 0.01         # relative intensity threshold to base peak for MS2, default is 0.01
-        self.precursor_mz_offset = 2.0      # offset for MS2 m/z range in Da. The m/z upper limit is precursor_mz - precursor_mz_offset.
+        self.ms2_abs_int_tol = 500.0        # absolute intensity threshold for MS2, recommend 10000 for Orbitrap and 500 for QTOF
+        self.ms2_rel_int_tol = 0.0          # relative intensity threshold to base peak for MS2, default is 0.01
+        self.precursor_mz_offset = None     # offset for MS2 m/z range in Da. The m/z upper limit is precursor_mz - precursor_mz_offset. 
+                                            # set to None to disable the m/z upper limit for MS2.
 
         # feature detection
         self.mz_tol_ms1 = 0.01              # m/z tolerance for MS1, default is 0.01
@@ -201,7 +202,7 @@ class Params:
         # STEP 2: check if the required files are prepared
         #         three items are required: raw MS data, sample table and parameter file
         sample_files = [f for f in os.listdir(self.sample_dir) if not f.startswith(".") and 
-                        (f.lower().endswith(".mzml") or f.lower().endswith(".mzxml"))]
+                        f.lower().endswith(".mzml")]
         if not os.path.exists(self.sample_dir) or len(sample_files) == 0:
             raise ValueError("No raw MS data is found in the project directory.")
         if not os.path.exists(os.path.join(self.project_dir, "sample_table.csv")):
@@ -225,7 +226,7 @@ class Params:
             print("Using default parameters...")
             # determine the type of MS and ion mode
             file_name = os.path.join(self.sample_dir, sample_files[0])
-            ms_type, ion_mode, _ = find_ms_info(file_name)
+            ms_type, ion_mode, _, _ = find_ms_info(file_name)
             self.set_default(ms_type, ion_mode)
             self.plot_bpc = True
 
@@ -286,13 +287,13 @@ class Params:
 
     def check_parameters(self):
         """
-        Check if the parameters are correct using PARAMETER_RAGEES.
+        Check if the parameters are correct using PARAMETER_RAGES.
         ------------------------------------
         """
 
         for key, value in PARAMETER_RAGES.items():
             if not value[0] <= getattr(self, key) <= value[1]:
-                print(f"Parameter {key} is not out of range. The value is set to the default value.")
+                print(f"Parameter {key} is out of range. The value is set to the default value.")
                 setattr(self, key, PARAMETER_DEFAULT[key])
         if not os.path.exists(str(self.ms2_library_path)):
             self.ms2_library_path = None
@@ -331,7 +332,7 @@ class Params:
         """
     
         folder_files = {os.path.splitext(f)[0]: f for f in os.listdir(self.sample_dir) if not f.startswith(".") and
-                        (f.lower().endswith(".mzml") or f.lower().endswith(".mzxml"))}
+                        f.lower().endswith(".mzml")}
 
         for i in range(len(self.sample_metadata)):
             n = self.sample_metadata.iloc[i, 0]
@@ -340,52 +341,6 @@ class Params:
             else:
                 self.sample_metadata.loc[i, "VALID"] = True
                 self.sample_metadata.loc[i, "ABSOLUTE_PATH"] = os.path.join(self.sample_dir, folder_files[n])
-
-
-def find_ms_info(file_name):
-    """
-    Find the type of MS and ion mode from the raw file.
-
-    Parameters
-    ----------
-    file_name : str
-        The file name of the raw file.
-
-    Returns
-    -------
-    ms_type : str
-        The type of MS, "orbitrap", "qtof", "tripletof" or "others".
-    ion_mode : str
-        The ion mode, "positive" or "negative".
-    centroid : bool
-        Whether the data is centroid data.
-    """
-
-    ms_type = None
-    ion_mode = None
-    centroid = False
-
-    # for mzml and mzxml
-    if file_name.lower().endswith('.mzml') or file_name.lower().endswith('.mzxml'):
-        with open(file_name, 'r') as f:
-            text = ''.join([next(f) for _ in range(200)])
-        text = text.lower()
-        if 'orbitrap' in text or 'q exactive' in text:
-            ms_type = 'orbitrap'
-        elif 'tripletof' in text:
-            ms_type = 'tripletof'
-        elif 'tof' in text:
-            ms_type = 'qtof'
-        
-        if 'positive' in text:
-            ion_mode = 'positive'
-        elif 'negative' in text:
-            ion_mode = 'negative'
-
-        if "centroid spectrum" in text or 'centroided="1"' in text:
-            centroid = True
-
-    return ms_type, ion_mode, centroid
 
 
 PARAMETER_RAGES = {
@@ -397,7 +352,6 @@ PARAMETER_RAGES = {
     "ms1_abs_int_tol": (0, 1e10),
     "ms2_abs_int_tol": (0, 1e10),
     "ms2_rel_int_tol": (0.0, 1.0),
-    "precursor_mz_offset": (0.0, 100000.0),
     "mz_tol_ms1": (0.0, 5.0),
     "mz_tol_ms2": (0.0, 5.0),
     "feature_gap_tol": (0, 100),

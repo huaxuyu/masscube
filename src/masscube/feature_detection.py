@@ -31,6 +31,7 @@ class Feature:
         self.ms2_seq = []                    # MS2 spectra
         self.gap_counter = 0                 # count the number of consecutive zeros in the end of the peak
         self.peak_shape = None               # peak shape ([[rt, intensity], ...]) 
+        self.peak_edges = None               # retention time edges for the peak baseline: (left_rt, right_rt)
 
         # summary
         self.id = None                       # feature id
@@ -115,9 +116,10 @@ class Feature:
         return 3 * np.std(self.rt_seq)
 
 
-    def summarize(self, ph=True, pa=True, ta=True, g_score=True, n_score=True, a_score=True):
+    def finalize(self, ph=True, pa=True, ta=True, g_score=True, n_score=True, a_score=True):
         """
-        Summarize the feature by calculating the summary statistics.
+        Finalize the feature by calculating the summary statistics, including peak height, 
+        peak area, top average, Gaussian similarity, noise score, and asymmetry factor.
 
         Parameters
         ----------
@@ -136,7 +138,12 @@ class Feature:
         """
 
         self.signals = np.array(self.signals, dtype=np.float32)
+        original_rt_seq = self.rt_seq
         first,last = _trim_signals(self.signals)
+        if last > first:
+            left_edge_idx = first - 1 if first > 0 else first
+            right_edge_idx = last if last < len(original_rt_seq) else last - 1
+            self.peak_edges = (original_rt_seq[left_edge_idx], original_rt_seq[right_edge_idx])
         self.signals = self.signals[first:last]
         self.rt_seq = self.rt_seq[first:last]
         self.scan_idx_seq = self.scan_idx_seq[first:last]
@@ -162,7 +169,7 @@ class Feature:
             self.asymmetry_factor = calculate_asymmetry_factor(self.signals[:, 1])
 
 
-    def subset(self, start, end, summarize=True):
+    def subset(self, start, end, finalize=True):
         """
         Keep the subset of the feature by providing the start and end positions. Note that the 
         summary statistics will be recalculated in this function by default.
@@ -173,8 +180,8 @@ class Feature:
             The start position.
         end: int
             The end position. The data point at the end position is not included.
-        summarize: bool
-            Whether to recalculate the summary statistics.
+        finalize: bool
+            Whether to finalize the feature after subsetting. If True, the summary statistics will be recalculated.
         """
         
         self.rt_seq = self.rt_seq[start:end]
@@ -182,8 +189,8 @@ class Feature:
         self.scan_idx_seq = self.scan_idx_seq[start:end]
         self.ms2_seq = [ms2 for ms2 in self.ms2_seq if ms2.id > self.scan_idx_seq[0] and ms2.id < self.scan_idx_seq[-1]]
 
-        if summarize:
-            self.summarize(pa=False, ta=False, g_score=False, a_score=False)
+        if finalize:
+            self.finalize(pa=False, ta=False, g_score=False, a_score=False)
 
 
 """
@@ -259,9 +266,9 @@ def detect_features(d):
     for feature in features:
         final_features.append(feature)
     
-    # summarize features
+    # finalize features
     for feature in final_features:
-        feature.summarize(pa=False, g_score=False, a_score=False)
+        feature.finalize(pa=False, g_score=False, a_score=False)
     
     # sort by m/z
     final_features.sort(key=lambda x: x.mz)

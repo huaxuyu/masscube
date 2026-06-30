@@ -63,7 +63,8 @@ def plot_bpcs(data_list=None, autocolor=False, show_legend=True, output_path=Non
             plt.show()
 
 
-def plot_feature(d, feature, mz_tol=0.005, rt_tol=0.3, rt_range=None, output=False, break_scan=None):
+def plot_feature(d, feature, mz_tol=0.005, rt_tol=0.3, rt_range=None, output=False, break_scan=None,
+                 y_range=None, note_rt=True):
     """
     Function to plot the chromatogram of a feature.
 
@@ -85,8 +86,16 @@ def plot_feature(d, feature, mz_tol=0.005, rt_tol=0.3, rt_range=None, output=Fal
         The scan index to break the chromatogram.
     """
 
+    peak_edges = getattr(feature, "peak_edges", None)
+    if peak_edges is None:
+        left_edge, right_edge = feature.rt_seq[0], feature.rt_seq[-1]
+    else:
+        left_edge, right_edge = peak_edges
+        if left_edge is None or right_edge is None or not np.isfinite(left_edge) or not np.isfinite(right_edge):
+            left_edge, right_edge = feature.rt_seq[0], feature.rt_seq[-1]
+
     if rt_range is None:
-        rt_range = [feature.rt_seq[0]-rt_tol, feature.rt_seq[-1]+rt_tol]
+        rt_range = [left_edge-rt_tol, right_edge+rt_tol]
 
     eic_rt, eic_signals, eic_scan_idx_arr = d.get_eic_data(target_mz=feature.mz, target_rt=feature.rt, 
                                                                  mz_tol=mz_tol, rt_range=rt_range)
@@ -96,27 +105,41 @@ def plot_feature(d, feature, mz_tol=0.005, rt_tol=0.3, rt_range=None, output=Fal
     if break_scan is not None:
         idx_middle = np.where(eic_scan_idx_arr == break_scan)[0][0]
     
-    eic_int = eic_signals[:,1]
+    eic_int = eic_signals[:,1].copy()
     eic_int[idx_start:idx_end] = feature.signals[:,1]
+    fill_rt = np.concatenate(([left_edge], np.asarray(feature.rt_seq), [right_edge]))
+    fill_int = np.concatenate(([0], feature.signals[:,1], [0]))
 
-    max_int = np.max(eic_int[idx_start:idx_end])
+    if y_range is not None:
+        min_int = y_range[0]
+        max_int = y_range[1]
+    else:
+        min_int = 0
+        max_int = np.max(eic_int[idx_start:idx_end]) * 1.2
 
     plt.figure(figsize=(9, 3))
     plt.rcParams['font.size'] = 14
     if 'Arial' in [f.name for f in fm.fontManager.ttflist]:
         plt.rcParams['font.family'] = 'Arial'
     plt.plot(eic_rt, eic_int, linewidth=0.5, color="black")
-    plt.ylim(0, max_int*1.2)
+    plt.ylim(min_int, max_int)
 
     if break_scan is not None:
-        plt.fill_between(eic_rt[idx_start:(idx_middle+1)], eic_int[idx_start:(idx_middle+1)], color="blue", alpha=0.2)
-        plt.fill_between(eic_rt[idx_middle:idx_end], eic_int[idx_middle:idx_end], color="red", alpha=0.2)
+        feature_middle = np.where(np.asarray(feature.scan_idx_seq) == break_scan)[0]
+        if len(feature_middle) > 0:
+            feature_middle = feature_middle[0]
+            plt.fill_between(fill_rt[:feature_middle+2], fill_int[:feature_middle+2], color="blue", alpha=0.2)
+            plt.fill_between(fill_rt[feature_middle+1:], fill_int[feature_middle+1:], color="red", alpha=0.2)
+        else:
+            plt.fill_between(eic_rt[idx_start:(idx_middle+1)], eic_int[idx_start:(idx_middle+1)], color="blue", alpha=0.2)
+            plt.fill_between(eic_rt[idx_middle:idx_end], eic_int[idx_middle:idx_end], color="red", alpha=0.2)
     else:
-        plt.fill_between(eic_rt[idx_start:idx_end], eic_int[idx_start:idx_end], color="black", alpha=0.2)
-    plt.axvline(x = feature.rt, color = 'b', linestyle = '--', linewidth=1, ymax=0.8)
+        plt.fill_between(fill_rt, fill_int, color="black", alpha=0.2)
+    if note_rt:
+        plt.axvline(x = feature.rt, color = 'b', linestyle = '--', linewidth=1, ymax=0.8)
     # label the left and right of the feature
-    plt.axvline(x = feature.rt_seq[0], color = 'black', linestyle = '--', linewidth=0.5, ymax=0.8)
-    plt.axvline(x = feature.rt_seq[-1], color = 'black', linestyle = '--', linewidth=0.5, ymax=0.8)
+    plt.axvline(x = left_edge, color = 'black', linestyle = '--', linewidth=0.5, ymax=0.8)
+    plt.axvline(x = right_edge, color = 'black', linestyle = '--', linewidth=0.5, ymax=0.8)
     plt.xlabel("Retention Time (min)", fontsize=18)
     plt.ylabel("Intensity", fontsize=18)
     plt.text(eic_rt[0], max_int*1.1, "m/z = {:.4f}".format(feature.mz), fontsize=11)

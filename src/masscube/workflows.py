@@ -15,45 +15,42 @@ from importlib.metadata import version
 import time
 
 from .raw_data_utils import read_raw_file_to_obj
-from .params import Params, find_ms_info
+from .params import Params
 from .feature_grouping import group_features_after_alignment, group_features_single_file
 from .alignment import feature_alignment, output_feature_table, convert_features_to_df, output_feature_to_msp
 from .annotation import annotate_aligned_features, annotate_features, feature_annotation_mzrt
 from .normalization import sample_normalization, signal_normalization
 from .visualization import plot_ms2_matching_from_feature_table
 from .stats import full_statistical_analysis
-from .utils_functions import convert_signals_to_string
+from .utils_functions import convert_signals_to_string, find_ms_info
 
 
-# 1. Untargeted feature detection for a single file
+# 1. Untargeted metabolomics data processing for a single file
 def process_single_file(file_name: str, params: Params = None, segment_feature: bool = True, 
-                        group_features: bool = False, evaluate_peak_shape: bool = True,
-                        annotate_ms2: bool = False, ms2_library_path: str = None, 
-                        output_dir: str = None, return_data: bool = True):
+                        group_features: bool = False, annotate_ms2: bool = False, ms2_library_path: str = None, 
+                        output_dir: str = None):
     """
-    Untargeted data processing for a single file (mzML, mzXML, mzjson or compressed mzjson).
+    Untargeted data processing for a single mzML file.
+    Override rule: explicit function argument overrides Params.
 
     Parameters
     ----------
     file_name : str
-        Path to the raw file.
+        Path to the raw mzML file.
     params : Params object
-        Parameters for feature detection. If None, the default parameters are used
+        Parameters for single file processing. If None, the default parameters are used
         based on the type of mass spectrometer.
     segment_feature : bool
-        Whether to segment the feature to peaks for distinguishing possible isomers. Default is True.
+        Whether to segment the feature's ion trace for distinguishing possible isomers. 
+        Default is True.
     group_features : bool
         Whether to group features by isotopes, adducts and in-source fragments. Default is True.
-    evaluate_peak_shape : bool
-        Whether to evaluate the peak shape by calculating noise score and asymmetry factor. Default is True.
     annotate_ms2 : bool
         Whether to annotate MS2 spectra. Default is False.
     ms2_library_path : str
-        Another way to specify the MS2 library path.
+        Absolute path to the MS2 library.
     output_dir : str
         The output directory for the single file. If None, the output is saved to the same directory as the raw file.
-    return_data : bool
-        Whether to return the processed data as MSData object or not. Default is True.
 
     Returns
     -------
@@ -66,9 +63,12 @@ def process_single_file(file_name: str, params: Params = None, segment_feature: 
     try:
         # STEP 1. data reading, parsing, and parameter preparation
         step = "STEP 1: data reading and parameter preparation"
+        ms_type, ion_mode, is_centroid, acquisition_time = find_ms_info(file_name)
+        # skip the file if it is not centroid
+        if not is_centroid:
+            raise ValueError(f"File: {file_name} is not centroid and skipped.")
         if params is None:
             params = Params()
-            ms_type, ion_mode, _ = find_ms_info(file_name)
             params.set_default(ms_type, ion_mode)
 
         d = read_raw_file_to_obj(file_name, params=params)
@@ -94,11 +94,8 @@ def process_single_file(file_name: str, params: Params = None, segment_feature: 
             d.segment_features()
 
         # STEP 3. feature evaluation
-        step = "STEP 3: feature evaluation"
-        if evaluate_peak_shape:
-            d.summarize_features(cal_g_score=True, cal_a_score=True)
-        else:
-            d.summarize_features(cal_g_score=False, cal_a_score=False)
+        step = "STEP 3: feature finalization"
+        d.finalize_features()
 
         # STEP 4. MS2 annotation
         step = "STEP 4: MS2 annotation"
@@ -106,7 +103,10 @@ def process_single_file(file_name: str, params: Params = None, segment_feature: 
             if ms2_library_path is None:
                 ms2_library_path = d.params.ms2_library_path
             if ms2_library_path is not None:
-                annotate_features(d=d, sim_tol=d.params.ms2_sim_tol, fuzzy_search=True, ms2_library_path=ms2_library_path)
+                try:
+                    annotate_features(d=d, sim_tol=d.params.ms2_sim_tol, fuzzy_search=True, ms2_library_path=ms2_library_path)
+                except Exception as e:
+                    _print_ms2_annotation_skip_message(e, ms2_library_path, indent="\t")
 
         # STEP 5. feature grouping
         step = "STEP 5: feature grouping"
@@ -128,10 +128,7 @@ def process_single_file(file_name: str, params: Params = None, segment_feature: 
         if d.params.tmp_file_dir is not None:
             d.convert_to_mzpkl()
 
-        if return_data:
-            return d
-        else:
-            return None
+        return d
     
     except Exception as e:
         print("\tError occurred: " + file_name)
@@ -258,11 +255,18 @@ def untargeted_metabolomics_workflow(path: str = None, return_results: bool = Fa
         print("Step 4: Annotating features...")
         # annotation (using MS2 library)
         print("\tAnnotating features using the MS2 library...")
-        if params.ms2_library_path is not None and os.path.exists(params.ms2_library_path):
-            features = annotate_aligned_features(features, params)
-            print("\tMS2 annotation is completed.")
+        if params.ms2_library_path is not None and str(params.ms2_library_path).strip() != "":
+            try:
+                features = annotate_aligned_features(features, params)
+                metadata[4]["ms2_annotation_status"] = "completed"
+                print("\tMS2 annotation is completed.")
+            except Exception as e:
+                metadata[4]["ms2_annotation_status"] = "skipped"
+                metadata[4]["ms2_annotation_error"] = f"{type(e).__name__}: {e}"
+                _print_ms2_annotation_skip_message(e, params.ms2_library_path, indent="\t")
         else:
-            print("\tNo MS2 library is found. MS2 annotation is skipped.")
+            metadata[4]["ms2_annotation_status"] = "skipped"
+            print("\tNo MS2 library path is provided. MS2 annotation is skipped.")
         # annotation (using mzrt list)
         if os.path.exists(os.path.join(params.project_dir, "mzrt_list.csv")):
             print("\tAnnotating features using the extra mzrt list...")
@@ -440,7 +444,7 @@ def batch_file_processing(path=None, segment_feature=True, group_features=False,
     single_file_dir = os.path.join(path, "single_files")
 
     processed_files = [f.split(".")[0] for f in os.listdir(single_file_dir) if f.lower().endswith(".txt")]
-    all_files = [f for f in os.listdir(sample_dir) if f.lower().endswith(".mzml") or f.lower().endswith(".mzxml")]
+    all_files = [f for f in os.listdir(sample_dir) if f.lower().endswith(".mzml")]
     to_be_processed = [f for f in all_files if f.split(".")[0] not in processed_files]
     to_be_processed = [os.path.join(sample_dir, f) for f in to_be_processed]
 
@@ -458,6 +462,16 @@ def batch_file_processing(path=None, segment_feature=True, group_features=False,
                                          annotate_ms2, ms2_library_path, single_file_dir) for f in to_be_processed[i:i+batch_size]])
         p.close()
         p.join()
+
+
+def _print_ms2_annotation_skip_message(error, ms2_library_path, indent="\t"):
+    """
+    Print a consistent, non-fatal message when MS2 library annotation cannot run.
+    """
+
+    print(f"{indent}MS2 annotation is skipped because the MS2 library could not be loaded or used.")
+    print(f"{indent}MS2 library path: {ms2_library_path}")
+    print(f"{indent}{type(error).__name__}: {error}")
 
 
 DEPENDENCIES = ('masscube', 'numpy', 'pandas', 'scipy', 'matplotlib', 'pyteomics', 'scikit-learn', 'ms_entropy', 'lxml')

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "masscube"
-version = "1.2.20"
+version = "1.2.21"
 authors = [
   { name="Huaxu Yu", email="yhxchem@outlook.com" },
 ]
@@ -13,12 +13,19 @@ maintainers = [
 ]
 description = "Accurate and fast data processing for metabolomics"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9,<3.13"
 license = { text = "CC BY-NC 4.0" }
 classifiers = [
+    "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "License :: Other/Proprietary License",
     "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Chemistry",
 ]
 dependencies = [
     "numpy>=1.24,<2",
@@ -26,6 +33,7 @@ dependencies = [
     "pyteomics==4.6.3",
     "scipy>=1.10.1",
     "tqdm>=4.66.1",
+    "joblib>=1.3.0",
     "lxml>=4.9.3",
     "matplotlib>=3.8.2",
     "ms_entropy==1.3.4",
@@ -43,4 +51,17 @@ find-outliers = "masscube:run_evaluation"
 build-classifier = "masscube:build_classifier"
 
 [project.urls]
-"Homepage" = "https://github.com/huaxuyu/masscube"
+Homepage = "https://github.com/huaxuyu/masscube"
+Documentation = "https://huaxuyu.github.io/masscubedocs/"
+Source = "https://github.com/huaxuyu/masscube/"
+Issues = "https://github.com/huaxuyu/masscube/issues/"
+
+[project.optional-dependencies]
+dev = [
+    "build",
+    "pytest",
+    "twine",
+]
+
+[tool.setuptools.package-data]
+masscube = ["*.pyi", "py.typed"]

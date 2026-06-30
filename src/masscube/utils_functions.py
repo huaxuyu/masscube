@@ -19,7 +19,7 @@ from IsoSpecPy import IsoTotalProb
 
 def generate_sample_table(path=None, output=True):
     """
-    Generate a sample table from the mzML or mzXML files in the specified path.
+    Generate a sample table from the mzML files in the specified path.
     The stucture of the path should be:
     path
     ├── data
@@ -31,7 +31,7 @@ def generate_sample_table(path=None, output=True):
     Parameters
     ----------
     path : str
-        Path to the main directory that contains a subdirectory 'data' with mzML or mzXML files.
+        Path to the main directory that contains a subdirectory 'data' with mzML files.
     output : bool
         If True, output the sample table to a csv file.
 
@@ -53,7 +53,7 @@ def generate_sample_table(path=None, output=True):
     path_data = os.path.join(path, 'data')
 
     if os.path.exists(path_data):
-        file_names = [os.path.splitext(f)[0] for f in os.listdir(path_data) if f.lower().endswith('.mzml') or f.lower().endswith('.mzxml')]
+        file_names = [os.path.splitext(f)[0] for f in os.listdir(path_data) if f.lower().endswith('.mzml')]
         file_names = [f for f in file_names if not f.startswith(".")]   # for Mac OS
         file_names = sorted(file_names)
         sample_table = pd.DataFrame({'sample_name': file_names, "is_qc": [None]*len(file_names), "is_blank": [None]*len(file_names)})
@@ -81,7 +81,7 @@ def get_timestamps(path=None, output=True):
     Parameters
     ----------
     path : str
-        Path to the main directory that contains a subdirectory 'data' with mzML or mzXML files.
+        Path to the main directory that contains a subdirectory 'data' with mzML files.
     output : bool
         If True, output the timestamps to a txt file with two columns: 'file_name' and 'aquisition_time'.
 
@@ -103,7 +103,7 @@ def get_timestamps(path=None, output=True):
     path_data = os.path.join(path, 'data')
 
     if os.path.exists(path_data):
-        file_names = [f for f in os.listdir(path_data) if f.lower().endswith('.mzml') or f.lower().endswith('.mzxml')]
+        file_names = [f for f in os.listdir(path_data) if f.lower().endswith('.mzml')]
         file_names = [f for f in file_names if not f.startswith(".")]  # for Mac OS
         file_names = sorted(file_names)
 
@@ -180,15 +180,11 @@ def get_start_time(file_name):
         Absolute path of the raw data.
     """
 
-    if os.path.exists(str(file_name)):
-        with open(file_name, "rb") as f:
-            # check the first 300 rows for the start time
-            for l in f.readlines()[:300]:
-                l = str(l)
-                if "startTimeStamp" in str(l):
-                    t = l.split("startTimeStamp")[1].split('"')[1]
-                    return datetime.strptime(t, "%Y-%m-%dT%H:%M:%SZ")
-    return None
+    if not os.path.exists(str(file_name)):
+        return None
+
+    text = _read_raw_header_text(file_name, lines_to_read=300)
+    return _extract_start_time(text)
 
 
 ####################################################################################################
@@ -457,7 +453,7 @@ def convert_signals_to_string(signals):
     return string
 
 
-def centroid_signals(signals, mz_tol=0.005):
+def centroid_signals(signals, mz_tol=0.002):
     """
     Function to centroid signals in a mass spectrum.
 
@@ -466,7 +462,7 @@ def centroid_signals(signals, mz_tol=0.005):
     signals: numpy array
         MS signals for a scan as 2D numpy array in float32, organized as [[m/z, intensity], ...].
     mz_tol: float
-        m/z tolerance for centroiding. Default is 0.005 Da.
+        m/z tolerance for centroiding. Default is 0.002 Da.
 
     Returns
     -------
@@ -492,6 +488,93 @@ def centroid_signals(signals, mz_tol=0.005):
     merged_signals = np.column_stack((weighted_mz, sum_intensity)).astype(np.float32)
     
     return merged_signals
+
+
+def find_ms_info(file_path: str, lines_to_read: int = 300) -> tuple:
+    """
+    Find MS type, ion mode, centroid status and acquisition time from the raw file header.
+
+    Parameters
+    ----------
+    file_path : str
+        The raw file path.
+    lines_to_read : int
+        The number of lines to read from the raw file. Default is 300.
+
+    Returns
+    -------
+    ms_type : str
+        The type of MS, "orbitrap", "qtof", "tripletof" or "unknown".
+    ion_mode : str
+        The ion mode, "positive" or "negative".
+    centroid : bool
+        Whether the data is centroid data.
+    acquisition_time : datetime or None
+        The acquisition start timestamp, if available.
+    """
+
+    text = _read_raw_header_text(file_path, lines_to_read=lines_to_read)
+    text_lower = text.lower()
+    
+    if "orbitrap" in text_lower:
+        ms_type = "orbitrap"
+    elif "qtof" in text_lower:
+        ms_type = "qtof"
+    elif "tripletof" in text_lower:
+        ms_type = "tripletof"
+    else:
+        ms_type = "unknown"
+    
+    if 'positive' in text_lower:
+        ion_mode = 'positive'
+    elif 'negative' in text_lower:
+        ion_mode = 'negative'
+    else:
+        ion_mode = "unknown"
+
+    if "centroid spectrum" in text_lower or 'centroided="1"' in text_lower:
+        is_centroid = True
+    else:
+        is_centroid = False
+    
+    acquisition_time = _extract_start_time(text)
+    
+    return ms_type, ion_mode, is_centroid, acquisition_time
+
+
+def _read_raw_header_text(file_path: str, lines_to_read: int = 300) -> str:
+    """
+    Read a small text header from a raw XML-based MS file.
+    """
+
+    lines = []
+    with open(file_path, "rb") as f:
+        for _ in range(lines_to_read):
+            line = f.readline()
+            if not line:
+                break
+            lines.append(line.decode("utf-8", errors="ignore"))
+
+    return "".join(lines)
+
+
+def _extract_start_time(text: str):
+    """
+    Extract mzML startTimeStamp from header text.
+    """
+
+    match = re.search(r'startTimeStamp\s*=\s*"([^"]+)"', text)
+    if match is None:
+        return None
+
+    timestamp = match.group(1)
+    for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%S%z"):
+        try:
+            return datetime.strptime(timestamp, fmt)
+        except ValueError:
+            continue
+
+    return None
 
 
 ATOM_MASSES = {

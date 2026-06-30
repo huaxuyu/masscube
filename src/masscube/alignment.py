@@ -170,7 +170,6 @@ def feature_alignment(path: str, params: Params):
         table_rt = current_table["RT"].values
         mz_order = np.argsort(table_mz)
         sorted_table_mz = table_mz[mz_order]
-
         
         for f in features:
             best_idx = _find_best_match_idx(f, table_mz, table_rt, availible_features, mz_order, sorted_table_mz, mz_tol, rt_tol)

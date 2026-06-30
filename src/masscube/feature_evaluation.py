@@ -69,13 +69,18 @@ def calculate_gaussian_similarity(x, y, len_tol=5):
     return max(0, similarity)
 
 
-def calculate_noise_score(y, rel_int_tol=0.05, len_tol=5):
+def calculate_noise_score(
+        y: np.ndarray, 
+        rel_int_tol: float = 0.05, 
+        len_tol: int = 5
+    ) -> float:
     """
-    Calculate the noise score that reflect the signal fluctuation.
+    Noise score ranges from 0 to infinity and reflects the fluctuation of the peak. 
+    A higher noise score indicates a noisier peak.
 
     Parameters
     ----------
-    y: array-like
+    y: np.ndarray
         Intensity values of the peak.
     rel_int_tol: float
         Relative intensity threshold (filter low signals).
@@ -90,25 +95,23 @@ def calculate_noise_score(y, rel_int_tol=0.05, len_tol=5):
     """
 
     y = np.array(y, dtype=float) if not isinstance(y, np.ndarray) else y
-    
-    y = y[y > np.max(y) * rel_int_tol]
 
     if len(y) < len_tol:
-        return 0
+        return 0.0
 
-    y = np.concatenate(([0], y, [0]))
-    diff = np.diff(y)
+    total_variation = np.abs(np.diff(y)).sum()
+    total_variation += y[0] + y[-1]
 
-    return np.sum(np.abs(diff)) / np.max(y) / 2 - 1
+    return total_variation / (2 * y.max()) - 1
 
 
-def calculate_asymmetry_factor(y, threshold_ratio=0.1):
+def calculate_asymmetry_factor(y: np.ndarray, threshold_ratio: float = 0.1) -> float:
     """
     Calculate peak asymmetry at a given threshold level (default: 10%).
 
     Parameters
     ----------
-    y : array-like
+    y : np.ndarray
         Intensity values
     threshold_ratio : float
         Fraction of peak height to define tails (default = 0.1 = 10%)
