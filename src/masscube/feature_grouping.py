@@ -12,11 +12,18 @@ from tqdm import tqdm
 import pickle
 
 from .params import Params
-from .raw_data_utils import read_raw_file_to_obj, MSData
+from .raw_data_utils import MSData, load_mcraw
 from .utils_functions import extract_signals_from_string, POS_ADDUCTS, NEG_ADDUCTS
 
 
-def group_features_after_alignment(features: list, params: Params):
+def group_features_after_alignment(
+    features: list,
+    params: Params,
+    ion_mode=None,
+    sample_metadata=None,
+    project_file_dir=None,
+    tmp_file_dir=None,
+):
     """
     For the untargeted metabolomics workflow only. This function requires
     to reload the raw data to examine the scan-to-scan correlation between features. 
@@ -31,13 +38,30 @@ def group_features_after_alignment(features: list, params: Params):
     features: list
         A list of AlignedFeature objects.
     params: Params object
-        A Params object that contains the parameters for feature grouping.
+        Processing parameters for feature grouping.
+    sample_metadata: pandas DataFrame
+        Project sample metadata used to locate original mcraw sources.
+    project_file_dir: str
+        Directory containing retention-time correction models.
+    tmp_file_dir: str
+        Directory containing mcraw caches.
     """
 
     # check if features are provided
     if features is None or len(features) == 0:
         print("No features found for aligned feature grouping.")
         return None
+
+    if sample_metadata is None:
+        sample_metadata = getattr(params, "sample_metadata", None)
+    if project_file_dir is None:
+        project_file_dir = getattr(params, "project_file_dir", None)
+    if tmp_file_dir is None:
+        tmp_file_dir = getattr(params, "tmp_file_dir", None)
+    if sample_metadata is None:
+        raise ValueError("sample_metadata is required for aligned feature grouping.")
+    if tmp_file_dir is None:
+        raise ValueError("tmp_file_dir is required for aligned feature grouping.")
 
     # sort features by the highest peak height from high to low
     features.sort(key=lambda x: x.highest_intensity, reverse=True)
@@ -47,11 +71,20 @@ def group_features_after_alignment(features: list, params: Params):
     rt_arr = np.array([f.rt for f in features])
     is_grouped = np.zeros(len(features), dtype=bool)
     feature_group_id = 1
-    default_adduct = "[M+H]+" if params.ion_mode.lower() == "positive" else "[M-H]-"
+    if ion_mode is None:
+        ion_mode = getattr(params, "ion_mode", None)
+    if ion_mode is None:
+        raise ValueError("ion_mode metadata is required for aligned feature grouping.")
+    default_adduct = "[M+H]+" if ion_mode.lower() == "positive" else "[M-H]-"
 
     # load RT correction models if available
-    if params.correct_rt and os.path.exists(os.path.join(params.project_dir, "rt_correction_models.pkl")):
-        with open(os.path.join(params.project_dir, "rt_correction_models.pkl"), "rb") as f:
+    rt_model_path = (
+        os.path.join(project_file_dir, "rt_correction_models.pkl")
+        if project_file_dir is not None
+        else None
+    )
+    if params.correct_rt and rt_model_path and os.path.exists(rt_model_path):
+        with open(rt_model_path, "rb") as f:
             rt_cor_functions = pickle.load(f)
     else:
         rt_cor_functions = {}
@@ -69,12 +102,22 @@ def group_features_after_alignment(features: list, params: Params):
             return d
 
         # miss → load
-        fn = os.path.join(params.tmp_file_dir, ref_file + ".mzpkl")
+        fn = os.path.join(tmp_file_dir, ref_file + ".mcraw")
+        if not os.path.exists(fn) and "ABSOLUTE_PATH" in sample_metadata:
+            rows = sample_metadata[
+                sample_metadata.iloc[:, 0] == ref_file
+            ]
+            if len(rows) > 0:
+                source_path = rows.iloc[0]["ABSOLUTE_PATH"]
+                if str(source_path).lower().endswith(".mcraw"):
+                    fn = os.fspath(source_path)
         if not os.path.exists(fn):
             print(f"Reference file {fn} not found for feature grouping. Skipping...")
             return None
 
-        d = read_raw_file_to_obj(fn)
+        # Use unfiltered peaks for scan-to-scan correlation, matching the
+        # weak-signal behavior used by gap filling.
+        d = load_mcraw(fn, preprocess=False, mmap=True)
 
         func = rt_cor_functions.get(ref_file)
         if func is not None:
@@ -131,7 +174,7 @@ def group_features_after_alignment(features: list, params: Params):
         if f.ms2 is not None:
             ms2_signals = extract_signals_from_string(f.ms2)
         ion_dict = enumerate_source_ions(mz=f.mz, ms2=ms2_signals if f.ms2 is not None else None, 
-                                         adduct=f.adduct_type, ion_mode=params.ion_mode)
+                                         adduct=f.adduct_type, ion_mode=ion_mode)
         
         for key, val in ion_dict.items():
             mz_mask = np.abs(mz_arr - val) < params.mz_tol_feature_grouping
@@ -193,7 +236,7 @@ def group_features_after_alignment(features: list, params: Params):
         feature_group_id += 1
 
 
-def group_features_single_file(d: MSData, rt_tol: float = 0.05) -> None:
+def group_features_single_file(d: MSData, rt_tol: float = None) -> None:
     """
     Group isotopes, adducts, and in-source fragments from a single file 
     based on the m/z, retention time, MS/MS, scan-to-scan correlation and relative intensity.
@@ -207,6 +250,9 @@ def group_features_single_file(d: MSData, rt_tol: float = 0.05) -> None:
         The retention time tolerance for grouping features (0.05 min by default).
     """
 
+    if rt_tol is None:
+        rt_tol = d.params.rt_tol_feature_grouping
+
     # check if features have been detected
     if d.features is None or len(d.features) == 0:
         raise ValueError("No features found in the MSData object for feature grouping.")
@@ -219,7 +265,10 @@ def group_features_single_file(d: MSData, rt_tol: float = 0.05) -> None:
     rt_arr = np.array([f.rt for f in d.features])
     is_grouped = np.zeros(len(d.features), dtype=bool)
     feature_group_id = 1
-    default_adduct = "[M+H]+" if d.params.ion_mode.lower() == "positive" else "[M-H]-"
+    ion_mode = d.metadata.ion_mode
+    if ion_mode is None:
+        raise ValueError("ion_mode metadata is required for single-file feature grouping.")
+    default_adduct = "[M+H]+" if ion_mode.lower() == "positive" else "[M-H]-"
 
     # find isotopes, adducts and in-source fragments for each feature
     for i, f in enumerate(tqdm(d.features)):
@@ -252,7 +301,7 @@ def group_features_single_file(d: MSData, rt_tol: float = 0.05) -> None:
 
         # generate all possible ions for grouping
         ion_dict = enumerate_source_ions(mz=f.mz, ms2=f.ms2.signals if f.ms2 is not None else None, 
-                                         adduct=f.adduct_type, ion_mode=d.params.ion_mode)
+                                         adduct=f.adduct_type, ion_mode=ion_mode)
 
         for key, mz_val in ion_dict.items():
             mz_mask = np.abs(mz_arr - mz_val) < d.params.mz_tol_feature_grouping

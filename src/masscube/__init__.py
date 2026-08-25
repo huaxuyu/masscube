@@ -4,6 +4,11 @@ from importlib.metadata import PackageNotFoundError, version
 __all__ = [
     "__version__",
     "process_single_file",
+    "SingleFileProcessingSkipped",
+    "UntargetedMetabolomicsWorkflow",
+    "ProjectContext",
+    "ProjectMetadata",
+    "WorkflowState",
     "untargeted_metabolomics_workflow",
     "run_evaluation",
     "batch_file_processing",
@@ -22,6 +27,11 @@ except PackageNotFoundError:
 
 _LAZY_EXPORTS = {
     "process_single_file": ".workflows",
+    "SingleFileProcessingSkipped": ".workflows",
+    "UntargetedMetabolomicsWorkflow": ".workflows",
+    "ProjectContext": ".project",
+    "ProjectMetadata": ".project",
+    "WorkflowState": ".project",
     "untargeted_metabolomics_workflow": ".workflows",
     "run_evaluation": ".workflows",
     "batch_file_processing": ".workflows",

@@ -187,7 +187,7 @@ class Feature:
         self.rt_seq = self.rt_seq[start:end]
         self.signals = self.signals[start:end]
         self.scan_idx_seq = self.scan_idx_seq[start:end]
-        self.ms2_seq = [ms2 for ms2 in self.ms2_seq if ms2.id > self.scan_idx_seq[0] and ms2.id < self.scan_idx_seq[-1]]
+        self.ms2_seq = [ms2 for ms2 in self.ms2_seq if ms2.raw_file_id > self.scan_idx_seq[0] and ms2.raw_file_id < self.scan_idx_seq[-1]]
 
         if finalize:
             self.finalize(pa=False, ta=False, g_score=False, a_score=False)
@@ -229,20 +229,21 @@ def detect_features(d):
     # Loop over all MS1 scans
     for ms1_idx in d.ms1_idx_arr[1:]:
         s = d.scans[ms1_idx]                                  # The current MS1 scan
-        if len(s.signals) == 0:
-            continue
         avlb_signals = np.ones(len(s.signals), dtype=bool)    # available signals to assign to features
-        avlb_features = np.ones(len(features), dtype=bool)    # available features to take new signals
         to_be_moved = []                                      # features to be moved to final_features
         
         for i, feature in enumerate(features):
-            min_idx = _find_closest_index_ordered(array=s.signals[:,0], target=feature.signals[-1][0], 
-                                                  tol=d.params.mz_tol_ms1)
+            min_idx = None
+            if len(s.signals) > 0:
+                min_idx = _find_closest_index_ordered(
+                    array=s.signals[:, 0],
+                    target=feature.signals[-1][0],
+                    tol=d.params.mz_tol_ms1,
+                )
             if min_idx is not None and avlb_signals[min_idx]:
                 feature.extend(rt=s.time, signal=s.signals[min_idx], scan_idx=ms1_idx)
                 feature.gap_counter = 0
                 avlb_signals[min_idx] = False
-                avlb_features[i] = False
             else:
                 feature.extend(rt=s.time, signal=[feature.signals[-1][0], 0], scan_idx=ms1_idx)
                 feature.gap_counter = feature.gap_counter + 1

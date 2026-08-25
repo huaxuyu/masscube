@@ -15,7 +15,8 @@ import numpy as np
 from .._resources import load_core_db
 
 def select_anchors(d: MSData, num: int = 50, anchor_table_path: str = None, 
-                   core_db = None, return_anchors: bool = False):
+                   core_db = None, mz_tol: float = 0.01, sim_tol: float = 0.9,
+                   return_anchors: bool = False):
     """
     From a single file, select a group of metabolic features that have confirmed identity.
     Identity should be  confirmed by m/z, MS/MS spectrum, and retention time (optional).
@@ -32,6 +33,10 @@ def select_anchors(d: MSData, num: int = 50, anchor_table_path: str = None,
     anchor_table_path : str
         Optional path to a user defined table of anchors. This table should contain the m/z and retention time
         values for the anchors.
+    core_db : dict
+        The internal MS/MS spectral database. If None, the database will be loaded from the default location.
+    mz_tol : float
+        The m/z tolerance for selecting anchors.
     return_anchors : bool
         If True, return the list of selected anchors. Otherwise, store the selected anchors in the MSData object.
     
@@ -49,6 +54,13 @@ def select_anchors(d: MSData, num: int = 50, anchor_table_path: str = None,
         core_db = load_core_db()
 
     # step 3. anchor selection
+    mz_arr = np.array([f.mz for f in d.features])
+    for cpd in core_db:
+        mz = cpd["isotopes"][0,0]
+        matched_idx = np.where(np.abs(mz_arr - mz) < mz_tol)[0]
+        if len(matched_idx) > 0:
+            for idx in matched_idx:
+                d.features[idx].is_anchor = True
 
 
 

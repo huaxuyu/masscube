@@ -20,7 +20,14 @@ import warnings
 warnings.simplefilter("ignore", FutureWarning)
 
 
-def full_statistical_analysis(feature_table, params, include_qc=False):
+def full_statistical_analysis(
+    feature_table,
+    params=None,
+    include_qc=False,
+    *,
+    sample_metadata=None,
+    output_dir=None,
+):
     """
     1. Univariate analysis (t-test and p-value adjustment for two groups; ANOVA and p-value adjustment for multiple groups)
     2. Multivariate analysis (PCA)
@@ -29,8 +36,12 @@ def full_statistical_analysis(feature_table, params, include_qc=False):
     ----------
     feature_table : pandas DataFrame
         The feature table.
-    params: Params object
-        The parameters for the experiment.
+    params: Params object, optional
+        Processing parameters. Retained for API compatibility.
+    sample_metadata: pandas DataFrame
+        Project sample metadata.
+    output_dir: str
+        Directory for statistical-analysis artifacts.
 
     Returns
     -------
@@ -38,7 +49,12 @@ def full_statistical_analysis(feature_table, params, include_qc=False):
     """
     
     # UMAP analysis
-    umap_analysis(feature_table, params)
+    umap_analysis(
+        feature_table,
+        params=params,
+        sample_metadata=sample_metadata,
+        output_dir=output_dir,
+    )
     
     return feature_table
 
@@ -170,7 +186,13 @@ def pca_analysis(data_array, individual_sample_groups, scaling=True, transformat
     return vecPC1, vecPC2, var_PC1, var_PC2
 
 
-def umap_analysis(feature_table, params):
+def umap_analysis(
+    feature_table,
+    params=None,
+    *,
+    sample_metadata=None,
+    output_dir=None,
+):
     """
     Perform UMAP analysis.
 
@@ -184,14 +206,20 @@ def umap_analysis(feature_table, params):
         Whether to include the QC samples.
     """
 
-    if params.sample_metadata is None:
+    # Older callers may still supply a pre-2.0 Params carrying project state.
+    if sample_metadata is None and params is not None:
+        sample_metadata = getattr(params, "sample_metadata", None)
+    if output_dir is None and params is not None:
+        output_dir = getattr(params, "statistics_dir", None)
+
+    if sample_metadata is None:
         print("No sample metadata. UMAP analysis is not performed.")
         return None
-    if params.statistics_dir is None:
+    if output_dir is None:
         print("No statistics directory. UMAP analysis is not performed.")
         return None
     
-    df = params.sample_metadata
+    df = sample_metadata
     df = df[(~df['is_qc']) & (~df['is_blank'])]
     n = df.iloc[:, 0].values
     data_arr = feature_table[n].values  # samples in columns and features in rows
@@ -235,7 +263,7 @@ def umap_analysis(feature_table, params):
         for i in range(len(ug)):
             plt.scatter([], [], c=colors[i], label=ug[i])
         plt.legend(loc='upper right', fontsize=20)
-        plt.savefig(os.path.join(params.statistics_dir, f"UMAP_{color_by}.png"))
+        plt.savefig(os.path.join(output_dir, f"UMAP_{color_by}.png"))
         plt.close()
 
 

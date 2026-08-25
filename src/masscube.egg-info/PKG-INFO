@@ -1,10 +1,10 @@
 Metadata-Version: 2.4
 Name: masscube
-Version: 1.2.21
+Version: 1.2.22
 Summary: Accurate and fast data processing for metabolomics
 Author-email: Huaxu Yu <yhxchem@outlook.com>
 Maintainer-email: Huaxu Yu <yhxchem@outlook.com>
-License: CC BY-NC 4.0
+License-Expression: Apache-2.0
 Project-URL: Homepage, https://github.com/huaxuyu/masscube
 Project-URL: Documentation, https://huaxuyu.github.io/masscubedocs/
 Project-URL: Source, https://github.com/huaxuyu/masscube/
@@ -15,13 +15,13 @@ Classifier: Programming Language :: Python :: 3.9
 Classifier: Programming Language :: Python :: 3.10
 Classifier: Programming Language :: Python :: 3.11
 Classifier: Programming Language :: Python :: 3.12
-Classifier: License :: Other/Proprietary License
 Classifier: Operating System :: OS Independent
 Classifier: Topic :: Scientific/Engineering :: Bio-Informatics
 Classifier: Topic :: Scientific/Engineering :: Chemistry
 Requires-Python: <3.13,>=3.9
 Description-Content-Type: text/markdown
 License-File: LICENSE
+License-File: NOTICE
 Requires-Dist: numpy<2,>=1.24
 Requires-Dist: pandas>=2.2.1
 Requires-Dist: pyteomics==4.6.3
@@ -76,10 +76,69 @@ pip install masscube --upgrade
 
 Start your nontargeted metabolomics data processing from [here](https://huaxuyu.github.io/masscubedocs/docs/quickstart/)
 
+### Bruker timsTOF `.d` input
+
+MassCube can read DDA-PASEF TDF2 directories directly, including calibrated
+m/z and inverse reduced ion mobility (`1/K0`):
+
+```python
+from masscube import read_raw_file_to_obj
+
+data = read_raw_file_to_obj("sample.d")
+scan = data.scans[data.ms1_idx_arr[0]]
+print(scan.signals)             # columns: m/z, intensity
+print(scan.inv_mobility)        # aligned intensity-weighted 1/K0
+print(scan.inv_mobility_range)  # aligned observed [min, max] 1/K0
+```
+
+The reader does not use OpenTIMS, AlphaTims, or Bruker's TDF-SDK. Its binary
+decoder uses the Python standard library and loads the system `libzstd`
+runtime through `ctypes`; on macOS it can be installed with `brew install
+zstd`. Set `MASSCUBE_ZSTD_LIBRARY` when the library is in a nonstandard
+location.
+
+Currently supported Bruker data are TDF2 (`TimsCompressionType=2`), DDA-PASEF
+(`MsMsType=8`), m/z calibration model 1 with `dC2=0` and `C3=C4=0`, and static
+TIMS calibration model 2. The complete model-1 quadratic (`C0`, `C1`, and
+`C2`) m/z calibration stored in each frame is applied.
+The reported `1/K0` applies the stored static mobility calibration but not the
+vendor's proprietary per-frame pressure compensation; this is recorded as
+`data.metadata.mobility_pressure_compensated == False`.
+
+For development-time verification against an installed official TDF-SDK, run:
+
+```bash
+python tools/validate_tdf_sdk.py sample.d /path/to/libtimsdata.so \
+  --output tdf_sdk_validation.json
+```
+
+The validation tool compares exact scan/TOF/intensity coordinates before
+mobility collapse, calibrated m/z, and all three SDK pressure-compensation
+strategies. It is not imported by MassCube and does not make TDF-SDK a runtime
+dependency.
+
+### Native `.mcraw` workflow cache
+
+The untargeted workflow decodes each mzML or supported Bruker `.d` source once
+and stores a versioned `.mcraw` cache under the project `tmp` directory.
+Feature detection, gap filling, and aligned feature grouping then reload this
+cache instead of reparsing the source. Shared MS1/MS2 metadata are stored once;
+only scan-varying values and concatenated peak arrays are written as NumPy
+columns. The original vendor data should still be retained as the archival
+source.
+
+Single-file TXT output keeps the `peak_shape` column for compatibility but
+does not embed full chromatographic traces by default. Set
+`Params.output_peak_shape = True` when those traces are explicitly needed.
+
 ## Contribute to masscube
 
 The **masscube** project is excited to have your expertise and passion on board!
 
 We value all enhancements or corrections. For those thinking about making significant contributions to the codebase, we encourage you to get in touch with us!
 
-- Huaxu Yu, hxuyu@ucdavis.edu
+- Huaxu Yu, huaxuyu@zju.edu.cn; yhxchem@outlook.com
+
+## License
+
+MassCube is licensed under the [Apache License 2.0](LICENSE).

@@ -11,8 +11,8 @@ from tqdm import tqdm
 from scipy.interpolate import interp1d
 import pickle
 
-from .raw_data_utils import read_raw_file_to_obj, Scan
 from .params import Params
+from .raw_data_utils import Scan, load_mcraw
 from .utils_functions import convert_signals_to_string, extract_signals_from_string
 
 
@@ -100,7 +100,13 @@ Functions
 ------------------------------------------------------------------------------------------------------------------------
 """
 
-def feature_alignment(path: str, params: Params):
+def feature_alignment(
+    path: str,
+    params: Params,
+    sample_metadata=None,
+    project_file_dir=None,
+    tmp_file_dir=None,
+):
     """
     Align the features from multiple processed single files as .txt format.
 
@@ -109,7 +115,13 @@ def feature_alignment(path: str, params: Params):
     path: str
         The path to the feature tables.
     params: Params object
-        The parameters for alignment including sample names and sample groups.
+        Processing parameters for alignment.
+    sample_metadata: pandas DataFrame
+        Project sample metadata. This is project data, not a parameter.
+    project_file_dir: str
+        Directory for project-level intermediate artifacts.
+    tmp_file_dir: str
+        Directory containing the mcraw caches used for gap filling.
 
     Returns
     -------
@@ -118,27 +130,41 @@ def feature_alignment(path: str, params: Params):
     """
 
     # STEP 1: preparation
+    sample_metadata = _resolve_legacy_project_value(
+        sample_metadata, params, "sample_metadata"
+    )
+    project_file_dir = _resolve_legacy_project_value(
+        project_file_dir, params, "project_file_dir"
+    )
+    tmp_file_dir = _resolve_legacy_project_value(tmp_file_dir, params, "tmp_file_dir")
+    if sample_metadata is None:
+        raise ValueError("sample_metadata is required for feature alignment.")
+
     features = []
-    params.sample_metadata['SINGLE_FILE_PATH'] = [os.path.join(path, f + ".txt") for f in params.sample_metadata.iloc[:, 0]]
-    for i in range(len(params.sample_metadata)):
-        if not os.path.exists(params.sample_metadata['SINGLE_FILE_PATH'][i]):
-            params.sample_metadata.loc[i, "VALID"] = False
+    sample_metadata['SINGLE_FILE_PATH'] = [
+        os.path.join(path, str(name) + ".txt")
+        for name in sample_metadata.iloc[:, 0]
+    ]
+    for i in range(len(sample_metadata)):
+        if not os.path.exists(sample_metadata.loc[i, 'SINGLE_FILE_PATH']):
+            sample_metadata.loc[i, "VALID"] = False
     # remove invalid files
-    params.sample_metadata = params.sample_metadata[params.sample_metadata["VALID"]]
-    params.sample_metadata.index = np.arange(len(params.sample_metadata))
+    invalid_indexes = sample_metadata.index[~sample_metadata["VALID"].astype(bool)]
+    sample_metadata.drop(index=invalid_indexes, inplace=True)
+    sample_metadata.reset_index(drop=True, inplace=True)
 
     # avoid empty single files
-    if len(params.sample_metadata) == 0:
+    if len(sample_metadata) == 0:
         raise ValueError("No valid single files for alignment.")
     
     # find anchors for retention time correction
     if params.correct_rt:
         intensities = []
-        for n in params.sample_metadata['SINGLE_FILE_PATH']:
+        for n in sample_metadata['SINGLE_FILE_PATH']:
             df = pd.read_csv(n, sep="\t", low_memory=False)
             intensities.append(np.sum(df["peak_height"]))
         # use the file with median total intensity as the reference file
-        anchor_selection_name = params.sample_metadata['SINGLE_FILE_PATH'][np.argsort(intensities)[len(intensities)//2]]
+        anchor_selection_name = sample_metadata['SINGLE_FILE_PATH'][np.argsort(intensities)[len(intensities)//2]]
         mz_ref, rt_ref = rt_anchor_selection(anchor_selection_name, num=100)
         rt_cor_functions = {}
     
@@ -146,10 +172,10 @@ def feature_alignment(path: str, params: Params):
     rt_tol = params.rt_tol_alignment
 
     # STEP 2: read individual feature tables and align features
-    for i in tqdm(range(len(params.sample_metadata))):
-        file_name = params.sample_metadata.iloc[i, 0]
+    for i in tqdm(range(len(sample_metadata))):
+        file_name = sample_metadata.iloc[i, 0]
         # read feature table
-        current_table = pd.read_csv(params.sample_metadata['SINGLE_FILE_PATH'][i], sep="\t", low_memory=False)
+        current_table = pd.read_csv(sample_metadata.loc[i, 'SINGLE_FILE_PATH'], sep="\t", low_memory=False)
         current_table = current_table[current_table["MS2"].notna()|(current_table["total_scans"]>params.scan_number_cutoff)]
         
         # sort current table by peak height from high to low
@@ -183,7 +209,7 @@ def feature_alignment(path: str, params: Params):
         # if an feature is not detected in the previous files, add it to the features
         for j, b in enumerate(availible_features):
             if b:
-                f = AlignedFeature(file_number=len(params.sample_metadata))
+                f = AlignedFeature(file_number=len(sample_metadata))
                 _assign_value_to_feature(f=f, df=current_table, i=i, p=j, file_name=file_name)
                 _assign_reference_values(f=f, df=current_table, p=j, file_name=file_name)
                 features.append(f)
@@ -195,7 +221,11 @@ def feature_alignment(path: str, params: Params):
     
     # save the retention time correction models
     if params.correct_rt:
-        with open(os.path.join(params.project_file_dir, "rt_correction_models.pkl"), "wb") as f:
+        if project_file_dir is None:
+            raise ValueError(
+                "project_file_dir is required when retention-time correction is enabled."
+            )
+        with open(os.path.join(project_file_dir, "rt_correction_models.pkl"), "wb") as f:
             pickle.dump(rt_cor_functions, f)
     
     # choose the best ms2
@@ -206,14 +236,14 @@ def feature_alignment(path: str, params: Params):
         f.ms2_seq.sort(key=lambda x: np.sum(x.signals[:, 1]), reverse=True)
         f.ms2_reference_file = f.ms2_seq[0].file_name
         f.ms2 = convert_signals_to_string(f.ms2_seq[0].signals)
-        f.ms2_scan_idx = f.ms2_seq[0].id
+        f.ms2_scan_idx = f.ms2_seq[0].raw_file_id
         f.ms2_pif = f.ms2_seq[0].precursor_ion_fraction
 
     # discard features likely to be noise after all files have been processed
     features = [f for f in features if _should_keep_feature_final(f, params)]
     
     # STEP 3: calculate the detection rate and drop features using the detection rate cutoff
-    v = ~params.sample_metadata['is_blank']
+    v = ~sample_metadata['is_blank'].to_numpy(dtype=bool)
     for f in features:
         f.detection_rate = np.sum(f.feature_id_arr[v] != -1) / np.sum(v)
     features = [f for f in features if (f.detection_rate > params.detection_rate_cutoff) | (f.highest_intensity >= params.ms1_abs_int_tol * 10)]
@@ -225,7 +255,13 @@ def feature_alignment(path: str, params: Params):
     # STEP 5: gap filling
     if params.fill_gaps:
         print("\tFilling gaps...")
-        features = gap_filling(features, params)
+        features = gap_filling(
+            features,
+            params,
+            sample_metadata=sample_metadata,
+            project_file_dir=project_file_dir,
+            tmp_file_dir=tmp_file_dir,
+        )
     
     # STEP 6: index the features
     features.sort(key=lambda x: x.highest_intensity, reverse=True)
@@ -235,7 +271,13 @@ def feature_alignment(path: str, params: Params):
     return features
 
 
-def gap_filling(features, params: Params):
+def gap_filling(
+    features,
+    params: Params,
+    sample_metadata=None,
+    project_file_dir=None,
+    tmp_file_dir=None,
+):
     """
     Fill the gaps for aligned features.
 
@@ -252,41 +294,76 @@ def gap_filling(features, params: Params):
         The aligned features with filled gaps.
     """
 
+    sample_metadata = _resolve_legacy_project_value(
+        sample_metadata, params, "sample_metadata"
+    )
+    project_file_dir = _resolve_legacy_project_value(
+        project_file_dir, params, "project_file_dir"
+    )
+    tmp_file_dir = _resolve_legacy_project_value(tmp_file_dir, params, "tmp_file_dir")
+    if sample_metadata is None:
+        raise ValueError("sample_metadata is required for gap filling.")
+
     # fill the gaps by forced peak picking (local maximum)
     if params.gap_filling_method == 'local_maximum':
 
         # if retention time correction is applied, read the model
-        if params.correct_rt and os.path.exists(os.path.join(params.project_file_dir, "rt_correction_models.pkl")):
-            with open(os.path.join(params.project_file_dir, "rt_correction_models.pkl"), "rb") as f:
+        rt_model_path = (
+            os.path.join(project_file_dir, "rt_correction_models.pkl")
+            if project_file_dir is not None
+            else None
+        )
+        if params.correct_rt and rt_model_path and os.path.exists(rt_model_path):
+            with open(rt_model_path, "rb") as f:
                 rt_cor_functions = pickle.load(f)
         else:
             rt_cor_functions = None
 
-        for i in tqdm(range(len(params.sample_metadata))):
-            file_name = params.sample_metadata.iloc[i, 0]
-            fn = os.path.join(params.tmp_file_dir, file_name + ".mzpkl")
-            if os.path.exists(fn):
-                d = read_raw_file_to_obj(fn, ms1_abs_int_tol=params.ms1_abs_int_tol, centroid_mz_tol=None)
-                # correct retention time if model is available
-                if rt_cor_functions is not None and file_name in rt_cor_functions.keys():
-                    f = rt_cor_functions[file_name]
-                    if f is not None:
-                        d.correct_retention_time(f)
+        if tmp_file_dir is None:
+            raise ValueError("tmp_file_dir is required for gap filling.")
+        for i in tqdm(range(len(sample_metadata))):
+            file_name = sample_metadata.iloc[i, 0]
+            fn = os.path.join(tmp_file_dir, file_name + ".mcraw")
+            if not os.path.exists(fn) and "ABSOLUTE_PATH" in sample_metadata:
+                source_path = sample_metadata.iloc[i]["ABSOLUTE_PATH"]
+                if str(source_path).lower().endswith(".mcraw"):
+                    fn = os.fspath(source_path)
+            if not os.path.exists(fn):
+                raise FileNotFoundError(
+                    f"mcraw cache required for gap filling was not found: {fn}"
+                )
 
-                for f in features:
-                    if f.feature_id_arr[i] == -1:
-                        eic_time_arr, eic_signals, _ = d.get_eic_data(f.mz, f.rt, params.mz_tol_alignment, params.gap_filling_rt_window)
-                        if len(eic_signals) > 0:
-                            f.peak_height_arr[i] = np.max(eic_signals[:, 1])
-                            f.peak_area_arr[i] = int(np.trapz(y=eic_signals[:, 1], x=eic_time_arr))
-                            f.top_average_arr[i] = np.mean(np.sort(eic_signals[:, 1])[-3:])
+            # Gap filling intentionally uses the unfiltered cache so signals
+            # below the feature-detection threshold remain recoverable.
+            d = load_mcraw(fn, preprocess=False, mmap=True)
+            # correct retention time if model is available
+            if rt_cor_functions is not None and file_name in rt_cor_functions.keys():
+                f = rt_cor_functions[file_name]
+                if f is not None:
+                    d.correct_retention_time(f)
+
+            for f in features:
+                if f.feature_id_arr[i] == -1:
+                    eic_time_arr, eic_signals, _ = d.get_eic_data(f.mz, f.rt, params.mz_tol_alignment, params.gap_filling_rt_window)
+                    if len(eic_signals) > 0:
+                        f.peak_height_arr[i] = np.max(eic_signals[:, 1])
+                        f.peak_area_arr[i] = int(np.trapz(y=eic_signals[:, 1], x=eic_time_arr))
+                        f.top_average_arr[i] = np.mean(np.sort(eic_signals[:, 1])[-3:])
 
     # calculate the detection rate after gap filling (blank samples are not included)
-    v = ~params.sample_metadata['is_blank']
+    v = ~sample_metadata['is_blank'].to_numpy(dtype=bool)
     for f in features:
         f.detection_rate_gap_filled = np.sum(f.peak_height_arr[v] > 0) / np.sum(v)
     
     return features
+
+
+def _resolve_legacy_project_value(value, params, attribute):
+    """Accept old Params objects without putting project state on new Params."""
+
+    if value is not None:
+        return value
+    return getattr(params, attribute, None)
 
 
 def merge_features(features: list, params: Params):
@@ -666,7 +743,7 @@ def _assign_value_to_feature(f, df, i, p, file_name):
     f.scan_idx_arr[i] = df.loc[p, "scan_idx"]
     if df.loc[p, "MS2"] == df.loc[p, "MS2"]:
         f.ms2_seq.append(Scan(file_name=file_name, signals=extract_signals_from_string(df.loc[p, "MS2"]),
-                              id=df.loc[p, "MS2_scan_id"], 
+                              raw_file_id=df.loc[p, "MS2_scan_id"],
                               precursor_ion_fraction=df.loc[p, "precursor_ion_fraction"]))
 
 
@@ -690,7 +767,8 @@ def _assign_reference_values(f, df, p, file_name):
     f.rt = df.loc[p, "RT"]
     f.reference_file = file_name
     f.reference_scan_idx = df.loc[p, "scan_idx"]
-    f.reference_peak_shape = df.loc[p, "peak_shape"]
+    peak_shape = df.loc[p, "peak_shape"] if "peak_shape" in df.columns else None
+    f.reference_peak_shape = peak_shape if pd.notna(peak_shape) else None
     f.highest_intensity = df.loc[p, "peak_height"]
     f.gaussian_similarity = df.loc[p, "Gaussian_similarity"]
     f.noise_score = df.loc[p, "noise_score"]

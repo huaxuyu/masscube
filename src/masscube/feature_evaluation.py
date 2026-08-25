@@ -94,10 +94,12 @@ def calculate_noise_score(
         Noise score (0 = no noise, higher = noiser)
     """
 
-    y = np.array(y, dtype=float) if not isinstance(y, np.ndarray) else y
+    y = np.asarray(y, dtype=float).copy()
 
-    if len(y) < len_tol:
+    if len(y) < len_tol or np.max(y) <= 0:
         return 0.0
+
+    y[y < rel_int_tol * np.max(y)] = 0  # Filter low signals
 
     total_variation = np.abs(np.diff(y)).sum()
     total_variation += y[0] + y[-1]

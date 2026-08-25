@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import os
 from tqdm import tqdm
-from datetime import datetime
+from datetime import datetime, timezone
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
@@ -19,7 +19,7 @@ from IsoSpecPy import IsoTotalProb
 
 def generate_sample_table(path=None, output=True):
     """
-    Generate a sample table from the mzML files in the specified path.
+    Generate a sample table from supported raw data in the specified path.
     The stucture of the path should be:
     path
     ├── data
@@ -53,8 +53,13 @@ def generate_sample_table(path=None, output=True):
     path_data = os.path.join(path, 'data')
 
     if os.path.exists(path_data):
-        file_names = [os.path.splitext(f)[0] for f in os.listdir(path_data) if f.lower().endswith('.mzml')]
-        file_names = [f for f in file_names if not f.startswith(".")]   # for Mac OS
+        from .raw_data_utils import is_supported_raw_data_path
+
+        file_names = [
+            os.path.splitext(f)[0]
+            for f in os.listdir(path_data)
+            if is_supported_raw_data_path(os.path.join(path_data, f))
+        ]
         file_names = sorted(file_names)
         sample_table = pd.DataFrame({'sample_name': file_names, "is_qc": [None]*len(file_names), "is_blank": [None]*len(file_names)})
     else:
@@ -103,9 +108,15 @@ def get_timestamps(path=None, output=True):
     path_data = os.path.join(path, 'data')
 
     if os.path.exists(path_data):
-        file_names = [f for f in os.listdir(path_data) if f.lower().endswith('.mzml')]
-        file_names = [f for f in file_names if not f.startswith(".")]  # for Mac OS
+        from .raw_data_utils import is_supported_raw_data_path
+
+        file_names = [
+            f for f in os.listdir(path_data)
+            if is_supported_raw_data_path(os.path.join(path_data, f))
+        ]
         file_names = sorted(file_names)
+    else:
+        raise FileNotFoundError(f"The path {path_data} does not exist.")
 
     times = []
     print("Getting timestamps for individual files...")
@@ -113,7 +124,7 @@ def get_timestamps(path=None, output=True):
         tmp = os.path.join(path_data, f)
         times.append(get_start_time(tmp))
     
-    file_names = [f.split(".")[0] for f in file_names]
+    file_names = [os.path.splitext(f)[0] for f in file_names]
     
     # sort the files by time
     file_times = list(zip(file_names, times))
@@ -183,6 +194,11 @@ def get_start_time(file_name):
     if not os.path.exists(str(file_name)):
         return None
 
+    if os.path.isdir(str(file_name)) and str(file_name).lower().endswith((".d", ".mcraw")):
+        from .raw_data_utils import find_raw_data_info
+
+        return find_raw_data_info(file_name)[3]
+
     text = _read_raw_header_text(file_name, lines_to_read=300)
     return _extract_start_time(text)
 
@@ -209,9 +225,9 @@ def formula_to_mz(formula, adduct):
 
     Examples
     --------
-    >>> formula_to_mz("C6H12O6", "+H", 1)
+    >>> formula_to_mz("C6H12O6", "[M+H]+")
     181.070665
-    >>> formula_to_mz("C9H14N3O8P", "-H2OH", -1)
+    >>> formula_to_mz("C9H14N3O8P", "[M-H]-")
     304.034010
     """
 
@@ -228,7 +244,7 @@ def formula_to_mz(formula, adduct):
     return mz
 
 
-def formula_to_isotope_distribution(formula, adduct, prob_to_cover=0.9999, delta_mass=0.005):
+def formula_to_isotope_distribution(formula, adduct=None, prob_to_cover=0.9999, delta_mass=0.005):
     """
     Calculate the isotope distribution of a molecule given its chemical formula and adduct.
 
@@ -256,10 +272,11 @@ def formula_to_isotope_distribution(formula, adduct, prob_to_cover=0.9999, delta
     parsed_formula = parse_formula(formula)
 
     # combine with adduct
-    if adduct is not None:
-        parsed_formula, charge = _combine_formula_with_adduct(parsed_formula, adduct)
-    else:
-        charge = 0
+    parsed_formula, charge = _combine_formula_with_adduct(parsed_formula, adduct)
+
+    # if parsed_formula is None, return None
+    if parsed_formula is None:
+        return None
 
     sp = IsoTotalProb(formula=parsed_formula, prob_to_cover=prob_to_cover)
 
@@ -340,7 +357,7 @@ def bin_isotopes_by_mass(data, bin_width):
     return binned
 
 
-def _combine_formula_with_adduct(parsed_formula, adduct):
+def _combine_formula_with_adduct(parsed_formula, adduct=None):
     """
     Combine a chemical formula with an adduct to get the final formula.
 
@@ -364,16 +381,16 @@ def _combine_formula_with_adduct(parsed_formula, adduct):
         tmp = POS_ADDUCTS[adduct]
     elif adduct in NEG_ADDUCTS.keys():
         tmp = NEG_ADDUCTS[adduct]
-    elif adduct == "":
+    elif adduct is None:
         return parsed_formula, 0
     else:
         print(f"Adduct {adduct} not found in the database. Please check the adduct name.")
-        return None
+        return None, None   
     
     # cannot subtract atoms that are not in the original formula
     for k, v in tmp.modification.items():
         if v<0 and k not in parsed_formula:
-            return None
+            return None, None
     
     for k, v in parsed_formula.items():
         parsed_formula[k] = v * tmp.mol_multiplier
@@ -570,7 +587,10 @@ def _extract_start_time(text: str):
     timestamp = match.group(1)
     for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%S%z"):
         try:
-            return datetime.strptime(timestamp, fmt)
+            value = datetime.strptime(timestamp, fmt)
+            if timestamp.endswith("Z"):
+                value = value.replace(tzinfo=timezone.utc)
+            return value
         except ValueError:
             continue
 

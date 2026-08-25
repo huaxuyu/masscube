@@ -13,6 +13,10 @@ from ms_entropy import read_one_spectrum, FlashEntropySearch
 
 from .utils_functions import extract_signals_from_string, convert_signals_to_string
 
+
+class MS2LibraryError(RuntimeError):
+    """Raised when an MS2 library cannot be loaded or validated."""
+
 """
 MS/MS database format
 ====================================================================================
@@ -185,7 +189,16 @@ def load_ms2_db(path: str):
     return entropy_search
 
 
-def annotate_aligned_features(features: list, params, num: int = 5):
+def _load_ms2_db_for_annotation(path: str):
+    """Translate expected library-loading failures into one public error."""
+
+    try:
+        return load_ms2_db(path)
+    except (OSError, ValueError, EOFError, pickle.UnpicklingError) as error:
+        raise MS2LibraryError(str(error)) from error
+
+
+def annotate_aligned_features(features: list, params, num: int = 5, ion_mode=None):
     """
     Annotate aligned features using MS/MS databases.
     
@@ -204,9 +217,14 @@ def annotate_aligned_features(features: list, params, num: int = 5):
         A list of AlignedFeature objects with MS2 annotation.
     """
 
-    entropy_search = load_ms2_db(params.ms2_library_path)
+    _validate_similarity_method(params.spectral_similarity_method)
+    entropy_search = _load_ms2_db_for_annotation(params.ms2_library_path)
 
-    ion_mode_mask = _build_ion_mode_mask(entropy_search, params.ion_mode)
+    if ion_mode is None:
+        ion_mode = getattr(params, "ion_mode", None)
+    if ion_mode is None:
+        raise ValueError("ion_mode metadata is required for aligned feature annotation.")
+    ion_mode_mask = _build_ion_mode_mask(entropy_search, ion_mode)
 
     if params.consider_rt:
         rt_arr = _build_retention_time_array(entropy_search)
@@ -256,7 +274,7 @@ def annotate_aligned_features(features: list, params, num: int = 5):
                 matched = _normalize_record(entropy_search[matched_idx])
                 _assign_annotation_results_to_feature(f, score=similarities_rt[idx_tmp][matched_idx],matched=matched, 
                                                       matched_peak_num=matched_nums[idx_tmp][matched_idx], search_mode='identity_search_with_rt',
-                                                      ms2_scan_idx=selected_scan.id, precursor_ion_fraction=selected_scan.precursor_ion_fraction)
+                                                      ms2_scan_idx=selected_scan.raw_file_id, precursor_ion_fraction=selected_scan.precursor_ion_fraction)
                                                       
         
         # if the feature cannot be annotated by considering retention time
@@ -270,7 +288,7 @@ def annotate_aligned_features(features: list, params, num: int = 5):
                 matched = _normalize_record(entropy_search[matched_idx])
                 _assign_annotation_results_to_feature(f, score=similarities[idx_tmp][matched_idx], matched=matched,
                                                       matched_peak_num=matched_nums[idx_tmp][matched_idx], search_mode='identity_search',
-                                                      ms2_scan_idx=selected_scan.id, precursor_ion_fraction=selected_scan.precursor_ion_fraction)
+                                                      ms2_scan_idx=selected_scan.raw_file_id, precursor_ion_fraction=selected_scan.precursor_ion_fraction)
 
         # if the feature cannot be annotated by MS2 identity search
         if matched is None and params.fuzzy_search:
@@ -283,12 +301,12 @@ def annotate_aligned_features(features: list, params, num: int = 5):
                 matched = _normalize_record(entropy_search[idx])
                 _assign_annotation_results_to_feature(f, score=similarity[idx], matched=matched, 
                                                       matched_peak_num=None, search_mode='fuzzy_search',
-                                                      ms2_scan_idx=selected_scan.id, precursor_ion_fraction=selected_scan.precursor_ion_fraction)
+                                                      ms2_scan_idx=selected_scan.raw_file_id, precursor_ion_fraction=selected_scan.precursor_ion_fraction)
         
         if getattr(f, "ms2_reference_file", None) is None:
             f.ms2_reference_file = getattr(selected_scan, "file_name", None)
         if getattr(f, "ms2_scan_idx", None) is None:
-            f.ms2_scan_idx = getattr(selected_scan, "id", None)
+            f.ms2_scan_idx = getattr(selected_scan, "raw_file_id", None)
         if getattr(f, "ms2_pif", None) is None:
             f.ms2_pif = getattr(selected_scan, "precursor_ion_fraction", None)
         f.ms2 = convert_signals_to_string(selected_signals)
@@ -296,7 +314,14 @@ def annotate_aligned_features(features: list, params, num: int = 5):
     return features
 
 
-def annotate_features(d, sim_tol=None, fuzzy_search=True, ms2_library_path=None, consider_rt=False):
+def annotate_features(
+    d,
+    sim_tol=None,
+    fuzzy_search=True,
+    ms2_library_path=None,
+    consider_rt=False,
+    similarity_method="unweighted_entropy",
+):
     """
     Annotate features from a single raw data file using MS2 database.
     
@@ -316,12 +341,14 @@ def annotate_features(d, sim_tol=None, fuzzy_search=True, ms2_library_path=None,
         Whether to consider retention time in the annotation. Default is False.
     """
 
+    _validate_similarity_method(similarity_method)
+
     if ms2_library_path is None:
-        entropy_search = load_ms2_db(d.params.ms2_library_path)
+        entropy_search = _load_ms2_db_for_annotation(d.params.ms2_library_path)
     else:
-        entropy_search = load_ms2_db(ms2_library_path)
+        entropy_search = _load_ms2_db_for_annotation(ms2_library_path)
     
-    ion_mode_mask = _build_ion_mode_mask(entropy_search, d.params.ion_mode)
+    ion_mode_mask = _build_ion_mode_mask(entropy_search, d.metadata.ion_mode)
 
     if sim_tol is None:
         sim_tol = d.params.ms2_sim_tol
@@ -358,7 +385,7 @@ def annotate_features(d, sim_tol=None, fuzzy_search=True, ms2_library_path=None,
                 matched_peak_num = peak_nums[idx]
                 _assign_annotation_results_to_feature(f, score=scores_rt[idx], matched=matched, matched_peak_num=matched_peak_num, 
                                                       search_mode='identity_search_with_rt',
-                                                      ms2_scan_idx=getattr(f.ms2, "id", None),
+                                                      ms2_scan_idx=getattr(f.ms2, "raw_file_id", None),
                                                       precursor_ion_fraction=getattr(f.ms2, "precursor_ion_fraction", None))
         
         if matched is None:
@@ -368,7 +395,7 @@ def annotate_features(d, sim_tol=None, fuzzy_search=True, ms2_library_path=None,
                 matched_peak_num = peak_nums[idx]
                 _assign_annotation_results_to_feature(f, score=scores[idx], matched=matched, matched_peak_num=matched_peak_num,
                                                       search_mode='identity_search',
-                                                      ms2_scan_idx=getattr(f.ms2, "id", None),
+                                                      ms2_scan_idx=getattr(f.ms2, "raw_file_id", None),
                                                       precursor_ion_fraction=getattr(f.ms2, "precursor_ion_fraction", None))
 
         if matched is None and fuzzy_search:
@@ -381,7 +408,7 @@ def annotate_features(d, sim_tol=None, fuzzy_search=True, ms2_library_path=None,
                 matched_peak_num = None
                 _assign_annotation_results_to_feature(f, score=scores[idx], matched=matched, matched_peak_num=matched_peak_num, 
                                                       search_mode='fuzzy_search',
-                                                      ms2_scan_idx=getattr(f.ms2, "id", None),
+                                                      ms2_scan_idx=getattr(f.ms2, "raw_file_id", None),
                                                       precursor_ion_fraction=getattr(f.ms2, "precursor_ion_fraction", None))
 
 
@@ -549,6 +576,15 @@ def _normalize_ion_mode(value):
     if "negative" in value or value in {"neg", "-"}:
         return "negative"
     return value
+
+
+def _validate_similarity_method(method):
+    """Validate the similarity implementation used by the legacy annotator."""
+
+    if method != "unweighted_entropy":
+        raise ValueError(
+            "Only similarity_method='unweighted_entropy' is supported by annotation.py."
+        )
 
 
 def _build_ion_mode_mask(entropy_search, ion_mode):

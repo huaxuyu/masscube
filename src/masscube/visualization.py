@@ -54,7 +54,7 @@ def plot_bpcs(data_list=None, autocolor=False, show_legend=True, output_path=Non
             plt.yticks(fontsize=14)
         
         if show_legend:
-            plt.legend([d.params.file_name for d in data_list], fontsize=10)
+            plt.legend([d.metadata.file_name for d in data_list], fontsize=10)
         
         if output_path is not None:
             plt.savefig(output_path, dpi=600, bbox_inches="tight")
@@ -146,7 +146,7 @@ def plot_feature(d, feature, mz_tol=0.005, rt_tol=0.3, rt_range=None, output=Fal
     plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.2, max_int*1.1, "G-score = {:.2f}".format(feature.gaussian_similarity), fontsize=11, color="blue")
     plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.4, max_int*1.1, "N-score = {:.2f}".format(feature.noise_score), fontsize=11, color="red")
     plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.6, max_int*1.1, "A-score = {:.2f}".format(feature.asymmetry_factor), fontsize=11, color="darkgreen")
-    plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.8,max_int*1.1, d.params.file_name, fontsize=7, color="gray")
+    plt.text(eic_rt[0]+(eic_rt[-1]-eic_rt[0])*0.8,max_int*1.1, d.metadata.file_name, fontsize=7, color="gray")
 
     if output:
         plt.savefig(output, dpi=600, bbox_inches="tight")
@@ -253,8 +253,8 @@ def plot_ms2_matching_from_feature_table(feature_table, params=None, output_dir=
     id = list(sub_feature_table["feature_ID"])
 
     if output_dir is None and params is not None:
-        output_dir = params.ms2_matching_dir
-    elif output_dir is None and params is None:
+        output_dir = getattr(params, "ms2_matching_dir", None)
+    if output_dir is None:
         print("Please provide the output directory for MS2 matching plots.")
         return None
 

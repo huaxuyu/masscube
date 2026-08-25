@@ -17,7 +17,7 @@ import os
 import pickle
 import shutil
 
-from .workflows import untargeted_metabolomics_workflow
+from .workflows import UntargetedMetabolomicsWorkflow
 
 """
 Functions
@@ -185,14 +185,18 @@ def build_classifier(path=None, by_group=None, feature_num=None, gaussian_cutoff
         path = os.getcwd()
 
     # process the raw data
-    _, params = untargeted_metabolomics_workflow(path, return_results=True)
+    workflow = UntargetedMetabolomicsWorkflow(path).run()
+    params = workflow.params
+    sample_metadata = workflow.metadata.sample_metadata
 
     if by_group is None:
         by_group = params.by_group_name
 
     # load the processed data
     df = pd.read_csv(os.path.join(path, 'aligned_feature_table.txt'), sep='\t', low_memory=False)
-    sub_medadata = params.sample_metadata[(~params.sample_metadata['is_blank']) & (~params.sample_metadata['is_qc'])]
+    sub_medadata = sample_metadata[
+        (~sample_metadata['is_blank']) & (~sample_metadata['is_qc'])
+    ]
     reg_samples = sub_medadata.iloc[:,0].values
     
     # preprocess data by

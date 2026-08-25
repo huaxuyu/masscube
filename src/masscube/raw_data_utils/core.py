@@ -1,6 +1,6 @@
 # Author: Huaxu Yu
 
-# A module to read and process the raw MS data
+# Core data models and processing operations for raw MS data.
 
 # imports
 
@@ -9,18 +9,39 @@ import pandas as pd
 import os
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
+from dataclasses import dataclass, field
 from time import time
 
-from .params import Params
-from .feature_detection import detect_features, segment_feature
-from .mzpkl import convert_MSData_to_mzpkl
-from .utils_functions import centroid_signals, find_ms_info
+from ..params import Params
+from ..feature_detection import detect_features, segment_feature
+from ..utils_functions import centroid_signals
 
 
 """
 Classes
 ------------------------------------------------------------------------------------------------------------------------
 """
+
+
+@dataclass
+class SingleFileMetadata:
+    file_name: str = None
+    file_path: str = None
+    ms_type: str = None
+    ion_mode: str = None
+    is_centroid: bool = None
+    acquisition_time: float = None
+    file_format: str = None
+    scan_time_unit: str = "minute"
+    instrument_name: str = None
+    has_ion_mobility: bool = False
+    mobility_unit: str = None
+    mz_calibration_applied: bool = None
+    mobility_calibration_applied: bool = None
+    mobility_pressure_compensated: bool = None
+    created_at: float = field(default_factory=time)
+    masscube_version: str = None
+
 
 class MSData:
     """
@@ -66,8 +87,20 @@ class MSData:
         """
 
         for key, value in updates.items():
-            if key in self.metadata:
-                self.metadata[key] = value
+            if not hasattr(self.metadata, key):
+                continue
+
+            if key == "file_path" and value is not None:
+                value = os.fspath(value)
+            elif key == "file_name" and value is not None:
+                value = _get_pure_file_name(value)
+
+            setattr(self.metadata, key, value)
+
+        # Keep file_name synchronized with file_path unless the caller
+        # explicitly supplies a file name in the same update.
+        if updates.get("file_path") is not None and "file_name" not in updates:
+            self.metadata.file_name = _get_pure_file_name(self.metadata.file_path)
 
 
     def read_raw_data(
@@ -76,29 +109,19 @@ class MSData:
             params: Params,
     ) -> None:
         """
-        Parse a raw data file (mzML).
+        Parse a supported raw data source into this object.
 
         Parameters
         ----------
         file_path: str
-            Path to the raw data file. Valid extension is mzML.
+            Path to a centroid mzML file or Bruker TDF2 ``.d`` directory.
         params: Params object
             Parameters.
         """
 
-        from pyteomics import mzml
+        from .io import read_raw_data_into
 
-        if not os.path.isfile(file_path):
-            raise FileNotFoundError("File not found: {}".format(file_path))
-
-        file_format = os.path.splitext(file_path)[1][1:].lower()
-        if file_format != "mzml":
-            raise ValueError(UNSUPPORTED_RAW_FORMAT_MESSAGE)
-
-        self.params = params
-
-        with mzml.MzML(file_path) as reader:
-            self.extract_scans_mzml(reader)
+        read_raw_data_into(self, file_path, params)
 
 
     def extract_scans_mzml(self, scans):
@@ -111,60 +134,9 @@ class MSData:
             An iteratable object that contains all MS1 and MS2 scans.
         """
 
-        time_unit = scans[0]['scanList']['scan'][0]['scan start time'].unit_info
+        from .mzml import extract_scans_mzml
 
-        for idx, spec in enumerate(scans):
-            
-            # get time
-            tmp = spec['scanList']['scan'][0]
-            if "scan start time" in tmp:
-                scan_time = tmp['scan start time']
-            elif "scan time" in tmp:
-                scan_time = tmp['scan time']   # not a standard format
-            scan_time = float(scan_time)
-
-            if time_unit == 'second':
-                scan_time /= 60     # convert to minute
-
-            # get level of mass spectrum
-            level = spec['ms level']
-
-            # skip scans not in the defined scan levels or outside the defined retention time range
-            if (scan_time < self.params.rt_lower_limit) or (scan_time > self.params.rt_upper_limit):
-                continue
-            
-            signals = np.array([spec['m/z array'], spec['intensity array']], dtype=np.float32).T
-            precursor_mz = None
-            isolation_window = None
-            
-            if level == 2:
-                precursor = spec['precursorList']['precursor'][0]
-                precursor_mz = float(precursor['selectedIonList']['selectedIon'][0].get('selected ion m/z'))
-                if 'isolationWindow' in precursor:
-                    if 'isolation window lower offset' in precursor['isolationWindow'] and 'isolation window upper offset' in precursor['isolationWindow']:
-                        isolation_window = [
-                            float(precursor['isolationWindow']['isolation window lower offset']),
-                            float(precursor['isolationWindow']['isolation window upper offset']),
-                        ]
-            
-            s = Scan()
-            s.add_scan_info(raw_file_id=idx, level=level, scan_time=scan_time, signals=signals, 
-                            precursor_mz=precursor_mz, isolation_window=isolation_window)
-            
-            s.preprocess_signals(self.params)
-            self.scans.append(s)
-
-        self.ms1_idx_arr = np.array([i for i in range(len(self.scans)) if self.scans[i].level == 1], dtype=np.int32)
-        self.ms2_idx_arr = np.array([i for i in range(len(self.scans)) if self.scans[i].level == 2], dtype=np.int32)
-        self.ms1_time_arr = np.array([self.scans[i].time for i in self.ms1_idx_arr], dtype=np.float32)
-
-        for i in self.ms1_idx_arr:
-            if len(self.scans[i].signals) == 0:
-                self.base_peak_arr.append([0, 0])
-            else:
-                self.base_peak_arr.append(self.scans[i].signals[np.argmax(self.scans[i].signals[:, 1])])
-        
-        self.base_peak_arr = np.array(self.base_peak_arr, dtype=np.float32)
+        extract_scans_mzml(self, scans)
 
 
     """
@@ -255,6 +227,10 @@ class MSData:
     def allocate_ms2_to_features(self, mz_tol: float = 0.1) -> None:
         """
         Assign MS2 scans to features by precursor m/z and retention time.
+
+        The deliberately broad default m/z window tolerates raw files with
+        inaccurate precursor-ion m/z metadata. Candidate features within that
+        window are disambiguated by peak height.
         
         If multiple features are matched, the MS2 scan is assigned to the
         feature with the highest peak height. Each MS2 scan is assigned to at
@@ -274,8 +250,24 @@ class MSData:
         sorted_idx = np.argsort(feature_mz_arr)
         sorted_feature_mz_arr = feature_mz_arr[sorted_idx]
 
-        feature_rt_start_arr = np.array([feature.rt_seq[0] for feature in self.features], dtype=np.float32)
-        feature_rt_end_arr = np.array([feature.rt_seq[-1] for feature in self.features], dtype=np.float32)
+        feature_rt_start_arr = np.array(
+            [
+                feature.peak_edges[0]
+                if feature.peak_edges is not None
+                else feature.rt_seq[0]
+                for feature in self.features
+            ],
+            dtype=np.float32,
+        )
+        feature_rt_end_arr = np.array(
+            [
+                feature.peak_edges[1]
+                if feature.peak_edges is not None
+                else feature.rt_seq[-1]
+                for feature in self.features
+            ],
+            dtype=np.float32,
+        )
         feature_height_arr = np.array([feature.peak_height for feature in self.features], dtype=np.float32)
 
         for scan_idx in self.ms2_idx_arr:
@@ -291,8 +283,8 @@ class MSData:
             
             mz_mask = np.abs(feature_mz_arr[candidate_idx] - ms2.precursor_mz) < mz_tol
             rt_mask = (
-                (feature_rt_start_arr[candidate_idx] < ms2.time)
-                & (ms2.time < feature_rt_end_arr[candidate_idx])
+                (feature_rt_start_arr[candidate_idx] <= ms2.time)
+                & (ms2.time <= feature_rt_end_arr[candidate_idx])
             )
             matched_idx = candidate_idx[mz_mask & rt_mask]
             if len(matched_idx) == 0:
@@ -339,7 +331,7 @@ class MSData:
             plt.plot(self.ms1_time_arr[v], self.base_peak_arr[v, 1], linewidth=1, color="black")
 
         if label_name:
-            plt.text(self.ms1_time_arr[0], np.max(self.base_peak_arr[:,1])*0.9, self.params.file_name, fontsize=12, color="gray")
+            plt.text(self.ms1_time_arr[0], np.max(self.base_peak_arr[:,1])*0.9, self.metadata.file_name, fontsize=12, color="gray")
 
         if output_dir is not None:
             plt.savefig(output_dir, dpi=300, bbox_inches="tight")
@@ -348,7 +340,7 @@ class MSData:
             plt.show()
 
 
-    def output_single_file(self, output_path=None):
+    def output_single_file(self, output_path=None, include_peak_shape=None):
         """
         Function to generate a report for features in csv format.
 
@@ -356,7 +348,17 @@ class MSData:
         ----------
         output_path: str
             User defined output path.
+        include_peak_shape: bool or None
+            Whether to serialize the full RT/intensity trace for every feature.
+            The default is ``Params.output_peak_shape`` (False when absent).
+            Alignment and gap filling do not require this column's payload;
+            peak shapes can be reconstructed from the corresponding mcraw.
         """
+
+        if include_peak_shape is None:
+            include_peak_shape = bool(
+                getattr(self.params, "output_peak_shape", False)
+            )
 
         result = []
 
@@ -371,12 +373,12 @@ class MSData:
                     ms2 += str(np.round(s[0], decimals=4)) + ";" + str(np.round(s[1], decimals=0)) + "|"
                 ms2 = ms2[:-1]
                 pif = f.ms2.precursor_ion_fraction
-                ms2_scan_id = f.ms2.id
+                ms2_scan_id = f.ms2.raw_file_id
             if f.isotope_signals is not None:
                 for s in f.isotope_signals:
                     iso += str(np.round(s[0], decimals=4)) + ";" + str(np.round(s[1], decimals=0)) + "|"
                 iso = iso[:-1]
-            if f.peak_shape is not None:
+            if include_peak_shape and f.peak_shape is not None:
                 time_range = [f.rt-1, f.rt+1]
                 for p in f.peak_shape:
                     if time_range[0] < p[0] < time_range[1]:
@@ -397,11 +399,11 @@ class MSData:
 
         df = pd.DataFrame(result, columns=columns)
         
-        # save the dataframe to csv file
-        if output_path is None:
-            df.to_csv(os.path.join(self.params.single_file_dir, self.params.file_name + ".txt"), index=False, sep="\t")
+        # Project paths do not belong to Params. A caller that wants a file
+        # supplies its destination explicitly; otherwise return the table.
         if output_path is not None:
             df.to_csv(output_path, index=False, sep="\t")
+        return df
 
 
     def get_eic_data(self, target_mz, target_rt=None, mz_tol=0.005, rt_tol=0.3, rt_range=None):
@@ -622,11 +624,31 @@ class MSData:
         for i in range(len(self.scans)):
             self.scans[i].time = all_rts[i]
 
+        # EIC extraction uses this compact, sorted MS1 time axis.  Leaving it
+        # unchanged would make gap filling search the uncorrected RT window
+        # even though individual Scan.time values had been corrected.
+        self.ms1_time_arr = np.asarray(
+            [self.scans[int(index)].time for index in self.ms1_idx_arr],
+            dtype=np.float32,
+        )
 
-    def convert_to_mzpkl(self):
+
+    def convert_to_mcraw(self, output_path=None, overwrite=False):
+        """Write this pre-feature-detection object as a MassCube raw cache."""
+
+        from .mcraw import save_mcraw
+
+        if output_path is None:
+            return None
+        return save_mcraw(self, output_path, overwrite=overwrite)
+
+
+    def convert_to_mzpkl(self, output_path=None):
         """
-        Function to output all MS1 scans as an intermediate mzjson file for faster data loading, 
-        if the file needs to be reloaded multiple times.
+        Legacy writer retained for old callers.
+
+        New MassCube workflows no longer call this method; mcraw is the raw
+        cache used by feature grouping and gap filling.
 
         Parameters
         ----------
@@ -634,10 +656,11 @@ class MSData:
             Output path of the pickle file.
         """
 
-        if self.params.tmp_file_dir is None:
+        if output_path is None:
             return None
-        
-        output_path = os.path.join(self.params.tmp_file_dir, self.params.file_name + ".mzpkl")
+
+        from ..mzpkl import convert_MSData_to_mzpkl
+
         convert_MSData_to_mzpkl(self, output_path)
     
     
@@ -684,6 +707,20 @@ class Scan:
 
         # derived information
         self.sum_intensity = None               # sum of all ion intensities in the scan
+
+        # optional ion-mobility/TIMS coordinates, aligned row-for-row to signals
+        self.inv_mobility = None                # intensity-weighted inverse reduced mobility (1/K0)
+        self.inv_mobility_range = None          # observed [min, max] 1/K0 for each signal
+        self.inv_mobility_unit = None
+        self.mobility_pressure_compensated = None
+        self.bruker_frame_id = None
+        self.bruker_precursor_id = None
+        self.bruker_parent_frame_id = None
+        self.bruker_scan_begin = None
+        self.bruker_scan_end = None
+        self.tims_pressure = None
+        self.collision_energy = None
+        self.precursor_charge = None
 
         if any(value is not None for value in [file_name, raw_file_id, level, scan_time, signals,
                                                precursor_mz, isolation_window,
@@ -756,22 +793,34 @@ class Scan:
             A Params object that contains the parameters for signal preprocessing.
         """
 
+        if self.signals is None:
+            self.signals = np.empty((0, 2), dtype=np.float32)
+
         if self.level == 1:
             self.subset_signals_by_mz_intensity(mz_range=[params.mz_lower_limit, params.mz_upper_limit], 
                                                           intensity_range=[params.ms1_abs_int_tol, np.inf])
         elif self.level == 2:
             if len(self.signals) == 0:
+                # Detach an empty slice from a possible mcraw memmap backing
+                # array before that mapping is released after preprocessing.
+                self.signals = np.empty((0, 2), dtype=self.signals.dtype)
+                self.sum_intensity = 0.0
                 return None
-            if params.precursor_mz_offset is None:
-                upper_mz_limit = np.inf
+            if params.precursor_mz_offset is None or self.precursor_mz is None:
+                upper_mz_limit = params.mz_upper_limit
             else:
-                upper_mz_limit = self.precursor_mz - params.precursor_mz_offset
+                upper_mz_limit = min(
+                    params.mz_upper_limit,
+                    self.precursor_mz - params.precursor_mz_offset,
+                )
             int_lower = max(params.ms2_abs_int_tol, np.max(self.signals[:, 1]) * params.ms2_rel_int_tol)
             self.subset_signals_by_mz_intensity(mz_range=[0, upper_mz_limit], 
                                                 intensity_range=[int_lower, np.inf])
         
         if params.centroid_mz_tol is not None:
-            self.signals = centroid_signals(self.signals, mz_tol=params.centroid_mz_tol)
+            self._centroid_aligned_signals(params.centroid_mz_tol)
+
+        self.sum_intensity = float(np.sum(self.signals[:, 1], dtype=np.float64))
 
 
     def subset_signals_by_mz_intensity(self, mz_range=[0, np.inf], intensity_range=[0, np.inf]):
@@ -794,8 +843,55 @@ class Scan:
         if self.signals is None:
             return None
 
-        self.signals = self.signals[(self.signals[:, 0] > mz_range[0]) & (self.signals[:, 0] < mz_range[1]) & 
-                                    (self.signals[:, 1] > intensity_range[0]) & (self.signals[:, 1] < intensity_range[1])]
+        selected = (
+            (self.signals[:, 0] > mz_range[0])
+            & (self.signals[:, 0] < mz_range[1])
+            & (self.signals[:, 1] > intensity_range[0])
+            & (self.signals[:, 1] < intensity_range[1])
+        )
+        self.signals = self.signals[selected]
+        if self.inv_mobility is not None:
+            if len(self.inv_mobility) != len(selected):
+                raise ValueError("inv_mobility must align with scan.signals")
+            self.inv_mobility = self.inv_mobility[selected]
+        if self.inv_mobility_range is not None:
+            if len(self.inv_mobility_range) != len(selected):
+                raise ValueError("inv_mobility_range must align with scan.signals")
+            self.inv_mobility_range = self.inv_mobility_range[selected]
+
+
+    def _centroid_aligned_signals(self, mz_tol):
+        """Centroid signals while keeping optional mobility arrays aligned."""
+
+        if mz_tol is None or len(self.signals) <= 1:
+            return
+        if self.inv_mobility is None and self.inv_mobility_range is None:
+            self.signals = centroid_signals(self.signals, mz_tol=mz_tol)
+            return
+
+        order = np.argsort(self.signals[:, 0], kind="stable")
+        signals = self.signals[order]
+        mobility = None if self.inv_mobility is None else np.asarray(self.inv_mobility)[order]
+        mobility_range = (
+            None
+            if self.inv_mobility_range is None
+            else np.asarray(self.inv_mobility_range)[order]
+        )
+        starts = np.r_[0, np.flatnonzero(np.diff(signals[:, 0]) >= mz_tol) + 1]
+        intensity = np.add.reduceat(signals[:, 1], starts)
+        mz = np.add.reduceat(signals[:, 0] * signals[:, 1], starts) / intensity
+        self.signals = np.column_stack((mz, intensity)).astype(np.float32, copy=False)
+        if mobility is not None:
+            self.inv_mobility = (
+                np.add.reduceat(mobility * signals[:, 1], starts) / intensity
+            ).astype(mobility.dtype, copy=False)
+        if mobility_range is not None:
+            self.inv_mobility_range = np.column_stack(
+                (
+                    np.minimum.reduceat(mobility_range[:, 0], starts),
+                    np.maximum.reduceat(mobility_range[:, 1], starts),
+                )
+            ).astype(mobility_range.dtype, copy=False)
 
 
     def plot_scan(self, mz_range=None, max_int=None, return_data=False):
@@ -867,54 +963,56 @@ Helper functions
 ------------------------------------------------------------------------------------------------------------------------
 """
 
-def read_raw_file_to_obj(file_name, params=None, ms1_abs_int_tol=1000, ms2_abs_int_tol=0):
+def finalize_scan_indexes(data: MSData) -> None:
+    """Rebuild scan indexes, retention times, and the MS1 base-peak cache."""
+
+    data.ms1_idx_arr = np.asarray(
+        [index for index, scan in enumerate(data.scans) if scan.level == 1],
+        dtype=np.int32,
+    )
+    data.ms2_idx_arr = np.asarray(
+        [index for index, scan in enumerate(data.scans) if scan.level == 2],
+        dtype=np.int32,
+    )
+    data.ms1_time_arr = np.asarray(
+        [data.scans[int(index)].time for index in data.ms1_idx_arr],
+        dtype=np.float32,
+    )
+
+    base_peaks = []
+    for index in data.ms1_idx_arr:
+        signals = data.scans[int(index)].signals
+        if signals is None or len(signals) == 0:
+            base_peaks.append([0.0, 0.0])
+        else:
+            base_peaks.append(signals[int(np.argmax(signals[:, 1]))])
+    data.base_peak_arr = np.asarray(base_peaks, dtype=np.float32).reshape(-1, 2)
+
+
+def preprocess_msdata(data: MSData, params: Params) -> MSData:
+    """Create MassCube's parameter-specific analysis view in-place.
+
+    mcraw contains all decoded MS1/MS2 scans before intensity filtering and
+    centroid repair.  This function applies the same scan selection and signal
+    preprocessing used by direct raw reading, while keeping TIMS mobility
+    arrays aligned with their signals.
     """
-    Read a raw file to a MSData object. It's a useful function for data visualization or 
-    simple data analysis. See the MSData class for detailed parameter settings.
 
-    Parameters
-    ----------
-    file_name: str
-        Name of the raw data file. Valid extension is mzML.
-    params: Params object
-        A Params object that contains the parameters.
-    ms1_abs_int_tol: int
-        Absolute intensity tolerance for MS1 scans.
-    ms2_abs_int_tol: int
-        Absolute intensity tolerance for MS2 scans. The final tolerance is the maximum of
-        ms2_abs_int_tol and base signal intensity * ms2_rel_int_tol.
-    precursor_mz_offset: float
-        To remove the precursor ion from MS2 scan. The m/z upper limit of signals 
-        in MS2 scans is calculated as precursor_mz - precursor_mz_offset.
+    selected_scans = []
+    scan_levels = set(int(level) for level in params.scan_levels)
+    for scan in data.scans:
+        scan_time = scan.raw_time if scan.raw_time is not None else scan.time
+        if scan.level not in scan_levels:
+            continue
+        if not params.rt_lower_limit <= scan_time <= params.rt_upper_limit:
+            continue
+        scan.preprocess_signals(params)
+        selected_scans.append(scan)
 
-    Returns
-    -------
-    d : MSData object
-        A MSData object.
-    """
-
-    if os.path.splitext(file_name)[1].lower() != ".mzml":
-        raise ValueError(UNSUPPORTED_RAW_FORMAT_MESSAGE)
-
-    # create a MSData object
-    d = MSData()
-
-    # update metadata
-    ms_type, ion_mode, is_centroid, acquisition_time = find_ms_info(file_name)
-    d.update_metadata({"file_name": os.path.basename(file_name), "file_path": file_name,
-                       "ms_type": ms_type, "ion_mode": ion_mode, "is_centroid": is_centroid, 
-                       "acquisition_time": acquisition_time})
-
-    if params is None:
-        params = Params()
-        params.ms1_abs_int_tol = ms1_abs_int_tol
-        params.ms2_abs_int_tol = ms2_abs_int_tol
-        params.ms_type = ms_type
-        params.ion_mode = ion_mode
-    
-    d.read_raw_data(file_name, params=params)
-    
-    return d
+    data.scans = selected_scans
+    data.params = params
+    finalize_scan_indexes(data)
+    return data
 
 
 def find_best_ms2(ms2_list):
@@ -995,28 +1093,20 @@ _EMPTY_I32 = np.empty(0, dtype=np.int32)
 _EMPTY_SIG = np.empty((0, 2), dtype=np.float32)
 
 
+def _get_pure_file_name(file_path):
+    """Return the final path component without its last file extension."""
+
+    return os.path.splitext(os.path.basename(os.fspath(file_path)))[0]
+
+
 def default_single_file_metadata():
     """
     Create default metadata for one MSData object.
     """
 
-    from . import __version__
+    from .. import __version__
 
-    return {
-        # file information
-        "file_name": None,
-        "file_path": None,
-
-        # mass spectrometry information
-        "ms_type": None,
-        "ion_mode": None,
-        "is_centroid": None,
-        "acquisition_time": None,
-
-        # provenance
-        "created_at": time(),
-        "masscube_version": __version__,
-    }
+    return SingleFileMetadata(masscube_version=__version__)
 
 def default_processing_status():
     """
@@ -1034,8 +1124,10 @@ def default_processing_status():
 
 
 UNSUPPORTED_RAW_FORMAT_MESSAGE = (
-    "Unsupported raw data format. MassCube currently supports centroid mzML only. "
+    "Unsupported raw data format. MassCube supports centroid mzML files, "
+    "Bruker TDF2 .d directories containing analysis.tdf and analysis.tdf_bin, "
+    "and MassCube .mcraw cache directories. "
     "mzXML is not supported because required MS metadata are often incomplete. "
-    "Please convert the raw data to centroid mzML. "
+    "Please convert other raw formats to centroid mzML. "
     "If you must process mzXML data, please use MassCube version 1."
 )

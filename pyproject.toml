@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=66.1.0"]
+requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "masscube"
-version = "1.2.21"
+version = "1.2.22"
 authors = [
   { name="Huaxu Yu", email="yhxchem@outlook.com" },
 ]
@@ -14,7 +14,8 @@ maintainers = [
 description = "Accurate and fast data processing for metabolomics"
 readme = "README.md"
 requires-python = ">=3.9,<3.13"
-license = { text = "CC BY-NC 4.0" }
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 classifiers = [
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
@@ -22,7 +23,6 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "License :: Other/Proprietary License",
     "Operating System :: OS Independent",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
     "Topic :: Scientific/Engineering :: Chemistry",
